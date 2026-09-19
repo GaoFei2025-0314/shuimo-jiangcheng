@@ -1,0 +1,261 @@
+<title>水墨江城</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Ma+Shan+Zheng&family=Noto+Serif+SC:wght@400;600&display=swap">
+<style>
+  /* 单一视觉世界：宣纸 + 墨。仅两处色：朱砂的印与落日，樱花的淡绯。 */
+  :root {
+    color-scheme: light;
+    --paper: #E6E3DA;
+    --paper-deep: #d9d5c9;
+    --ink: #1f1e1b;
+    --ink-soft: #4a4842;
+    --ink-faint: #7d7a71;
+    --cinnabar: #b5432f;
+    --sun: #d8a596;
+    --brush: "Ma Shan Zheng", "STKaiti", "KaiTi", "Kaiti SC", serif;
+    --song: "Noto Serif SC", "Songti SC", "STSong", "SimSun", serif;
+  }
+  html, body { height: 100%; }
+  body {
+    margin: 0; background: var(--paper); color: var(--ink);
+    font-family: var(--song); overflow: hidden;
+  }
+  #sun {
+    position: fixed; z-index: 0; left: 64%; top: 8%;
+    width: clamp(90px, 13vw, 190px); aspect-ratio: 1; border-radius: 50%;
+    background: radial-gradient(circle at 50% 50%, var(--sun) 0 52%, rgba(216,165,150,.55) 62%, rgba(216,165,150,0) 72%);
+    opacity: .72; pointer-events: none;
+  }
+  #stage { position: fixed; inset: 0; z-index: 1; touch-action: none; }
+  #stage canvas { display: block; width: 100%; height: 100%; }
+  #stage.hot { cursor: pointer; }
+  #grain {
+    position: fixed; inset: 0; z-index: 2; pointer-events: none; mix-blend-mode: multiply;
+    opacity: .5;
+    background-image:
+      url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='320' height='320'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 .42  0 0 0 0 .38  0 0 0 0 .3  1.1 0 0 0 -.32'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E"),
+      url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='900' height='900'%3E%3Cfilter id='f'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.004 .05' numOctaves='2' seed='4'/%3E%3CfeColorMatrix values='0 0 0 0 .55  0 0 0 0 .5  0 0 0 0 .4  1.2 0 0 0 -.45'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23f)'/%3E%3C/svg%3E");
+  }
+  #vignette {
+    position: fixed; inset: 0; z-index: 3; pointer-events: none;
+    background: radial-gradient(ellipse at 50% 48%, rgba(230,227,218,0) 55%, rgba(200,194,178,.55) 100%);
+  }
+
+  /* 地名题记：随三维位置投影 */
+  #labels { position: fixed; inset: 0; z-index: 4; pointer-events: none; }
+  #labels b {
+    position: absolute; transform: translate(-50%, -50%); white-space: nowrap;
+    font-family: var(--brush); font-weight: 400; color: var(--ink-soft);
+    text-shadow: 0 0 10px var(--paper), 0 0 4px var(--paper); transition: opacity .5s;
+  }
+  #labels b.town  { font-size: 27px; letter-spacing: .34em; color: var(--ink); opacity: .72; }
+  #labels b.water { font-size: 21px; letter-spacing: .5em; }
+  #labels b.hill  { font-size: 15px; letter-spacing: .3em; color: var(--ink-faint); }
+
+  /* 地标竖牌：悬在景点之上，点之即往 */
+  #marks { position: fixed; inset: 0; z-index: 4; pointer-events: none; }
+  .mark {
+    position: absolute; left: 0; top: 0; transform: translate(-50%, -100%);
+    display: flex; flex-direction: column; align-items: center;
+    background: none; border: 0; padding: 0; cursor: pointer; pointer-events: auto;
+    font-family: var(--brush); color: var(--ink); transition: opacity .45s;
+  }
+  .mark .plate {
+    display: flex; flex-direction: column; align-items: center;
+    padding: 6px 4px 7px; background: var(--paper); color: inherit;
+    border: 1px solid var(--ink-faint); border-top: 3px solid var(--cinnabar);
+    font-size: 15px; line-height: 1.22;
+    transition: background .2s, color .2s, border-color .2s;
+  }
+  .mark .stem { width: 1px; height: 20px; background: var(--ink-faint); }
+  .mark .dot { width: 5px; height: 5px; margin-top: -3px; border-radius: 50%; background: var(--cinnabar); }
+  .mark:hover .plate, .mark:focus-visible .plate {
+    background: var(--cinnabar); color: var(--paper); border-color: var(--cinnabar);
+  }
+  .mark:focus-visible { outline: none; }
+  .mark:focus-visible .plate { box-shadow: 0 0 0 2px var(--paper), 0 0 0 4px var(--cinnabar); }
+
+  .ui { position: fixed; z-index: 5; }
+
+  /* 入场：先见山水，后见题跋 */
+  @keyframes inkFade { from { opacity: 0 } to { opacity: 1 } }
+  @keyframes inkRise { from { opacity: 0; transform: translateY(14px) } to { opacity: 1; transform: none } }
+  #stage  { animation: inkFade 1.5s ease both; }
+  #labels, #marks { animation: inkFade 1.4s ease 1.1s both; }
+  #title  { animation: inkRise 1.1s cubic-bezier(.2,.7,.2,1) .45s both; }
+  #poem   { animation: inkRise 1.1s cubic-bezier(.2,.7,.2,1) .85s both; }
+  #dock   { animation: inkRise 1.1s cubic-bezier(.2,.7,.2,1) 1.25s both; }
+  @media (prefers-reduced-motion: reduce) {
+    #stage, #labels, #marks, #title, #poem, #dock { animation: none; }
+  }
+
+  #title { left: max(16px, 3vw); top: max(16px, 4vh); }
+  #title h1 {
+    margin: 0; font: 400 clamp(38px, 6vw, 72px)/1 var(--brush); letter-spacing: .08em;
+    text-shadow: 0 0 18px var(--paper), 0 0 6px var(--paper);
+  }
+  #title p {
+    margin: 10px 0 0; font-size: 12px; letter-spacing: .42em; color: var(--ink-soft);
+    text-shadow: 0 0 8px var(--paper);
+  }
+
+  /* 竖排诗词：逐字成列，不依赖字体的竖排度量 */
+  #poem {
+    right: max(16px, 3.2vw); top: max(16px, 9vh);
+    display: flex; flex-direction: row-reverse; align-items: flex-start; gap: .5em;
+  }
+  #poem p { margin: 0; display: flex; flex-direction: column; align-items: center; }
+  #poem p span {
+    font-family: var(--brush); font-size: clamp(19px, 2.3vw, 28px); line-height: 1.44;
+    color: var(--ink); text-shadow: 0 0 14px var(--paper), 0 0 5px var(--paper);
+  }
+  #poem p.meta { padding-top: .3em; }
+  #poem p.meta span {
+    font-family: var(--song); font-size: clamp(11px, 1.15vw, 14px); line-height: 2.05;
+    color: var(--ink-soft); text-shadow: 0 0 8px var(--paper);
+  }
+  #poem .seal { align-self: flex-end; margin-bottom: .15em; margin-right: .45em; }
+  .seal {
+    display: grid; grid-template-rows: 1fr 1fr; place-items: center;
+    width: clamp(28px, 3.1vw, 37px); aspect-ratio: 1 / 2;
+    background: var(--cinnabar); color: var(--paper);
+    font: 400 clamp(18px, 2.1vw, 25px)/1 var(--brush);
+    transform: rotate(-3deg); border-radius: 2px;
+    box-shadow: inset 0 0 0 2px var(--cinnabar), inset 0 0 0 3.5px rgba(230,227,218,.6);
+    opacity: .92; mix-blend-mode: multiply;
+  }
+
+  /* 底部：说明、导览、罗盘与比例尺 */
+  #dock {
+    left: max(16px, 3vw); right: max(16px, 3vw); bottom: max(16px, 3vh);
+    display: flex; flex-wrap: wrap; align-items: flex-end; gap: 14px 28px;
+    pointer-events: none;
+  }
+  #card { max-width: 360px; pointer-events: auto; padding: 12px 16px 12px 0; min-height: 80px; }
+  #card h2 {
+    margin: 0 0 6px; font: 400 clamp(25px, 2.8vw, 33px)/1.1 var(--brush); letter-spacing: .12em;
+    text-shadow: 0 0 12px var(--paper);
+  }
+  #card p {
+    margin: 0; font-size: 13px; line-height: 1.85; color: var(--ink-soft); letter-spacing: .06em;
+    text-shadow: 0 0 10px var(--paper), 0 0 4px var(--paper);
+  }
+  #nav {
+    display: flex; gap: 2px; pointer-events: auto; padding-bottom: 12px; flex-wrap: wrap;
+    max-width: min(660px, 52vw);
+  }
+  #nav button {
+    appearance: none; background: none; border: 0; cursor: pointer;
+    font: 400 19px/1 var(--brush); letter-spacing: .16em; color: var(--ink-soft);
+    padding: 7px 10px 9px; position: relative;
+    text-shadow: 0 0 10px var(--paper);
+  }
+  #nav button::after {
+    content: ""; position: absolute; left: 10px; right: 10px; bottom: 2px; height: 5px;
+    background: var(--ink); opacity: 0; transform: scaleX(.2) skewX(-24deg); transform-origin: left;
+    border-radius: 60% 40% 70% 30% / 50%;
+    transition: opacity .35s, transform .5s cubic-bezier(.2,.8,.2,1);
+  }
+  #nav button:hover, #nav button[aria-pressed="true"] { color: var(--ink); }
+  #nav button[aria-pressed="true"]::after { opacity: .85; transform: scaleX(1) skewX(-24deg); }
+  #nav button:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+
+  #tools {
+    margin-left: auto; padding-bottom: 14px; display: flex; align-items: flex-end; gap: 30px;
+    color: var(--ink-faint);
+  }
+  #rose { width: 52px; height: 52px; flex: none; }
+  #rose .dial { transform-origin: 26px 26px; }
+  #scale { text-align: right; font-size: 11px; letter-spacing: .28em; text-shadow: 0 0 8px var(--paper); }
+  #scaleBar {
+    height: 6px; border: 1px solid currentColor; border-top: 0; margin: 5px 0 5px auto;
+    width: 96px; min-width: 54px; transition: width .25s;
+  }
+  #hint { font-size: 11px; letter-spacing: .26em; text-shadow: 0 0 8px var(--paper); }
+
+  #tip {
+    position: fixed; z-index: 6; pointer-events: none; padding: 4px 10px 6px;
+    font: 400 18px/1 var(--brush); letter-spacing: .2em; color: var(--paper); background: var(--ink);
+    opacity: 0; transform: translate(14px, -30px); transition: opacity .2s;
+  }
+  #err { position: fixed; inset: 0; z-index: 9; display: none; place-items: center; text-align: center; font-size: 15px; letter-spacing: .1em; }
+
+  @media (max-width: 860px) {
+    #tools { display: none; }
+    #nav { max-width: 100%; }
+  }
+  @media (max-width: 640px) {
+    #title p { letter-spacing: .25em; font-size: 11px; }
+    #poem { top: 88px; gap: .3em; }
+    #card { max-width: 100%; min-height: 0; }
+    #card p { font-size: 12px; }
+    #nav button { font-size: 17px; padding: 6px 8px 8px; }
+    #labels b.town { font-size: 20px; }
+    #labels b.water { font-size: 16px; }
+    #labels b.hill { display: none; }
+    .mark .plate { font-size: 13px; padding: 5px 3px 6px; }
+    .mark .stem { height: 14px; }
+  }
+</style>
+
+<div id="sun" aria-hidden="true"></div>
+<div id="stage" role="img" aria-label="水墨风格的武汉三维地图：长江与汉江交汇，汉口、汉阳、武昌三镇，黄鹤楼、长江大桥、晴川阁、龟山电视塔、江汉关、武大樱园与东湖"></div>
+<div id="grain" aria-hidden="true"></div>
+<div id="vignette" aria-hidden="true"></div>
+<div id="labels" aria-hidden="true"></div>
+<div id="marks"></div>
+
+<header id="title" class="ui">
+  <h1>水墨江城</h1>
+  <p>武汉 · 两江四岸 · 依实境方位</p>
+</header>
+
+<aside id="poem" class="ui" aria-label="崔颢《黄鹤楼》：晴川历历汉阳树，芳草萋萋鹦鹉洲。日暮乡关何处是，烟波江上使人愁。">
+  <p class="meta" aria-hidden="true"><span>崔</span><span>颢</span><span>·</span><span>黄</span><span>鹤</span><span>楼</span></p>
+  <p aria-hidden="true"><span>晴</span><span>川</span><span>历</span><span>历</span><span>汉</span><span>阳</span><span>树</span></p>
+  <p aria-hidden="true"><span>芳</span><span>草</span><span>萋</span><span>萋</span><span>鹦</span><span>鹉</span><span>洲</span></p>
+  <p aria-hidden="true"><span>日</span><span>暮</span><span>乡</span><span>关</span><span>何</span><span>处</span><span>是</span></p>
+  <p aria-hidden="true"><span>烟</span><span>波</span><span>江</span><span>上</span><span>使</span><span>人</span><span>愁</span></p>
+  <div class="seal" aria-hidden="true"><span>江</span><span>城</span></div>
+</aside>
+
+<div id="dock" class="ui">
+  <div id="card" aria-live="polite">
+    <h2 id="cardTitle">两江四岸</h2>
+    <p id="cardText">汉水自西北来，于南岸嘴汇入长江。江北为汉口，两江之间是汉阳，大江东南岸为武昌。</p>
+  </div>
+  <nav id="nav" aria-label="视角">
+    <button type="button" id="b-home" data-view="home" aria-pressed="true">全城</button>
+    <button type="button" id="b-core" data-view="core" aria-pressed="false">两江</button>
+    <button type="button" id="b-tower" data-view="tower" aria-pressed="false">黄鹤楼</button>
+    <button type="button" id="b-bridge" data-view="bridge" aria-pressed="false">大桥</button>
+    <button type="button" id="b-qc" data-view="qc" aria-pressed="false">晴川阁</button>
+    <button type="button" id="b-tv" data-view="tv" aria-pressed="false">电视塔</button>
+    <button type="button" id="b-customs" data-view="customs" aria-pressed="false">江汉关</button>
+    <button type="button" id="b-wuda" data-view="wuda" aria-pressed="false">武大</button>
+    <button type="button" id="b-lake" data-view="lake" aria-pressed="false">东湖</button>
+  </nav>
+  <div id="tools">
+    <svg id="rose" viewBox="0 0 52 52" aria-hidden="true">
+      <g class="dial">
+        <circle cx="26" cy="26" r="19" fill="none" stroke="currentColor" stroke-width=".8" opacity=".5"></circle>
+        <path d="M26 5 L29.4 22.6 L26 20.2 L22.6 22.6 Z" fill="currentColor"></path>
+        <path d="M26 47 L22.6 29.4 L26 31.8 L29.4 29.4 Z" fill="none" stroke="currentColor" stroke-width=".8"></path>
+        <text x="26" y="17" text-anchor="middle" font-size="9" font-family="var(--brush)" fill="currentColor">北</text>
+      </g>
+    </svg>
+    <div id="scale">
+      <div id="scaleBar"></div>
+      <span id="scaleText">2 公里</span>
+    </div>
+  </div>
+  <div id="hint">拖拽旋转　滚轮缩放　点击景点</div>
+</div>
+<div id="tip" aria-hidden="true"></div>
+<div id="err">三维场景未能加载，请检查网络后刷新。</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/utils/BufferGeometryUtils.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js"></script>
