@@ -164,14 +164,22 @@
     if (moved > 5) return;
     const o = pick(e); if (o) flyTo(o.userData.focus);
   });
-  renderer.domElement.addEventListener('pointermove', e => {
-    if (e.buttons) { tip.style.opacity = 0; return; }
+  // 悬停的 raycast 按帧节流：指针事件可能比渲染帧率密得多，没必要逐次都算一遍拾取
+  let hoverEv = null, hoverQueued = false;
+  function applyHover() {
+    hoverQueued = false;
+    const e = hoverEv; if (!e) return;
     const o = pick(e);
     stage.classList.toggle('hot', !!o);
     if (o) { tip.textContent = o.userData.name; tip.style.left = e.clientX + 'px'; tip.style.top = e.clientY + 'px'; tip.style.opacity = 1; }
     else tip.style.opacity = 0;
+  }
+  renderer.domElement.addEventListener('pointermove', e => {
+    if (e.buttons) { hoverEv = null; tip.style.opacity = 0; return; }
+    hoverEv = e;
+    if (!hoverQueued) { hoverQueued = true; requestAnimationFrame(applyHover); }
   });
-  renderer.domElement.addEventListener('pointerleave', () => { tip.style.opacity = 0; });
+  renderer.domElement.addEventListener('pointerleave', () => { hoverEv = null; tip.style.opacity = 0; });
 
   /* ═════════ 十五、循环 ═════════ */
   let W = 1, H = 1;

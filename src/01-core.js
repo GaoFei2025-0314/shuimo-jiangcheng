@@ -22,7 +22,7 @@
   const AT = {}; Object.keys(SITE).forEach(k => AT[k] = geo(SITE[k][0], SITE[k][1]));
 
   const stage = document.getElementById('stage');
-  const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+  const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, powerPreference: 'high-performance' });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
   renderer.setClearColor(0x000000, 0);
   stage.appendChild(renderer.domElement);
