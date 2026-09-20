@@ -2,11 +2,13 @@
 # 把 src/ 拼成单文件 HTML。Artifact 与任何静态服务器都能直接吃。
 set -euo pipefail
 cd "$(dirname "$0")"
+mkdir -p dist   # dist/ 不进版本库，新 clone 下来本地是没有这个目录的
 
-RAW="$(mktemp)"
-JS="$(mktemp --suffix=.js)"
-MINJS_OUT="${JS%.js}.min.js"
-trap 'rm -f "$RAW" "$JS" "$MINJS_OUT"' EXIT
+TMPDIR_BUILD="$(mktemp -d)"       # -d 不带其他参数，GNU/BSD（macOS）mktemp 都认
+trap 'rm -rf "$TMPDIR_BUILD"' EXIT
+RAW="$TMPDIR_BUILD/raw.html"
+JS="$TMPDIR_BUILD/bundle.js"      # node --check 认扩展名，所以这里显式给 .js
+MINJS_OUT="$TMPDIR_BUILD/bundle.min.js"
 
 {
   cat src/00-shell.html
