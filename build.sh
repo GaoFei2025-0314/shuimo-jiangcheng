@@ -13,7 +13,7 @@ MINJS_OUT="$TMPDIR_BUILD/bundle.min.js"
 {
   cat src/00-shell.html
   printf '<script>\n(function () {\n'
-  cat src/01-core.js src/02-landmarks.js src/03-terrain.js src/04-scene.js src/05-runtime.js
+  cat src/01-core.js src/02-landmarks.js src/03-terrain.js src/04-scene.js src/05-runtime.js src/06-audio.js
   printf '})();\n</script>\n'
 } > "$RAW"
 

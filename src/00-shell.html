@@ -89,8 +89,9 @@
   #title  { animation: inkRise 1.1s cubic-bezier(.2,.7,.2,1) .45s both; }
   #poem   { animation: inkRise 1.1s cubic-bezier(.2,.7,.2,1) .85s both; }
   #dock   { animation: inkRise 1.1s cubic-bezier(.2,.7,.2,1) 1.25s both; }
+  #sound  { animation: inkFade 1.1s ease 1.6s both; }
   @media (prefers-reduced-motion: reduce) {
-    #stage, #labels, #marks, #title, #poem, #dock { animation: none; }
+    #stage, #labels, #marks, #title, #poem, #dock, #sound { animation: none; }
   }
 
   #title { left: max(16px, 3vw); top: max(16px, 4vh); }
@@ -105,7 +106,7 @@
 
   /* 竖排诗词：逐字成列，不依赖字体的竖排度量 */
   #poem {
-    right: max(16px, 3.2vw); top: max(16px, 9vh);
+    right: max(16px, 3.2vw); top: max(64px, 9vh);
     display: flex; flex-direction: row-reverse; align-items: flex-start; gap: .5em;
   }
   #poem p { margin: 0; display: flex; flex-direction: column; align-items: center; }
@@ -128,6 +129,18 @@
     box-shadow: inset 0 0 0 2px var(--cinnabar), inset 0 0 0 3.5px rgba(230,227,218,.6);
     opacity: .92; mix-blend-mode: multiply;
   }
+
+  /* 右上角：背景音乐开关，印章式。关时空心，开时实心 */
+  #sound {
+    right: max(16px, 3.2vw); top: max(16px, 3vh);
+    appearance: none; cursor: pointer; padding: 0; width: 34px; height: 34px;
+    display: grid; place-items: center;
+    font: 400 21px/1 var(--brush); color: var(--cinnabar);
+    background: transparent; border: 1.5px solid var(--cinnabar); border-radius: 2px;
+    transform: rotate(-3deg); transition: background .3s, color .3s;
+  }
+  #sound[aria-pressed="true"] { background: var(--cinnabar); color: var(--paper); }
+  #sound:focus-visible { outline: 2px solid var(--ink); outline-offset: 3px; }
 
   /* 底部：说明、导览、罗盘与比例尺 */
   #dock {
@@ -222,6 +235,8 @@
   <p aria-hidden="true"><span>烟</span><span>波</span><span>江</span><span>上</span><span>使</span><span>人</span><span>愁</span></p>
   <div class="seal" aria-hidden="true"><span>江</span><span>城</span></div>
 </aside>
+
+<button type="button" id="sound" class="ui" aria-pressed="false" aria-label="背景音乐" title="背景音乐">乐</button>
 
 <div id="dock" class="ui">
   <div id="card" aria-live="polite">
