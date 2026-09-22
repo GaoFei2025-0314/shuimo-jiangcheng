@@ -11,8 +11,10 @@ MINJS_OUT="$TMPDIR_BUILD/bundle.min.js"
 
 {
   printf '(function () {\n'
+  cat src/00-boot.js
+  printf '\nasync function initialize() {\nawait loadDependencies();\nif (app.state !== "loading") return;\n'
   cat src/01-core.js src/02-landmarks.js src/03-terrain.js src/04-scene.js src/05-runtime.js src/06-audio.js
-  printf '\n})();\n'
+  printf '\napp.ready();\n}\ninitialize().catch(() => app.fail("三维场景未能初始化，请检查浏览器图形加速后重新加载。"));\n})();\n'
 } > "$JS"
 
 MINJS="$JS"

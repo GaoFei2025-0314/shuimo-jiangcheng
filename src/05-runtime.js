@@ -47,6 +47,7 @@
   const buttons = Array.from(document.querySelectorAll('#nav button'));
   let activeView = 'home';
   function flyTo(key) {
+    if (app.state !== 'ready') return;
     const v = VIEWS[key]; if (!v) return;
     activeView = key;
     const navKey = key === 'chutian' ? 'lake' : key;
@@ -192,7 +193,19 @@
   window.addEventListener('resize', resize); resize();
 
   const clock = new THREE.Clock();
+  let frameId = 0;
+  app.cleanups.push(() => {
+    cancelAnimationFrame(frameId);
+    controls.enabled = false;
+    controls.dispose();
+    gsap.killTweensOf([camera.position, controls.target, card]);
+  });
   function frame() {
+    if (app.state === 'failed') return;
+    try { renderFrame(); }
+    catch (_) { app.fail('三维画面已中断，请重新加载。'); }
+  }
+  function renderFrame() {
     const t = clock.getElapsedTime() * (reduce ? .25 : 1);
     waterU.uTime.value = t;
     mistMats.forEach(m => m.uniforms.uTime.value = t);
@@ -241,7 +254,6 @@
     controls.update();
     renderer.render(scene, camera);
     drawLabels(W, H); drawMarks(W, H); drawTools(H);
-    requestAnimationFrame(frame);
+    frameId = requestAnimationFrame(frame);
   }
   frame();
-  window.__ready = true;

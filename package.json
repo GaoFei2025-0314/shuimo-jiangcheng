@@ -3,9 +3,14 @@
   "private": true,
   "scripts": {
     "build": "bash build.sh",
-    "test:build": "node --test tests/build.test.cjs"
+    "test:build": "node --test tests/build.test.cjs",
+    "test:browser": "playwright test",
+    "test": "npm run test:build && npm run test:browser"
   },
   "devDependencies": {
-    "terser": "5.51.2"
+    "@playwright/test": "1.61.1",
+    "gsap": "3.12.5",
+    "terser": "5.51.2",
+    "three": "0.128.0"
   }
 }

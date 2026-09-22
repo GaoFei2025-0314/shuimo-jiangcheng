@@ -11,14 +11,29 @@
 ./build.sh          # src/ → dist/index.html
 ```
 
-无依赖、无打包器。`dist/index.html` 是完全自包含的单文件，直接用浏览器打开即可，
-Three.js（r128）、OrbitControls、BufferGeometryUtils、GSAP 均从公共 CDN 引入。
+无需打包器，输出为可直接用浏览器打开的单文件 HTML。**单文件分发仍需联网**：
+Three.js（r128）、OrbitControls、BufferGeometryUtils、GSAP 从公共 CDN 加载，字体使用 Google Fonts，失败时回退系统字体。
+依赖加载超过 15 秒、资源失败或图形上下文丢失时，页面提供明确提示和“重新加载”入口。
+
+`npm ci` 安装锁定版本的开发工具；构建优先使用本地 Terser，缺少压缩工具时输出未压缩版本，不临时下载工具。
+缺少 Node 时仍可拼接，但不执行语法检查。
+
+```bash
+npm ci
+npm run test:build
+npx playwright install chromium webkit
+npm run test:browser
+```
+
+浏览器回归测试使用与 CDN 相同版本的库的本地副本，并注入网络、超时和 WebGL 故障。
+测试依赖只用于开发，不打入页面；截图、报告和失败追踪保存在 `output/playwright/`。
 
 ## 目录
 
 ```
 src/
-  00-shell.html      页面骨架：CSS、题名、竖排诗、导览、罗盘与比例尺、CDN 引入
+  00-shell.html      页面骨架：CSS、题名、竖排诗、导览、罗盘与比例尺
+  00-boot.js         依赖加载、15 秒超时、就绪状态与失败恢复
   01-core.js         经纬度投影、水墨 Shader、几何累加器、通用构件
   02-landmarks.js    七处地标的程序化建模
   03-terrain.js      两江河道、三镇陆块、东湖、山体、水纹图与江面 Shader

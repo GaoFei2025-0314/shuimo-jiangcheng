@@ -1,4 +1,5 @@
 <!DOCTYPE html>
+<html lang="zh-CN">
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>水墨江城</title>
@@ -197,7 +198,14 @@
     font: 400 18px/1 var(--brush); letter-spacing: .2em; color: var(--paper); background: var(--ink);
     opacity: 0; transform: translate(14px, -30px); transition: opacity .2s;
   }
-  #err { position: fixed; inset: 0; z-index: 9; display: none; place-items: center; text-align: center; font-size: 15px; letter-spacing: .1em; }
+  #err { position: fixed; inset: 0; z-index: 9; display: grid; place-content: center; justify-items: center;
+    padding: 24px; text-align: center; background: rgba(230,227,218,.92); font-size: 15px; letter-spacing: .1em; }
+  #err p { max-width: 28em; line-height: 1.8; }
+  #retry { min-height: 44px; padding: 8px 20px; font: inherit; color: var(--ink);
+    border: 1px solid var(--ink-faint); background: var(--paper); cursor: pointer; }
+  [data-state="ready"] #err { display: none; }
+  button:disabled { cursor: default; }
+  [hidden] { display: none !important; }
 
   @media (max-width: 860px) {
     #tools { display: none; }
@@ -218,7 +226,7 @@
 </style>
 
 <div id="sun" aria-hidden="true"></div>
-<div id="stage" role="img" aria-label="水墨风格的武汉三维地图：长江与汉江交汇，汉口、汉阳、武昌三镇，黄鹤楼、长江大桥、晴川阁、龟山电视塔、江汉关、武大樱园与东湖"></div>
+<div id="stage" aria-busy="true" role="img" aria-label="水墨风格的武汉三维地图：长江与汉江交汇，汉口、汉阳、武昌三镇，黄鹤楼、长江大桥、晴川阁、龟山电视塔、江汉关、武大樱园与东湖"></div>
 <div id="grain" aria-hidden="true"></div>
 <div id="vignette" aria-hidden="true"></div>
 <div id="labels" aria-hidden="true"></div>
@@ -238,7 +246,7 @@
   <div class="seal" aria-hidden="true"><span>江</span><span>城</span></div>
 </aside>
 
-<button type="button" id="sound" class="ui" aria-pressed="false" aria-label="背景音乐" title="背景音乐">乐</button>
+<button type="button" id="sound" disabled class="ui" aria-pressed="false" aria-label="背景音乐" title="背景音乐">乐</button>
 
 <div id="dock" class="ui">
   <div id="card" aria-live="polite">
@@ -246,15 +254,15 @@
     <p id="cardText">汉水自西北来，于南岸嘴汇入长江。江北为汉口，两江之间是汉阳，大江东南岸为武昌。</p>
   </div>
   <nav id="nav" aria-label="视角">
-    <button type="button" id="b-home" data-view="home" aria-pressed="true">全城</button>
-    <button type="button" id="b-core" data-view="core" aria-pressed="false">两江</button>
-    <button type="button" id="b-tower" data-view="tower" aria-pressed="false">黄鹤楼</button>
-    <button type="button" id="b-bridge" data-view="bridge" aria-pressed="false">大桥</button>
-    <button type="button" id="b-qc" data-view="qc" aria-pressed="false">晴川阁</button>
-    <button type="button" id="b-tv" data-view="tv" aria-pressed="false">电视塔</button>
-    <button type="button" id="b-customs" data-view="customs" aria-pressed="false">江汉关</button>
-    <button type="button" id="b-wuda" data-view="wuda" aria-pressed="false">武大</button>
-    <button type="button" id="b-lake" data-view="lake" aria-pressed="false">东湖</button>
+    <button type="button" id="b-home" disabled data-view="home" aria-pressed="true">全城</button>
+    <button type="button" id="b-core" disabled data-view="core" aria-pressed="false">两江</button>
+    <button type="button" id="b-tower" disabled data-view="tower" aria-pressed="false">黄鹤楼</button>
+    <button type="button" id="b-bridge" disabled data-view="bridge" aria-pressed="false">大桥</button>
+    <button type="button" id="b-qc" disabled data-view="qc" aria-pressed="false">晴川阁</button>
+    <button type="button" id="b-tv" disabled data-view="tv" aria-pressed="false">电视塔</button>
+    <button type="button" id="b-customs" disabled data-view="customs" aria-pressed="false">江汉关</button>
+    <button type="button" id="b-wuda" disabled data-view="wuda" aria-pressed="false">武大</button>
+    <button type="button" id="b-lake" disabled data-view="lake" aria-pressed="false">东湖</button>
   </nav>
   <div id="tools">
     <svg id="rose" viewBox="0 0 52 52" aria-hidden="true">
@@ -273,9 +281,4 @@
   <div id="hint">拖拽旋转　滚轮缩放　点击景点</div>
 </div>
 <div id="tip" aria-hidden="true"></div>
-<div id="err">三维场景未能加载，请检查网络后刷新。</div>
-
-<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/utils/BufferGeometryUtils.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js"></script>
+<div id="err" role="status" aria-live="polite"><p id="loadMessage">正在铺展江城画卷…</p><button id="retry" type="button" hidden>重新加载</button></div>
