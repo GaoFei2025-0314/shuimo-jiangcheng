@@ -1,0 +1,11 @@
+{
+  "name": "shuimo-jiangcheng",
+  "private": true,
+  "scripts": {
+    "build": "bash build.sh",
+    "test:build": "node --test tests/build.test.cjs"
+  },
+  "devDependencies": {
+    "terser": "5.51.2"
+  }
+}
