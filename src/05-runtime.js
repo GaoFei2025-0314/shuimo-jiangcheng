@@ -32,36 +32,60 @@
     lake:    ['东湖', '中国最大的城中湖，水域约三十三平方公里，绿道一百零五公里。磨山三面环水，自南岸伸入湖中。'],
     chutian: ['东湖 · 楚天台', '立于磨山之巅，按楚国「章华台」形制而建，外五层内六层，高三十六米，台前三百四十五级石阶，顶置青铜凤标。']
   };
-  const reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-  camera.position.set(VIEWS.home.pos.x, VIEWS.home.pos.y, VIEWS.home.pos.z);
-  if (!reduce) camera.position.set(VIEWS.home.pos.x + 210, VIEWS.home.pos.y * 1.62, VIEWS.home.pos.z * 1.44);
+  const motionPreference = window.matchMedia('(prefers-reduced-motion: reduce)');
+  let reduce = motionPreference.matches;
+  camera.position.copy(VIEWS.home.pos);
   const controls = new THREE.OrbitControls(camera, renderer.domElement);
-  controls.enableDamping = true; controls.dampingFactor = .06;
+  controls.enableDamping = !reduce; controls.dampingFactor = .06;
   controls.rotateSpeed = .6; controls.zoomSpeed = .8;
   controls.minDistance = 22; controls.maxDistance = 2600;
   controls.maxPolarAngle = Math.PI * .47;
-  controls.target.set(VIEWS.home.target.x, VIEWS.home.target.y, VIEWS.home.target.z);
+  controls.target.copy(VIEWS.home.target);
   controls.update();
 
   const cardTitle = document.getElementById('cardTitle'), cardText = document.getElementById('cardText'), card = document.getElementById('card');
   const buttons = Array.from(document.querySelectorAll('#nav button'));
-  let activeView = 'home';
+  let activeView = 'home', cameraMode = 'preset', flight = null;
+  function stopFlight() {
+    if (flight) { flight.kill(); flight = null; }
+    gsap.killTweensOf([camera.position, controls.target, card]);
+    card.style.opacity = '1'; card.style.transform = 'none';
+  }
+  function moveCamera(view, animate) {
+    if (!animate || reduce) {
+      camera.position.copy(view.pos); controls.target.copy(view.target); controls.update();
+      return;
+    }
+    flight = gsap.timeline({ onUpdate: () => controls.update(), onComplete: () => { flight = null; } });
+    flight.to(camera.position, { ...view.pos, duration: 2.6, ease: 'power3.inOut' }, 0)
+      .to(controls.target, { ...view.target, duration: 2.6, ease: 'power3.inOut' }, 0)
+      .fromTo(card, { opacity: 0, y: 8 }, { opacity: 1, y: 0, duration: .45 }, 0);
+  }
   function flyTo(key) {
-    const v = VIEWS[key]; if (!v) return;
-    activeView = key;
+    if (app.state !== 'ready' || !VIEWS[key]) return;
+    stopFlight();
+    // 消除上一次手势的惯性，防止它与新镜头竞争。
+    controls.enableDamping = false; controls.update(); controls.enableDamping = !reduce;
+    activeView = key; cameraMode = 'preset';
     const navKey = key === 'chutian' ? 'lake' : key;
     buttons.forEach(b => b.setAttribute('aria-pressed', String(b.dataset.view === navKey)));
-    gsap.killTweensOf(camera.position); gsap.killTweensOf(controls.target);
-    gsap.to(camera.position, { x: v.pos.x, y: v.pos.y, z: v.pos.z, duration: 2.6, ease: 'power3.inOut' });
-    gsap.to(controls.target, { x: v.target.x, y: v.target.y, z: v.target.z, duration: 2.6, ease: 'power3.inOut', onUpdate: () => controls.update() });
-    gsap.to(card, { opacity: 0, y: 8, duration: .3, onComplete: () => {
-      cardTitle.textContent = COPY[key][0]; cardText.textContent = COPY[key][1];
-      gsap.to(card, { opacity: 1, y: 0, duration: .6, delay: .5 });
-    } });
+    cardTitle.textContent = COPY[key][0]; cardText.textContent = COPY[key][1];
+    moveCamera(VIEWS[key], true);
   }
   buttons.forEach(b => b.addEventListener('click', () => flyTo(b.dataset.view)));
-  // 入场只动镜头；题名与导览的浮现交给 CSS，不受渲染帧率拖累
-  if (!reduce) gsap.to(camera.position, { x: VIEWS.home.pos.x, y: VIEWS.home.pos.y, z: VIEWS.home.pos.z, duration: 3.0, ease: 'power2.inOut' });
+  controls.addEventListener('start', () => { stopFlight(); cameraMode = 'manual'; });
+  motionPreference.addEventListener('change', event => {
+    reduce = event.matches;
+    const wasFlying = !!flight;
+    stopFlight();
+    controls.enableDamping = !reduce;
+    if (reduce && wasFlying) moveCamera(VIEWS[activeView], false);
+  });
+  function enterScene() {
+    if (reduce) return;
+    camera.position.set(VIEWS.home.pos.x + 210, VIEWS.home.pos.y * 1.62, VIEWS.home.pos.z * 1.44);
+    moveCamera(VIEWS.home, true);
+  }
 
   /* ═════════ 十三、地名题记 ═════════ */
   const labelBox = document.getElementById('labels');
@@ -99,6 +123,19 @@
     markBox.appendChild(el);
     return { el, key: m[1], v: new THREE.Vector3(m[2].x, m[3], m[2].z) };
   });
+  function setMarkVisibility(mark, visible, opacity) {
+    if (!visible && document.activeElement === mark.el) {
+      const key = mark.key === 'chutian' ? 'lake' : mark.key;
+      const button = buttons.find(b => b.dataset.view === key);
+      if (button) button.focus({ preventScroll: true });
+    }
+    mark.el.disabled = !visible;
+    mark.el.tabIndex = visible ? 0 : -1;
+    mark.el.setAttribute('aria-hidden', String(!visible));
+    mark.el.style.visibility = visible ? 'visible' : 'hidden';
+    mark.el.style.opacity = visible ? opacity.toFixed(3) : '0';
+    mark.el.style.pointerEvents = visible ? 'auto' : 'none';
+  }
   function drawMarks(w, h) {
     MARKS.forEach(m => {
       projV.copy(m.v).project(camera);
@@ -107,9 +144,8 @@
       // 太近则让路，太远或出画则隐去；当前所在景点不再标注
       let o = THREE.MathUtils.smoothstep(d, 90, 170) * (1 - THREE.MathUtils.smoothstep(d, 1500, 2100));
       if (projV.z > 1 || m.key === activeView || nx < -.02 || nx > 1.02 || ny < -.12 || ny > 1.04) o = 0;
-      m.el.style.opacity = o.toFixed(3);
-      m.el.style.pointerEvents = o > .35 ? 'auto' : 'none';
-      if (o < .01) return;
+      setMarkVisibility(m, o > .35, o);
+      if (o <= .35) return;
       if (!m.h) m.h = m.el.offsetHeight || 60;
       const px = Math.min(w - 40, Math.max(40, nx * w));
       const py = Math.min(h - 24, Math.max(m.h + 8, ny * h));   // 牌子不出画
@@ -192,8 +228,23 @@
   window.addEventListener('resize', resize); resize();
 
   const clock = new THREE.Clock();
+  let sceneTime = 0;
+  let frameId = 0;
+  app.cleanups.push(() => {
+    cancelAnimationFrame(frameId);
+    controls.enabled = false;
+    controls.dispose();
+    stopFlight();
+  });
   function frame() {
-    const t = clock.getElapsedTime() * (reduce ? .25 : 1);
+    if (app.state === 'failed') return;
+    try { renderFrame(); }
+    catch (_) { app.fail('三维画面已中断，请重新加载。'); }
+  }
+  function renderFrame() {
+    const delta = clock.getDelta();
+    if (!reduce) sceneTime += Math.min(delta, .1);
+    const t = sceneTime;
     waterU.uTime.value = t;
     mistMats.forEach(m => m.uniforms.uTime.value = t);
 
@@ -241,7 +292,7 @@
     controls.update();
     renderer.render(scene, camera);
     drawLabels(W, H); drawMarks(W, H); drawTools(H);
-    requestAnimationFrame(frame);
+    frameId = requestAnimationFrame(frame);
   }
+  enterScene();
   frame();
-  window.__ready = true;
