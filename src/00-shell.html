@@ -95,6 +95,7 @@
   #sound  { animation: inkFade 1.1s ease 1.6s both; }
   @media (prefers-reduced-motion: reduce) {
     #stage, #labels, #marks, #title, #poem, #dock, #sound { animation: none; }
+    #labels b, .mark, .mark .plate, #nav button::after, #sound, #scaleBar, #tip { transition: none; }
   }
 
   #title { left: max(16px, 3vw); top: max(16px, 4vh); }
