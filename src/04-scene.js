@@ -102,7 +102,7 @@
     for (let i = 0; i < YZ.s.length; i++) {
       const s = YZ.s[i], nx = s.d.z, nz = -s.d.x, Ln = Math.hypot(nx, nz) || 1;
       const x = s.p.x + nx / Ln * (s.w - .9), z = s.p.z + nz / Ln * (s.w - .9), lat = latOf(z);
-      if (lat < 30.566 || lat > 30.600 || !inPoly(HANKOU, x, z)) continue;
+      if (lat < 30.566 || lat > 30.600 || !inPoly(HANKOU, s.p.x + nx / Ln * (s.w + 2), s.p.z + nz / Ln * (s.w + 2))) continue;   // 护岸骑在水线上，取岸上 2 个单位处判定是否属汉口
       B.box(6, 1.2, 5.2, x, LAND_Y - .1, z, Math.atan2(s.d.x, s.d.z));
       if (i % 3 === 0) { L.cyl(.09, 4.2, x, LAND_Y + 2.1, z); L.box(.7, .22, .7, x, LAND_Y + 4.3, z); }
     }
