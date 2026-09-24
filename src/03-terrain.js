@@ -2,22 +2,8 @@
   /* ═════════ 五、两江与三镇：按真实河道生成水面与陆地 ═════════ */
   const LAND_Y = .75, X0 = -2200, X1 = 2400, ZTOP = -2600, ZBOT = 2200;
 
-  // 长江：自西南上游经龟蛇之间北上，过南岸嘴与江汉关后折向东北 [经度, 纬度, 半宽(米)]
-  const YANGTZE = [
-    [114.1800, 30.3800, 600], [114.1950, 30.4100, 620], [114.2200, 30.4500, 640],
-    [114.2510, 30.4870, 700], [114.2650, 30.5120, 650], [114.2760, 30.5310, 600],
-    [114.2845, 30.5450, 570], [114.2880, 30.5560, 575], [114.2900, 30.5660, 600],
-    [114.2988, 30.5760, 625], [114.3082, 30.5865, 680], [114.3215, 30.5950, 750],
-    [114.3400, 30.6020, 820], [114.3650, 30.6080, 900], [114.3950, 30.6120, 950],
-    [114.4300, 30.6500, 980], [114.4700, 30.7000, 1000], [114.5000, 30.7400, 1000]
-  ];
-  // 汉水：自西北来，沿龟山北麓东行，于南岸嘴汇入长江
-  const HANSHUI = [
-    [114.0600, 30.6220, 150], [114.1200, 30.6150, 145], [114.1700, 30.6050, 140],
-    [114.2180, 30.5960, 135], [114.2340, 30.5905, 135], [114.2500, 30.5855, 140],
-    [114.2640, 30.5790, 145], [114.2730, 30.5720, 150], [114.2800, 30.5660, 175],
-    [114.2870, 30.5630, 215]
-  ];
+  // 长江与汉水：中泓线与半宽按实测水体掩膜追出（tools/geodata/extract.py）[经度, 纬度, 半宽(米)]
+  const YANGTZE = GEO.yangtze, HANSHUI = GEO.hanshui;
 
   function sampleRiver(pts, n) {
     const curve = new THREE.CatmullRomCurve3(pts.map(p => gv(p[0], p[1], 0)), false, 'catmullrom', .5);
@@ -35,7 +21,7 @@
       return [s.p.x + side * nx / L * s.w, s.p.z + side * nz / L * s.w];
     });
   }
-  const YZ = sampleRiver(YANGTZE, 150), HAN = sampleRiver(HANSHUI, 70);
+  const YZ = sampleRiver(YANGTZE, 360), HAN = sampleRiver(HANSHUI, 200);   // 约 170 米一个采样
   const yzW = bank(YZ.s, +1), yzE = bank(YZ.s, -1);    // 长江北流：左岸即西岸
   const hanN = bank(HAN.s, +1), hanS = bank(HAN.s, -1);// 汉水东流：左岸即北岸
 
@@ -43,11 +29,11 @@
   const mouth = HAN.s[HAN.s.length - 1].p;
   let kk = 0, best = 1e18;
   yzW.forEach((p, i) => { const d = (p[0] - mouth.x) ** 2 + (p[1] - mouth.z) ** 2; if (d < best) { best = d; kk = i; } });
-  const HCUT = 4;                                       // 河口张开的余量
+  const HCUT = 3;                                       // 河口张开的余量：约 500 米
 
   const HANKOU = hanN.slice(0, hanN.length - HCUT)
     .concat(yzW.slice(kk + HCUT))
-    .concat([[yzW[yzW.length - 1][0], ZTOP], [X0, ZTOP], [X0, hanN[0][1]]]);
+    .concat([[X1, yzW[yzW.length - 1][1]], [X1, ZTOP], [X0, ZTOP], [X0, hanN[0][1]]]);   // 长江自东缘出图：北岸沿江向东收到场景边，东北角是陆地
   const HANYANG = yzW.slice(0, Math.max(1, kk - HCUT)).reverse()
     .concat([[yzW[0][0], ZBOT], [X0, ZBOT], [X0, hanS[0][1]]])
     .concat(hanS.slice(0, hanS.length - HCUT));
