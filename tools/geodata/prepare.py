@@ -2,7 +2,8 @@ from pathlib import Path
 import json, rasterio, numpy as np
 from rasterio.merge import merge
 from contextlib import ExitStack
-root=Path(__file__).parent
+root=Path(__file__).resolve().parents[2]/'output'/'dem-wuhan'   # 数据放在仓库根的 output/dem-wuhan/（不入库）
+root.mkdir(parents=True,exist_ok=True)
 bounds=(113.35,29.85,115.2,31.5)
 report={}
 for kind in ['DEM','WBM']:

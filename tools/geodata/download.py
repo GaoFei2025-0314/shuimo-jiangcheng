@@ -1,6 +1,7 @@
 from pathlib import Path
 import urllib.request, concurrent.futures, hashlib, json, time
-root=Path(__file__).parent
+root=Path(__file__).resolve().parents[2]/'output'/'dem-wuhan'   # 数据放在仓库根的 output/dem-wuhan/（不入库）
+root.mkdir(parents=True,exist_ok=True)
 base='https://copernicus-dem-30m.s3.amazonaws.com/'
 def fetch(args):
  lat,lon,kind=args
