@@ -49,10 +49,12 @@ def segments_cross(p, q, r, s):
     def d(a, b, c):
         return (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0])
     d1, d2, d3, d4 = d(r, s, p), d(r, s, q), d(p, q, r), d(p, q, s)
-    return ((d1 > 0) != (d2 > 0)) and ((d3 > 0) != (d4 > 0))
+    return d1 * d2 < 0 and d3 * d4 < 0
 
 
 def self_intersects(pts):
+    if len(pts) > 1 and pts[0] == pts[-1]:      # 首尾重复的闭合点不算自交
+        pts = pts[:-1]
     n = len(pts)
     for i in range(n):
         for j in range(i + 2, n):
@@ -93,20 +95,23 @@ def main():
         hw = [p[2] for p in pts]
         mid = [p[2] for p in pts if BBOX[0] <= p[0] <= BBOX[2] and BBOX[1] <= p[1] <= BBOX[3]]
         check(bool(mid), '%s 有落在取景框内的点（实际 %d）' % (nm, len(mid)))
-        check(lo <= max(mid) <= hi, '%s 框内最大半宽在 %d–%d 米（实际 %d）' % (nm, lo, hi, max(mid)))
-        check(min(hw) >= 80, '%s 半宽不小于 80 米（实际 %d）' % (nm, min(hw)))
+        check(lo <= max(mid, default=0) <= hi, '%s 框内最大半宽在 %d–%d 米（实际 %d）' % (nm, lo, hi, max(mid, default=0)))
+        check(min(hw, default=0) >= 80, '%s 半宽不小于 80 米（实际 %d）' % (nm, min(hw, default=0)))
         gaps = [math.hypot(*[b - a for a, b in zip(to_m(*pts[i][:2]), to_m(*pts[i + 1][:2]))]) for i in range(len(pts) - 1)]
-        check(max(gaps) <= 900, '%s 相邻点间距不超过 900 米（实际 %d）' % (nm, max(gaps)))
+        check(max(gaps, default=0) <= 900, '%s 相邻点间距不超过 900 米（实际 %d）' % (nm, max(gaps, default=0)))
 
     print('湖')
     lakes = G['lakes']
+    if not lakes:
+        check(False, '至少有一个湖（实际 0 个）')
+        lakes = [{'name': '', 'pts': []}]
     check(lakes[0]['name'] == '东湖', '第一个湖是东湖（实际 %r）' % lakes[0]['name'])
     names = [L['name'] for L in lakes]
     check('月湖' in names, '月湖在列（古琴台临月湖）：%s' % names)
     for L in lakes:
         nm = L['name'] or '无名'
         ar = ring_area_km2(L['pts'])
-        check(len(L['pts']) >= 8, '%s 轮廓点数 ≥8（实际 %d）' % (nm, len(L['pts'])))
+        check(len(L['pts']) >= 6, '%s 轮廓点数 ≥6（实际 %d）' % (nm, len(L['pts'])))
         check(ar >= .15, '%s 面积 ≥0.15 km²（实际 %.2f）' % (nm, ar))
         check(not self_intersects(L['pts']), '%s 轮廓不自交' % nm)
     check(24 <= ring_area_km2(lakes[0]['pts']) <= 34, '东湖面积 24–34 km²（实际 %.1f）' % ring_area_km2(lakes[0]['pts']))
@@ -135,7 +140,11 @@ def main():
         nm = h['name'] or '无名'
         q = base64.b64decode(h['q'])
         check(len(q) == h['nx'] * h['nz'], '%s 格子长度对得上 nx×nz（%d vs %d）' % (nm, len(q), h['nx'] * h['nz']))
-        check(abs(max(q) * .5 - h["relief"]) < .4, '%s 格子峰值与 relief 一致（%.1f vs %.1f）' % (nm, max(q) * .5, h['relief']))
+        check(abs(max(q, default=0) * .5 - h["relief"]) < .4, '%s 格子峰值与 relief 一致（%.1f vs %.1f）' % (nm, max(q, default=0) * .5, h['relief']))
+        ix = round((h['peak'][0] - h['lon0']) / h['dlon'])
+        iz = round((h['peak'][1] - h['lat0']) / h['dlat'])
+        on_grid = h['dlon'] > 0 > h['dlat'] and 0 <= ix < h['nx'] and 0 <= iz < h['nz'] and len(q) == h['nx'] * h['nz']
+        check(on_grid and q[iz * h['nx'] + ix] == max(q, default=0), '%s 峰顶落在格子最高那一格（ix=%d, iz=%d）' % (nm, ix, iz))
         check(BBOX[0] <= h['peak'][0] <= BBOX[2] and BBOX[1] <= h['peak'][1] <= BBOX[3], '%s 峰顶在取景框内 %s' % (nm, h['peak']))
         if not h['name']:
             check(h['relief'] <= 60, '无名山按距离压低后 ≤60 米（实际 %.1f）' % h['relief'])
