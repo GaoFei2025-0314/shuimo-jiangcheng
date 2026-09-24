@@ -10,7 +10,7 @@
     return g;
   }
   // 大桥轴线：武昌蛇山头 → 汉阳龟山东麓
-  const bA = geo(114.2945, 30.5455), bB = geo(114.2810, 30.5540);
+  const bA = geo(114.28875, 30.54835), bB = geo(114.27525, 30.55685);   // 随桥心一并平移，桥向与桥长不变
   const bridge  = place(buildBridge(), AT.bridge, .74, Math.atan2(bB.x - bA.x, bB.z - bA.z), '武汉长江大桥', 'bridge', 0);
   const tower   = place(buildTower(), AT.tower, .88, .18, '黄鹤楼', 'tower');
   const tv      = place(buildTV(), AT.tv, 1.5, 0, '龟山电视塔', 'tv');

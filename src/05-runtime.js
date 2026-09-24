@@ -65,12 +65,14 @@
 
   /* ═════════ 十三、地名题记 ═════════ */
   const labelBox = document.getElementById('labels');
+  // 汉水题记落在实测河心上：取 GEO.hanshui 中离该经度最近的一点，数据重生成后也跟着走
+  const hanLabel = lon => GEO.hanshui.reduce((a, p) => Math.abs(p[0] - lon) < Math.abs(a[0] - lon) ? p : a).slice(0, 2);
   const LABELS = [
     ['汉口', 114.2820, 30.5990, 'town', 26],
     ['汉阳', 114.2610, 30.5430, 'town', 18],
     ['武昌', 114.3220, 30.5330, 'town', 20],
     ['长江', 114.2905, 30.5700, 'water', 4],
-    ['汉水', 114.2470, 30.5868, 'water', 4],
+    ['汉水', ...hanLabel(114.2470), 'water', 4],
     ['东湖', 114.3880, 30.5605, 'water', 4],
     ['南岸嘴', 114.2838, 30.5628, 'hill', 8],
     ['蛇山', 114.3085, 30.5458, 'hill', 26],

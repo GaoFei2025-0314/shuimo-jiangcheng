@@ -21,7 +21,7 @@
       return [s.p.x + side * nx / L * s.w, s.p.z + side * nz / L * s.w];
     });
   }
-  const YZ = sampleRiver(YANGTZE, 360), HAN = sampleRiver(HANSHUI, 200);   // 约 170 米一个采样
+  const YZ = sampleRiver(YANGTZE, 360), HAN = sampleRiver(HANSHUI, 200);   // 约 150 米一个采样
   const yzW = bank(YZ.s, +1), yzE = bank(YZ.s, -1);    // 长江北流：左岸即西岸
   const hanN = bank(HAN.s, +1), hanS = bank(HAN.s, -1);// 汉水东流：左岸即北岸
 
@@ -29,7 +29,7 @@
   const mouth = HAN.s[HAN.s.length - 1].p;
   let kk = 0, best = 1e18;
   yzW.forEach((p, i) => { const d = (p[0] - mouth.x) ** 2 + (p[1] - mouth.z) ** 2; if (d < best) { best = d; kk = i; } });
-  const HCUT = 3;                                       // 河口张开的余量：约 500 米
+  const HCUT = 3;                                       // 河口张开的余量：约 450 米
 
   const HANKOU = hanN.slice(0, hanN.length - HCUT)
     .concat(yzW.slice(kk + HCUT))
