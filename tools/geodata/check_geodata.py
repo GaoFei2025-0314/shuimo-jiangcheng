@@ -97,6 +97,8 @@ def main():
         check(bool(mid), '%s 有落在取景框内的点（实际 %d）' % (nm, len(mid)))
         check(lo <= max(mid, default=0) <= hi, '%s 框内最大半宽在 %d–%d 米（实际 %d）' % (nm, lo, hi, max(mid, default=0)))
         check(min(hw, default=0) >= 80, '%s 半宽不小于 80 米（实际 %d）' % (nm, min(hw, default=0)))
+        floor = sum(1 for w in hw if w <= 80)          # 80 米是提取时的下限：成片触底说明那段并不在水上
+        check(floor <= 2, '%s 半宽触底（≤80 米）的点不超过 2 个（实际 %d）' % (nm, floor))
         gaps = [math.hypot(*[b - a for a, b in zip(to_m(*pts[i][:2]), to_m(*pts[i + 1][:2]))]) for i in range(len(pts) - 1)]
         check(max(gaps, default=0) <= 900, '%s 相邻点间距不超过 900 米（实际 %d）' % (nm, max(gaps, default=0)))
 
@@ -145,6 +147,9 @@ def main():
         iz = round((h['peak'][1] - h['lat0']) / h['dlat'])
         on_grid = h['dlon'] > 0 > h['dlat'] and 0 <= ix < h['nx'] and 0 <= iz < h['nz'] and len(q) == h['nx'] * h['nz']
         check(on_grid and q[iz * h['nx'] + ix] == max(q, default=0), '%s 峰顶落在格子最高那一格（ix=%d, iz=%d）' % (nm, ix, iz))
+        rim = [q[j * h['nx'] + i] for j in range(h['nz']) for i in range(h['nx'])
+               if j in (0, h['nz'] - 1) or i in (0, h['nx'] - 1)] if len(q) == h['nx'] * h['nz'] else []
+        check(bool(rim) and max(rim) * .5 <= .5, '%s 格子外圈起伏 ≤0.5 米（实际 %.1f）' % (nm, max(rim, default=0) * .5))
         check(BBOX[0] <= h['peak'][0] <= BBOX[2] and BBOX[1] <= h['peak'][1] <= BBOX[3], '%s 峰顶在取景框内 %s' % (nm, h['peak']))
         if not h['name']:
             check(h['relief'] <= 60, '无名山按距离压低后 ≤60 米（实际 %.1f）' % h['relief'])

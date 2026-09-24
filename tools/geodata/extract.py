@@ -4,8 +4,10 @@
     python3 tools/geodata/extract.py [--dem-dir output/dem-wuhan] [--out src/geodata.gen.js]
 
 原则：数据定形，人工定高。
-  河道——在水体掩膜里走最小代价路径，沿河心取中泓线，半宽取离岸距离。
-        手绘中泓线只用来给起终点：它本身多数点并不在水上（长江 106 点里 69 点在岸上）。
+  河道——只认主河道：河道掩膜里与江心参考点连通的那一片（长江与汉水在南岸嘴相连）。
+        在其中走最小代价路径，沿河心取中泓线，半宽取离岸距离。长江两头、汉水上游一头
+        取主河道在工作窗口边上的出入口（离参考点最近的那段窗口边水面里离岸最远的一格，即江心），
+        汉水下游一头止于汇口。参考点取自改动前的手绘中泓线首尾——它们多半落在岸上，只用来挑出入口。
   湖泊——水体掩膜高斯圆滑后取 0.5 等值线，去掉 30 米格网抖出的碎边。
   山体——DSM 含建筑，无法直接当地形用：只取「高出局部基面」的连通地块作形状，
         峰值改用实测海拔，东部无名山按距离衰减。
@@ -28,21 +30,14 @@ O = (114.29694, 30.54694)                        # 黄鹤楼：场景原点，�
 M_LON = 111320 * math.cos(math.radians(30.55))
 M_LAT = 110900
 BBOX = (114.24, 30.50, 114.44, 30.61)            # 取景范围：山与湖只取此框内的
-WORK = (114.03, 30.36, 114.53, 30.77)            # 工作窗口：盖住手绘河道全程
+WORK = (114.03, 30.36, 114.53, 30.77)            # 工作窗口：长江、汉水从它的边上进出
 
-# 改动前 src/03-terrain.js 里的手绘中泓线，这里只取首尾两点作追踪的起终点
-YANGTZE_GUIDE = [
-    [114.1800, 30.3800, 600], [114.1950, 30.4100, 620], [114.2200, 30.4500, 640],
-    [114.2510, 30.4870, 700], [114.2650, 30.5120, 650], [114.2760, 30.5310, 600],
-    [114.2845, 30.5450, 570], [114.2880, 30.5560, 575], [114.2900, 30.5660, 600],
-    [114.2988, 30.5760, 625], [114.3082, 30.5865, 680], [114.3215, 30.5950, 750],
-    [114.3400, 30.6020, 820], [114.3650, 30.6080, 900], [114.3950, 30.6120, 950],
-    [114.4300, 30.6500, 980], [114.4700, 30.7000, 1000], [114.5000, 30.7400, 1000]]
-HANSHUI_GUIDE = [
-    [114.0600, 30.6220, 150], [114.1200, 30.6150, 145], [114.1700, 30.6050, 140],
-    [114.2180, 30.5960, 135], [114.2340, 30.5905, 135], [114.2500, 30.5855, 140],
-    [114.2640, 30.5790, 145], [114.2730, 30.5720, 150], [114.2800, 30.5660, 175],
-    [114.2870, 30.5630, 215]]
+# 河道起终点的参考点：改动前 src/03-terrain.js 手绘中泓线的首尾两点（上游在前）。
+# 这些点多半落在岸上（长江东北端那点离真江面约 5 公里），只用来挑主河道的出入口：
+# 窗口边上的一头取离它最近的那段窗口边水面，汉水下游一头就近吸附到汇口的主河道上
+YANGTZE_ENDS = ((114.1800, 30.3800), (114.5000, 30.7400))
+HANSHUI_ENDS = ((114.0600, 30.6220), (114.2870, 30.5630))
+MAIN_CHANNEL = (114.2830, 30.5520)   # 武汉长江大桥旁的江心（离岸约 490 米）：与它连通的河道才算主河道
 
 HILL_SIGMA_M = 100.0     # 山体最后一道圆滑。150 米会把 250 米宽的龟山抹成 430 米宽的土包
 PLAIN_TRUE_M = 23.0      # 武汉平原实际地面：去建筑后陆地中位 23.1 米（设计文档「可行性结论」）
@@ -77,7 +72,7 @@ class Grid:
     def sig(self, metres):                  # 各向异性的高斯 σ（行、列）
         return (metres / self.px_n, metres / self.px_e)
 
-    def rc(self, lon, lat):
+    def rc(self, lon, lat):                 # 连续行列，以像素左上角为原点：取整（int/floor）即所在像素
         c, r = ~self.tr * (lon, lat)
         return r, c
 
@@ -99,42 +94,89 @@ def read(dem_dir):
         dem = ds.read(1, window=w).astype(np.float32)
         tr = ds.window_transform(w)
     with rasterio.open(dem_dir / 'wuhan-glo30-water-mask.tif') as ds:
-        wbm = ds.read(1, window=from_bounds(*WORK, ds.transform))
+        w = from_bounds(*WORK, ds.transform)
+        wbm = ds.read(1, window=w)
+        tr_wbm = ds.window_transform(w)
     assert dem.shape == wbm.shape, (dem.shape, wbm.shape)
+    assert tr.almost_equals(tr_wbm, precision=1e-9), ('高程与水体掩膜的格网没对齐', tr, tr_wbm)
     return dem, wbm, Grid(tr, dem.shape)
 
 
 # ─────────────────────────── 河道 ───────────────────────────
 
-def river_mask(wbm, g):
-    """河道掩膜（类别 3）：闭运算补上船只、桥墩留下的小缺口。"""
-    m = ndimage.binary_closing(wbm == 3, iterations=2)
-    return ndimage.binary_opening(m, iterations=1)
+def river_mask(wbm):
+    """河道掩膜（类别 3）：闭运算补上船只、桥墩留下的小缺口，开运算去掉零星噪点。
+    先按边缘值外扩 4 格再做（闭运算的腐蚀从边上吃进 2 格，开运算再往里传 2 格），
+    否则窗口边上会被剥掉一圈，江面在窗口边就断了。"""
+    pad = 4
+    m = np.pad(wbm == 3, pad, mode='edge')
+    m = ndimage.binary_closing(m, iterations=2)
+    m = ndimage.binary_opening(m, iterations=1)
+    return m[pad:-pad, pad:-pad]
 
 
-def nearest_water(m, g, lon, lat, within_m=2500):
+def main_channel(m, g):
+    """主河道：与 MAIN_CHANNEL 八连通的那一片。窗口里别的河道碎片（弯出窗口又弯回来的河曲、
+    港汊）与它不连通，端点吸附到那上面，路径就得横穿陆地。"""
+    r, c = (int(v) for v in g.rc(*MAIN_CHANNEL))
+    assert m[r, c], '主河道参考点 %.4f,%.4f 不在河道上' % MAIN_CHANNEL
+    lab, _ = ndimage.label(m, structure=np.ones((3, 3)))
+    return lab == lab[r, c]
+
+
+def snap(m, g, lon, lat, within_m=500):
+    """m 里离 (lon, lat) 最近的一格。"""
     r, c = g.rc(lon, lat)
     rr, cc = np.nonzero(m)
-    d = np.hypot((rr - r) * g.px_n, (cc - c) * g.px_e)
+    d = np.hypot((rr + .5 - r) * g.px_n, (cc + .5 - c) * g.px_e)
     k = int(np.argmin(d))
-    assert d[k] <= within_m, '离 %.4f,%.4f 最近的水面有 %.0f 米' % (lon, lat, d[k])
+    assert d[k] <= within_m, '离 %.4f,%.4f 最近的主河道有 %.0f 米' % (lon, lat, d[k])
     return int(rr[k]), int(cc[k])
 
 
+def window_entry(m, dt_m, g, lon, lat):
+    """主河道在工作窗口边上的出入口：窗口边一圈上的主河道格子按八连通分段，
+    取离 (lon, lat) 最近的一段，再取段内离岸最远的一格——江心。"""
+    rim = np.zeros_like(m)
+    rim[[0, -1], :] = True
+    rim[:, [0, -1]] = True
+    lab, n = ndimage.label(m & rim, structure=np.ones((3, 3)))
+    assert n, '主河道没有碰到工作窗口边'
+    r, c = g.rc(lon, lat)
+    rr, cc = np.nonzero(lab)
+    k = lab[rr, cc][np.argmin(np.hypot((rr + .5 - r) * g.px_n, (cc + .5 - c) * g.px_e))]
+    rr, cc = np.nonzero(lab == k)
+    i = int(np.argmax(dt_m[rr, cc]))
+    return int(rr[i]), int(cc[i])
+
+
+def smooth_along(x, sigma, pin):
+    """沿程高斯顺一遍。pin=(头, 尾)：钉住的一头按端点作点对称外延，端点原地不动、直段也不被拉弯
+    （窗口边上的端点要贴着边）；不钉的一头照旧按端点值外延（mode='nearest'）。"""
+    k = int(4 * sigma + .5)                          # 与 gaussian_filter1d 默认截断半径一致
+    for widths, p in zip(((k, 0), (0, k)), pin):
+        x = np.pad(x, widths, mode='reflect', reflect_type='odd') if p else np.pad(x, widths, mode='edge')
+    return ndimage.gaussian_filter1d(x, sigma)[k:-k]
+
+
 def trace_river(m, dt_m, g, start, end, step_m=500.0):
-    """最小代价路径走河心：代价 = 1 / (1 + 离岸距离)，岸上极贵。沿程每 500 米取一点。"""
+    """最小代价路径走河心：代价 = 1 / (1 + 离岸距离 / 30 米)，岸上极贵。沿程每 500 米取一点。
+    start、end 是主河道上的 (行, 列)；落在窗口边上的一头，顺线时钉住不动。"""
     cost = np.where(m, 1.0 / (1.0 + dt_m / 30.0), 1e3)
-    path, _ = route_through_array(cost, nearest_water(m, g, *start), nearest_water(m, g, *end),
-                                  fully_connected=True, geometric=True)
-    path = np.array(path, dtype=float)
+    path, _ = route_through_array(cost, start, end, fully_connected=True, geometric=True)
+    path = np.array(path)
+    dry = int((~m[path[:, 0], path[:, 1]]).sum())
+    assert dry <= 5, '河道路径横穿了 %d 格陆地' % dry
+    path = path.astype(float)
     seg = np.hypot(np.diff(path[:, 0]) * g.px_n, np.diff(path[:, 1]) * g.px_e)
     s = np.concatenate([[0], np.cumsum(seg)])
     t = np.linspace(0, s[-1], max(3, int(round(s[-1] / step_m)) + 1))
     r, c = np.interp(t, s, path[:, 0]), np.interp(t, s, path[:, 1])
     hw = ndimage.map_coordinates(dt_m, [r, c], order=1)
     # 沿程顺一遍：位置 σ=1 点（500 米），宽度 σ=1.5 点，去掉码头趸船留下的折角
-    r = ndimage.gaussian_filter1d(r, 1.0, mode='nearest')
-    c = ndimage.gaussian_filter1d(c, 1.0, mode='nearest')
+    pin = [p[0] in (0, g.h - 1) or p[1] in (0, g.w - 1) for p in (start, end)]
+    r = smooth_along(r, 1.0, pin)
+    c = smooth_along(c, 1.0, pin)
     hw = np.maximum(ndimage.gaussian_filter1d(hw, 1.5, mode='nearest'), 80.0)
     out = []
     for ri, ci, wi in zip(r, c, hw):
@@ -148,6 +190,7 @@ def trace_river(m, dt_m, g, start, end, step_m=500.0):
 def lake_outlines(wbm, river_s, g):
     """东湖 σ=300 米取势；其余小湖 σ=90 米——300 米会把月湖这样的小湖整个抹掉。"""
     big = _lakes(wbm, river_s, g, 300.0, .3, only='东湖')
+    assert big, '没找到东湖'
     small = _lakes(wbm, river_s, g, 90.0, .15, skip=big[0]['_comp'])
     lakes = big + small
     lakes.sort(key=lambda L: (L['name'] != '东湖', -L['area_km2']))
@@ -197,17 +240,18 @@ def _lakes(wbm, river_s, g, sigma_m, min_km2, only=None, skip=None):
 
 def boat_orbit(comp, g):
     """东湖里最大的正置椭圆：舟船绕它行驶。离岸至少 150 米。"""
-    inner = ndimage.binary_erosion(comp, iterations=max(1, int(round(g.px(150)))))
+    # 按真实距离让岸：十字结构元逐格腐蚀出的是菱形，斜向只让出约 120 米
+    inner = ndimage.distance_transform_edt(comp, sampling=(g.px_n, g.px_e)) > 150
     dt = ndimage.distance_transform_edt(inner, sampling=(g.px_n, g.px_e))
     r0, c0 = np.unravel_index(np.argmax(dt), dt.shape)
     ce, cn = to_m(*g.ll(r0, c0))
-    th = np.linspace(0, 2 * np.pi, 96, endpoint=False)
+    th = np.linspace(0, 2 * np.pi, 720, endpoint=False)   # 周长上约 14 米验一点，不到半格：两点之间不会偷偷贴岸
     best = (0, 0, 0)
 
     def fits(rx, rz):
         lon, lat = to_ll(ce + rx * np.cos(th), cn + rz * np.sin(th))
         r, c = g.rc(lon, lat)
-        r, c = np.round(r).astype(int), np.round(c).astype(int)
+        r, c = np.floor(r).astype(int), np.floor(c).astype(int)
         if (r < 0).any() or (r >= g.h).any() or (c < 0).any() or (c >= g.w).any():
             return False
         return bool(inner[r, c].all())
@@ -285,7 +329,7 @@ def hills(dem, wbm, g, step_px=3):
         lon, lat = g.ll(r, c)
         if BBOX[0] <= lon <= BBOX[2] and BBOX[1] <= lat <= BBOX[3]:
             patches.append({'mask': comp, 'name': ''})
-    for nm, spec in NAMED.items():                   # 按参考点认名：参考点落在地块里，或离峰 900 米内
+    for nm, spec in NAMED.items():                   # 按参考点认名：参考点落在地块里，或离地块最近一格 900 米内
         if nm == '蛇山':
             continue
         r, c = g.rc(*spec['ref'])
@@ -308,8 +352,10 @@ def hills(dem, wbm, g, step_px=3):
     grow = max(1, int(round(g.px(90))))
     out = []
     for p in patches:
-        m = ndimage.binary_dilation(p['mask'], iterations=grow) & land
-        src = p['synth'] if 'synth' in p else np.maximum(rel, 0) * m
+        if 'synth' in p:
+            src = p['synth']
+        else:
+            src = np.maximum(rel, 0) * (ndimage.binary_dilation(p['mask'], iterations=grow) & land)
         f = gauss(src, g, HILL_SIGMA_M)
         r, c = np.unravel_index(np.argmax(f), f.shape)
         plon, plat = g.ll(r, c)
@@ -322,10 +368,14 @@ def hills(dem, wbm, g, step_px=3):
         else:
             target = measured * attenuation(plon, plat)
         f *= target / measured
+        # 抽样格子对到峰顶那一格（否则峰值落在两个样点之间，矮上两三米），并从峰顶往四边
+        # 按整步向外取到 f > .4 的范围之外：格子最外一圈全在山脚以外，拼到平地上没有断口
         rows, cols = np.nonzero(f > .4)
-        r0, r1, c0, c1 = rows.min(), rows.max(), cols.min(), cols.max()
-        r0 += (r - r0) % step_px                      # 把抽样格子对到峰顶那一格，
-        c0 += (c - c0) % step_px                      # 否则峰值会落在两个样点之间，矮上两三米
+        r0 = r - ((r - rows.min()) // step_px + 1) * step_px
+        r1 = r + ((rows.max() - r) // step_px + 1) * step_px
+        c0 = c - ((c - cols.min()) // step_px + 1) * step_px
+        c1 = c + ((cols.max() - c) // step_px + 1) * step_px
+        assert 0 <= r0 and r1 < g.h and 0 <= c0 and c1 < g.w, '%s 的格子出了工作窗口' % (p['name'] or '无名山')
         sub = f[r0:r1 + 1:step_px, c0:c1 + 1:step_px]
         q = np.clip(np.round(sub / .5), 0, 255).astype(np.uint8)
         lon0, lat0 = g.ll(r0, c0)
@@ -348,10 +398,13 @@ def main():
     dem, wbm, g = read(Path(a.dem_dir))
     print('工作窗口 %d×%d 像素，单像素 %.1f×%.1f 米' % (g.w, g.h, g.px_e, g.px_n))
 
-    river = river_mask(wbm, g)
-    dt_m = ndimage.distance_transform_edt(river, sampling=(g.px_n, g.px_e))
-    yz = trace_river(river, dt_m, g, YANGTZE_GUIDE[0][:2], YANGTZE_GUIDE[-1][:2])
-    han = trace_river(river, dt_m, g, HANSHUI_GUIDE[0][:2], HANSHUI_GUIDE[-1][:2])
+    river = river_mask(wbm)
+    main_r = main_channel(river, g)
+    dt_m = ndimage.distance_transform_edt(main_r, sampling=(g.px_n, g.px_e))
+    yz = trace_river(main_r, dt_m, g, window_entry(main_r, dt_m, g, *YANGTZE_ENDS[0]),
+                     window_entry(main_r, dt_m, g, *YANGTZE_ENDS[1]))
+    han = trace_river(main_r, dt_m, g, window_entry(main_r, dt_m, g, *HANSHUI_ENDS[0]),
+                      snap(main_r, g, *HANSHUI_ENDS[1]))
     print('长江 %d 点，半宽 %d–%d 米；汉水 %d 点，半宽 %d–%d 米' % (
         len(yz), min(p[2] for p in yz), max(p[2] for p in yz), len(han), min(p[2] for p in han), max(p[2] for p in han)))
 
