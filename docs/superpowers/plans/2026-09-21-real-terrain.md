@@ -819,7 +819,7 @@ git add build.sh && git commit -m "build.sh：拼入 geodata.gen.js"
 
 - [ ] **步骤 3：缩小河口余量**
 
-余量按采样点数算。原值 4 个点 ≈1.2 公里，会把南岸嘴的尖角连同晴川阁一起切出陆地之外。
+余量按采样点数算，加密后每点约 170 米。取 3 个点（约 500 米）：余量过大（试过 7 点≈1.2 公里）会把南岸嘴的尖角连同晴川阁一起切到三块陆地之外。
 
 在 `src/03-terrain.js` 里，把这一段：
 
@@ -830,7 +830,7 @@ git add build.sh && git commit -m "build.sh：拼入 geodata.gen.js"
 换成：
 
 ```js
-  const HCUT = 7;                                       // 河口张开的余量：约 1.2 公里
+  const HCUT = 3;                                       // 河口张开的余量：约 500 米
 ```
 
 - [ ] **步骤 4：构建并核对**
