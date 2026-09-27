@@ -127,6 +127,12 @@
       setTimeout(() => { if (!playing) ctx.suspend().catch(() => {}); }, 1600);
     }
 
+    app.cleanups.push(() => {
+      playing = false;
+      clearInterval(timer);
+      if (ctx) ctx.suspend().catch(() => {});
+      btn.setAttribute('aria-pressed', 'false');
+    });
     btn.addEventListener('click', () => {
       playing ? stop() : start();
       btn.setAttribute('aria-pressed', String(playing));

@@ -1,4 +1,3 @@
-  if (!window.THREE || !THREE.OrbitControls || !THREE.BufferGeometryUtils) { document.getElementById('err').style.display = 'grid'; return; }
   const BGU = THREE.BufferGeometryUtils;
 
   /* ═════════ 一、真实地理投影 ═════════
@@ -26,6 +25,11 @@
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
   renderer.setClearColor(0x000000, 0);
   stage.appendChild(renderer.domElement);
+  renderer.domElement.addEventListener('webglcontextlost', event => {
+    event.preventDefault();
+    app.fail('三维画面已中断，请重新加载。');
+  });
+  app.cleanups.push(() => renderer.dispose());
 
   const PAPER = new THREE.Color('#E6E3DA');
   const scene = new THREE.Scene();

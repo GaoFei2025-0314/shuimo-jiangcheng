@@ -11,19 +11,48 @@
 ./build.sh          # src/ → dist/index.html
 ```
 
-无依赖、无打包器。`dist/index.html` 是完全自包含的单文件，直接用浏览器打开即可，
-Three.js（r128）、OrbitControls、BufferGeometryUtils、GSAP 均从公共 CDN 引入。
+无需打包器，输出为可直接用浏览器打开的单文件 HTML。**单文件分发仍需联网**：
+Three.js（r128）、OrbitControls、BufferGeometryUtils、GSAP 从公共 CDN 加载，字体使用 Google Fonts，失败时回退系统字体。
+依赖加载超过 15 秒、资源失败或图形上下文丢失时，页面提供明确提示和“重新加载”入口。
+
+`npm ci` 安装锁定版本的开发工具；构建优先使用本地 Terser，缺少压缩工具时输出未压缩版本，不临时下载工具。
+构建需要 Node.js 进行语法检查；缺少 Node 或源码语法错误都会中止，并保留上次有效产物。
+
+```bash
+npm ci
+npm run test:build
+npx playwright install chromium webkit
+npm run test:browser
+# 可选：直接打开 file:// 单文件，验证真实 CDN 和音乐开关
+node tests/live-smoke.cjs chromium
+node tests/live-smoke.cjs webkit
+```
+
+浏览器回归测试使用与 CDN 相同版本的库的本地副本，并注入网络、超时和 WebGL 故障。
+测试依赖只用于开发，不打入页面；截图、报告和失败追踪保存在 `output/playwright/`。
+本轮修复的验收记录和截图见 [体验修复验收](docs/repair-map-experience.md)。
+
+## 浏览与无障碍
+
+手机竖屏与矮横屏采用地图优先布局：底部导航可横向滑动，题跋和详情按需展开。
+全城和景点镜头根据界面实际占用空间自动取景；窗口变化只重排预设镜头，手动浏览的位置保留。
+单指旋转，双指缩放或平移；桌面使用拖拽和滚轮。开始手势会立即取消正在进行的镜头切换。
+牌签之间和界面之间保留至少 8px 间距；隐藏牌签不会进入键盘焦点，所有景点仍可用底部导航访问。
+系统开启“减少动态效果”后，镜头直接切换，水面、烟雾、舟船和飞鸟停止自动运动，偏好变化即时生效。
 
 ## 目录
 
 ```
 src/
-  00-shell.html      页面骨架：CSS、题名、竖排诗、导览、罗盘与比例尺、CDN 引入
+  00-shell.html      页面骨架：CSS、题名、竖排诗、导览、罗盘与比例尺
+  00-boot.js         依赖加载、15 秒超时、就绪状态与失败恢复
   01-core.js         经纬度投影、水墨 Shader、几何累加器、通用构件
   02-landmarks.js    七处地标的程序化建模
   03-terrain.js      两江河道、三镇陆块、东湖、山体、水纹图与江面 Shader
   04-scene.js        景点落位、草木、市廛、舟船、飞鸟、烟波
-  05-runtime.js      镜头、地名题记、地标竖牌、点选、渲染循环
+  05-layout.js       紧凑面板、可用画幅与包围盒取景
+  05-overlays.js     地名与牌签投影、碰撞避让、尺寸和排版缓存
+  05-runtime.js      镜头状态、点选、渲染循环
   06-audio.js        背景音乐：Web Audio 合成的古琴、水声与江风
 build.sh             拼接脚本（<script> 与 IIFE 的包裹在此，不在源码里）
 dist/index.html      构建产物
