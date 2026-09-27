@@ -287,6 +287,169 @@
     return finish(S, g);
   }
 
+  const oct = (r0, r1, h) => new THREE.CylinderGeometry(r1, r0, h, 8);   // 八角柱：下径 r0，上径 r1
+
+  // ── 洪山宝塔 · 宝通禅寺：八面七级砖石仿木塔（元代），塔前一进殿堂
+  function buildPagoda() {
+    const g = new THREE.Group(), S = mkS();
+    S.pale.box(26, 8, 34, 0, -4, 6);                                        // 依山的台地
+    S.pale.geo(oct(6.2, 5.8, 1.6), 0, .8, 0);                               // 须弥座
+    let y = 1.6, r = 4.6;
+    for (let k = 0; k < 7; k++) {
+      const h = 3.6 - k * .18, d = r * .97 * Math.cos(Math.PI / 8) + .05;
+      S.wall.geo(oct(r, r * .97, h), 0, y + h / 2, 0);
+      for (let f = 0; f < 8; f += 2) {                                      // 四面券门，逐层错开一面
+        const a = (f + .5 + (k % 2)) * Math.PI / 4;
+        S.dark.box(1.1, h * .5, .12, Math.sin(a) * d, y + h * .45, Math.cos(a) * d, a);
+      }
+      S.roofs.geo(new THREE.CylinderGeometry(r * .9, r + 1.3, .9, 8), 0, y + h + .1, 0);   // 腰檐
+      S.pale.geo(oct(r * .95, r * .9, .35), 0, y + h + .72, 0);            // 平座
+      y += h + .9; r *= .92;
+    }
+    S.roofs.geo(new THREE.ConeGeometry(r + .9, 2.4, 8), 0, y + 1.2, 0);
+    const spire = new THREE.Mesh(new THREE.LatheGeometry([[0, 0], [.7, .1], [.5, .8], [.9, 1.3], [.4, 2.0], [.6, 2.5], [.25, 3.4], [0, 4.2]]
+      .map(p => new THREE.Vector2(p[0], p[1])), 10), M.pale);
+    spire.position.y = y + 2.2; ink(spire, 25);
+    hall(S, 3.8, 0, 3.4, { R: 6.6, H: 2.2, lift: 1.0, cols: 4, z: 14 });   // 塔前殿
+    finish(S, g); g.add(spire);
+    return g;
+  }
+
+  // ── 汉口水塔：八角形砖塔，腰线分层，顶上瞭望亭（1909 年）
+  function buildWaterTower() {
+    const g = new THREE.Group(), S = mkS(), R = [5.4, 5.2, 5.0, 4.8, 4.6, 4.4], FH = 3.6;
+    S.pale.box(16, 6, 16, 0, -3, 0);
+    S.pale.geo(oct(6.4, 6.2, 1.2), 0, .6, 0);
+    let y = 1.2;
+    R.forEach((r, k) => {
+      const d = r * Math.cos(Math.PI / 8) + .02;
+      S.wall.geo(oct(r, R[k + 1] || r * .96, FH), 0, y + FH / 2, 0);
+      for (let f = 0; f < 8; f++) {
+        const a = (f + .5) * Math.PI / 4;
+        S.dark.box(1.0, k === 0 ? 2.4 : 1.6, .1, Math.sin(a) * d, y + FH * .5, Math.cos(a) * d, a);
+      }
+      S.pale.geo(oct(r + .35, r + .35, .3), 0, y + FH, 0);                  // 腰线
+      y += FH;
+    });
+    S.pale.geo(oct(5.0, 5.0, .5), 0, y + .25, 0);                           // 挑台
+    for (let f = 0; f < 16; f++) { const a = f / 16 * Math.PI * 2; S.dark.box(.12, 1.0, .12, Math.sin(a) * 4.8, y + 1, Math.cos(a) * 4.8); }
+    S.wall.geo(oct(2.6, 2.4, 3.0), 0, y + 2, 0);                            // 瞭望亭
+    S.roofs.geo(new THREE.ConeGeometry(3.4, 2.6, 8), 0, y + 4.8, 0);
+    S.dark.cyl(.08, 3, 0, y + 7.4, 0);
+    return finish(S, g);
+  }
+
+  // ── 湖北省博物馆：楚式高台建筑，一主两翼，深檐高脊
+  function buildMuseum() {
+    const g = new THREE.Group(), S = mkS();
+    S.pale.box(64, 5, 34, 0, -2.5, 0);
+    let y = 0;
+    [[40, 22, 1.4], [34, 18, 1.4], [28, 15, 1.2]].forEach(([w, d, h]) => { S.pale.box(w, h, d, 0, y + h / 2, 0); y += h; });   // 三层高台
+    for (let i = 0; i < 10; i++) S.pale.box(8, .4 * (i + 1), .7, 0, .2 * (i + 1), 14 - i * .65);
+    hall(S, 7.2, 4.0, 5.2, { R: 10.6, r: 1.2, H: 4.4, lift: 1.5, cols: 6 });           // 主馆
+    S.roofs.geo(roofGeo(13.2, 7.9, 1.2, .9, 18, 5), 0, 6.6, 0);                         // 主馆重檐
+    [-1, 1].forEach(s => {                                                              // 两翼
+      S.pale.box(16, 2.2, 14, s * 22, 1.1, 2);
+      hall(S, 5.0, 2.2, 4.2, { R: 8.6, r: .6, H: 3.0, lift: 1.2, cols: 4, x: s * 22, z: 2 });
+      S.pale.box(6, 1.2, 4, s * 12.5, 3.2, 0);                                          // 连廊
+    });
+    return finish(S, g);
+  }
+
+  // ── 红楼（湖北谘议局旧址）：两层红砖楼，中部门楼、山花与穹顶钟楼（1910 年）
+  function buildHonglou() {
+    const g = new THREE.Group(), S = mkS(), W = 40, D = 13, FL = 4.4, Y0 = 1.0;
+    S.pale.box(W + 6, 7, D + 9, 0, Y0 - 3.5, 1);
+    S.wall.box(W, 2 * FL, D, 0, Y0 + FL, 0);
+    [0, 1, 2].forEach(f => S.pale.box(W + .5, .3, D + .5, 0, Y0 + f * FL, 0));        // 腰线、檐口
+    for (let f = 0; f < 2; f++) for (let k = -7; k <= 7; k++) {
+      if (Math.abs(k) < 2) continue;
+      S.dark.box(1.2, 2.3, .12, k * 2.5, Y0 + f * FL + 2.2, D / 2 + .06);
+      S.pale.box(1.7, .26, .3, k * 2.5, Y0 + f * FL + 3.55, D / 2 + .12);
+    }
+    S.wall.box(10, 2 * FL + 1.2, D + 4, 0, Y0 + FL + .6, 2);                            // 中部门楼
+    for (let i = 0; i < 4; i++) S.pale.cyl(.5, FL - .3, -3.3 + i * 2.2, Y0 + (FL - .3) / 2, D / 2 + 4.4);
+    S.pale.box(10.4, .5, 4.6, 0, Y0 + FL - .05, D / 2 + 2.3);                           // 门廊顶即二层阳台
+    for (let i = 0; i < 12; i++) S.dark.box(.1, .9, .1, -4.6 + i * .84, Y0 + FL + .65, D / 2 + 4.5);
+    S.dark.box(2.6, 3.2, .2, 0, Y0 + 1.6, D / 2 + 4.05);
+    const ps = new THREE.Shape(); ps.moveTo(-5.4, 0); ps.lineTo(5.4, 0); ps.lineTo(0, 2.4); ps.closePath();
+    S.pale.geo(new THREE.ExtrudeGeometry(ps, { depth: .8, bevelEnabled: false }), 0, Y0 + 2 * FL + 1.2, D / 2 + 3.4);   // 山花
+    [-1, 1].forEach(s => {                                                              // 两坡屋面
+      const slab = new THREE.BoxGeometry(W - 1, .5, D / 2 + 1.2); slab.rotateX(s * .42);
+      S.roofs.geo(slab, 0, Y0 + 2 * FL + 1.3, s * D / 4);
+    });
+    S.wall.box(5.4, 3.6, 5.4, 0, Y0 + 2 * FL + 3, 0);                                  // 钟楼
+    S.pale.disc(1.4, .2, 0, Y0 + 2 * FL + 3, 2.8, 0); S.dark.disc(.1, .3, 0, Y0 + 2 * FL + 3, 2.8, 0);
+    const dome = new THREE.Mesh(new THREE.LatheGeometry([[3.2, 0], [3.4, .3], [2.9, 1.6], [1.8, 2.8], [.6, 3.5], [0, 3.7]]
+      .map(p => new THREE.Vector2(p[0], p[1])), 16), M.roof);
+    dome.position.y = Y0 + 2 * FL + 4.8; ink(dome, 35);
+    S.dark.cyl(.07, 4, 0, Y0 + 2 * FL + 10.5, 0);
+    finish(S, g); g.add(dome);
+    return g;
+  }
+
+  // ── 鹦鹉洲长江大桥：三塔悬索桥，门形塔，主缆垂链，吊索成排（2014 年）。half 为半桥长（场景单位）
+  function buildSuspension(half) {
+    const g = new THREE.Group(), pale = new Acc(), dark = new Acc(), solid = new Acc();
+    const DECK = 7.5, TOP = 36, B = 7.0, TZ = [-half * .56, 0, half * .56];
+    pale.box(2 * B + 1.6, .7, 2 * half, 0, DECK, 0);
+    [-1, 1].forEach(s => pale.box(.5, .5, 2 * half, s * (B + .5), DECK + .5, 0));
+    TZ.forEach(z => {
+      [-1, 1].forEach(s => solid.beam(V(s * (B + 1.4), -2, z), V(s * (B - .2), TOP, z), 2.0));   // 塔肢收分
+      solid.box(2 * B + 1.4, 1.6, 2.0, 0, DECK - 1.6, z);
+      solid.box(2 * B + .2, 1.8, 2.0, 0, TOP - 2.5, z);
+      solid.box(2 * B - 1, 1.2, 2.0, 0, TOP * .72, z);
+      pale.box(2 * B + 6, 3, 7, 0, -1.5, z);                                            // 承台
+    });
+    const spans = [[-half, TZ[0], DECK + 1, TOP - .8, 3], [TZ[0], TZ[1], TOP - .8, TOP - .8, TOP - DECK - 4],
+                   [TZ[1], TZ[2], TOP - .8, TOP - .8, TOP - DECK - 4], [TZ[2], half, TOP - .8, DECK + 1, 3]];
+    [-1, 1].forEach(s => spans.forEach(([za, zb, ya, yb, sag]) => {
+      const x = s * (B - .2), pts = [];
+      for (let i = 0; i <= 24; i++) { const t = i / 24; pts.push([za + (zb - za) * t, ya + (yb - ya) * t - sag * 4 * t * (1 - t)]); }
+      for (let i = 0; i < 24; i++) dark.beam(V(x, pts[i][1], pts[i][0]), V(x, pts[i + 1][1], pts[i + 1][0]), .45);   // 主缆
+      for (let i = 1; i < 24; i++) if (pts[i][1] > DECK + 1.5) dark.beam(V(x, DECK + .6, pts[i][0]), V(x, pts[i][1], pts[i][0]), .1);   // 吊索
+    }));
+    g.add(pale.mesh(M.pale, true, 30), solid.mesh(M.std, true, 30), dark.mesh(brushMat, false));
+    return g;
+  }
+
+  // ── 归元禅寺：山门、钟鼓楼、大雄宝殿、藏经阁一线排开，旁有田字形罗汉堂（1658 年）
+  function buildGuiyuan() {
+    const g = new THREE.Group(), S = mkS();
+    S.pale.box(62, 5, 64, 6, -2.5, 0);
+    const wall = (x0, z0, x1, z1) => S.wall.box(Math.abs(x1 - x0) + .8, 2.4, Math.abs(z1 - z0) + .8, (x0 + x1) / 2, 1.2, (z0 + z1) / 2);
+    wall(-14, -30, 36, -30); wall(-14, 30, 36, 30); wall(-14, -30, -14, 30); wall(36, -30, 36, 30);   // 院墙
+    hall(S, 3.4, 0, 3.4, { R: 6.2, H: 2.0, lift: 1.0, cols: 4, z: 26 });                  // 山门
+    [-1, 1].forEach(s => {                                                                 // 钟楼、鼓楼
+      hall(S, 2.0, 0, 3.0, { R: 4.2, r: 2.2, H: 1.2, lift: .8, cols: 2, x: s * 8, z: 15, win: false });
+      hall(S, 1.6, 3.0, 2.4, { R: 3.6, H: 2.0, lift: .8, cols: 2, x: s * 8, z: 15, win: false, rail: false });
+    });
+    S.pale.box(20, 1.2, 16, 0, .6, 0);
+    hall(S, 7.0, 1.2, 5.0, { R: 11.2, r: 1.5, H: 3.6, lift: 1.4, cols: 6 });               // 大雄宝殿
+    S.roofs.geo(roofGeo(12.4, 7.3, 1.2, 1.0, 18, 5), 0, 3.8, 0);                          // 重檐
+    hall(S, 5.2, 0, 3.6, { R: 8.4, r: 4.6, H: 1.4, lift: 1.0, cols: 5, z: -20 });         // 藏经阁
+    hall(S, 4.2, 3.6, 3.2, { R: 7.2, H: 2.6, lift: 1.1, cols: 4, z: -20 });
+    S.wall.box(15, 3.2, 15, 24, 1.6, -6);                                                   // 罗汉堂：田字形
+    [[-3.75, -3.75], [3.75, -3.75], [-3.75, 3.75], [3.75, 3.75]].forEach(([dx, dz]) =>
+      S.roofs.geo(roofGeo(4.6, .3, 1.8, .6, 10, 3), 24 + dx, 3.1, -6 + dz));
+    return finish(S, g);
+  }
+
+  // ── 古琴台：汉白玉方台与石栏，台后一殿，两侧碑廊，前立牌坊；台面朝西，临月湖
+  function buildQintai() {
+    const g = new THREE.Group(), S = mkS();
+    S.pale.box(30, 5, 38, 0, -2.5, -2);
+    S.pale.box(11, 1.4, 11, 0, .7, 4);                                                    // 琴台
+    ringAt(S.dark, 5.2, 1.9, .12, 1.3, 0, 4);                                              // 石栏
+    perim(5.2, 1.3).forEach(p => S.dark.box(.22, 1.0, .22, p[0], 1.9, 4 + p[1]));
+    for (let i = 0; i < 4; i++) S.pale.box(4, .35 * (i + 1), .6, 0, .175 * (i + 1), 11.6 - i * .6);
+    hall(S, 4.0, 0, 3.6, { R: 7.0, H: 2.4, lift: 1.1, cols: 4, z: -9 });
+    [-1, 1].forEach(s => S.wall.box(1.2, 2.2, 16, s * 13, 1.1, -4));                        // 碑廊
+    [-1, 1].forEach(s => S.dark.cyl(.35, 5.2, s * 3.2, 2.6, 16));                          // 牌坊
+    S.pale.box(8.6, .8, 1.1, 0, 5.4, 16); S.roofs.box(9.6, .5, 2.2, 0, 6.0, 16);
+    return finish(S, g);
+  }
+
   /* ── 舟船 ── */
   function sampan() {
     const g = new THREE.Group();
