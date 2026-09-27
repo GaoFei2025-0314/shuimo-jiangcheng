@@ -90,6 +90,7 @@
   controls.addEventListener('start', () => { stopFlight(); cameraMode = 'manual'; });
   motionPreference.addEventListener('change', event => {
     reduce = event.matches;
+    overlays.invalidate();
     const wasFlying = !!flight;
     stopFlight();
     controls.enableDamping = !reduce;

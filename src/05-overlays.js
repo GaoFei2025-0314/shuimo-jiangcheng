@@ -36,8 +36,10 @@
       markBox.appendChild(el);
       return { el, key: m[1], v: new THREE.Vector3(m[2].x, m[3], m[2].z) };
     });
+    let entering = true;
     function setMarkVisibility(mark, visible, opacity) {
-      if (!visible && document.activeElement === mark.el) {
+      const interactive = visible && !entering;
+      if (!interactive && document.activeElement === mark.el) {
         const key = mark.key === 'chutian' ? 'lake' : mark.key;
         const button = buttons.find(b => b.dataset.view === key);
         if (button) {
@@ -45,12 +47,12 @@
           button.scrollIntoView({ block: 'nearest', inline: 'nearest' });
         }
       }
-      mark.el.disabled = !visible;
-      mark.el.tabIndex = visible ? 0 : -1;
-      mark.el.setAttribute('aria-hidden', String(!visible));
+      mark.el.disabled = !interactive;
+      mark.el.tabIndex = interactive ? 0 : -1;
+      mark.el.setAttribute('aria-hidden', String(!interactive));
       mark.el.style.visibility = visible ? 'visible' : 'hidden';
       mark.el.style.opacity = visible ? opacity.toFixed(3) : '0';
-      mark.el.style.pointerEvents = visible ? 'auto' : 'none';
+      mark.el.style.pointerEvents = interactive ? 'auto' : 'none';
     }
     const RANGE = { town: [340, 3200], water: [140, 2800], hill: [70, 1000] };
     const projV = new THREE.Vector3();
@@ -112,6 +114,8 @@
     // OrbitControls 的球坐标往返可能产生极小的浮点误差，不应触发重新排版。
     const sameMatrix = (a, b) => a.elements.every((v, i) => Math.abs(v - b.elements[i]) < 1e-10);
     function invalidate() { sizesDirty = true; dirty = true; }
+    markBox.addEventListener('animationend', invalidate);
+    markBox.addEventListener('animationcancel', invalidate);
     const observer = new ResizeObserver(invalidate);
     [...MARKS, ...LABELS].forEach(item => observer.observe(item.el));
     app.cleanups.push(() => observer.disconnect());
@@ -120,6 +124,7 @@
       draw(w, h, activeView, blocks, farScale) {
         const focus = document.activeElement;
         if (!dirty && lastView === activeView && lastFocus === focus && sameMatrix(lastWorld, camera.matrixWorld) && sameMatrix(lastProjection, camera.projectionMatrix)) return;
+        entering = markBox.getAnimations().some(a => a.playState === 'running');
         viewportWidth = w; viewportHeight = h;
         if (sizesDirty) {
           [...MARKS, ...LABELS].forEach(item => {

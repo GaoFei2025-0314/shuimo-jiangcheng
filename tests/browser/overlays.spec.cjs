@@ -74,3 +74,16 @@ test('Chutian landmark remains selectable from the lake view', async ({ page }) 
   await expect(page.locator('#cardTitle')).toHaveText('东湖 · 楚天台');
   await expect(page.locator('#b-lake')).toHaveAttribute('aria-pressed', 'true');
 });
+
+test('entry animations and their cancellation keep marks clear of moving UI', async ({ page }) => {
+  await page.setViewportSize({ width: 844, height: 390 });
+  await page.emulateMedia({ reducedMotion: 'no-preference' });
+  await ready(page);
+  for (let i = 0; i < 8; i++) {
+    expect(await collisions(page)).toEqual([]);
+    expect(await page.locator('.mark:enabled').evaluateAll(marks => marks.every(m => Number(getComputedStyle(m).opacity) > .35 && Number(getComputedStyle(m.parentElement).opacity) > .01))).toBe(true);
+    await page.waitForTimeout(100);
+  }
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await expect.poll(() => collisions(page)).toEqual([]);
+});

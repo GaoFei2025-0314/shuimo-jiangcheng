@@ -37,15 +37,28 @@
     elements.forEach(el => {
       observer.observe(el);
       el.addEventListener('animationend', invalidate);
+      el.addEventListener('animationcancel', invalidate);
     });
-    if (document.fonts) document.fonts.ready.then(invalidate);
+    if (document.fonts) {
+      document.fonts.ready.then(invalidate);
+      document.fonts.addEventListener('loadingdone', invalidate);
+    }
     app.cleanups.push(() => observer.disconnect());
     updatePanels();
     return {
       get compact() { return media.matches; },
       measure(width, height) {
         const blocks = elements.filter(el => !el.hidden)
-          .map(el => ({ id: el.id, rect: el.getBoundingClientRect() })).filter(b => b.rect.width > 0);
+          .map(el => {
+            const r = el.getBoundingClientRect();
+            let top = r.top, bottom = r.bottom;
+            // inkRise 只改变 transform，ResizeObserver 不会逐帧通知；预留完整的 14px 入场范围。
+            if (['title', 'poem', 'dock'].includes(el.id) && el.getAnimations().some(a => a.playState === 'running')) {
+              top = Math.min(top, el.offsetTop);
+              bottom = Math.max(bottom, el.offsetTop + el.offsetHeight + 14);
+            }
+            return { id: el.id, rect: { left: r.left, right: r.right, top, bottom, width: r.width } };
+          }).filter(b => b.rect.width > 0);
         let top = 0, bottom = height;
         if (media.matches) {
           blocks.forEach(({ id, rect }) => {

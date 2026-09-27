@@ -59,3 +59,11 @@
       clearTimeout(timer);
     }
   }
+
+  // 字体是渐进增强：动态样式表不会阻塞内联启动脚本和地图首帧。
+  const fontSheet = document.createElement('link');
+  fontSheet.rel = 'stylesheet';
+  fontSheet.media = 'print';
+  fontSheet.href = 'https://fonts.googleapis.com/css2?family=Ma+Shan+Zheng&family=Noto+Serif+SC:wght@400;600&display=swap';
+  fontSheet.onload = () => { fontSheet.media = 'all'; };
+  document.head.appendChild(fontSheet);
