@@ -190,38 +190,54 @@
   const LAND_HOLES = [holesIn(HANKOU), holesIn(HANYANG), holesIn(WUCHANG)];
   scene.add(landMesh(HANKOU, LAND_HOLES[0]), landMesh(HANYANG, LAND_HOLES[1]), landMesh(WUCHANG, LAND_HOLES[2]));
 
-  /* ═════════ 六、山：蛇山、龟山、珞珈山、磨山 ═════════ */
-  const ridges = [];
-  function makeRidge(aG, bG, halfWm, h, seg, mat) {
-    const a = geo(aG[0], aG[1]), b = geo(bG[0], bG[1]);
-    const cx = (a.x + b.x) / 2, cz = (a.z + b.z) / 2, dx = b.x - a.x, dz = b.z - a.z;
-    const L = Math.hypot(dx, dz) / 2, ux = dx / (2 * L), uz = dz / (2 * L), w = halfWm / MPU;
-    const base = LAND_Y - h * .34;
-    const m = ellipsoid(L, h, w, cx, base, cz, mat || M.hill, seg || 34);
-    m.rotation.y = Math.atan2(-dz, dx);
-    const r = {
-      mesh: m, cx, cz, L, w, h, base,
-      top: (x, z) => {
-        const px = x - cx, pz = z - cz;
-        const u = (px * ux + pz * uz) / L, v = (-px * uz + pz * ux) / w, q = 1 - u * u - v * v;
-        return q <= 0 ? -1e9 : base + h * Math.sqrt(q);
-      }
-    };
-    ridges.push(r); scene.add(m); return r;
+  /* ═════════ 六、山：形取 DEM，高取实测海拔（tools/geodata/extract.py） ═════════
+     每座山一块高程格子（相对平原的起伏，0.5 米一级）。网格点之间用 Catmull-Rom 双三次插值，
+     轮廓是圆的，不见格子。山脚没入水下，临江临湖的山自然入水。 */
+  const VEX = 5 / MPU;                                  // 米 → 场景单位，竖向五倍
+  const HILL_DIP = 2.6;                                 // 起伏归零处沉到水面以下，山裙不浮在水上
+  function hillField(t) {
+    const bin = atob(t.q), a = new Float32Array(bin.length);
+    for (let i = 0; i < bin.length; i++) a[i] = bin.charCodeAt(i) * .5 * VEX;
+    const o = geo(t.lon0, t.lat0), e = geo(t.lon0 + t.dlon, t.lat0 + t.dlat);
+    return { a, nx: t.nx, nz: t.nz, x0: o.x, z0: o.z, dx: e.x - o.x, dz: e.z - o.z };
   }
-  const SHESHAN  = makeRidge([114.2930, 30.5476], [114.3170, 30.5444], 260, 32);   // 蛇山（黄鹤楼所在）
-  const GUISHAN  = makeRidge([114.2800, 30.5590], [114.2635, 30.5528], 260, 34);   // 龟山（电视塔所在，全长 1730 米）
-  const MOSHAN   = makeRidge([114.4015, 30.5508], [114.4098, 30.5318], 330, 40);   // 磨山（东湖南岸，楚天台所在）
-  const LUOJIA   = makeRidge([114.3608, 30.5352], [114.3700, 30.5392], 255, 36);   // 珞珈山
-  const SHIZI    = makeRidge([114.3590, 30.5402], [114.3668, 30.5418], 170, 23);   // 狮子山（老斋舍所在）
-  makeRidge([114.3370, 30.5420], [114.3455, 30.5438], 175, 21);                    // 洪山
-  makeRidge([114.4140, 30.5250], [114.4270, 30.5288], 245, 25);                    // 马鞍山
-  makeRidge([114.2680, 30.5430], [114.2790, 30.5408], 205, 18);                    // 汉阳米粮山一带
-  const terrainTop = (x, z) => {
-    let y = LAND_Y;
-    for (const r of ridges) { const t = r.top(x, z); if (t > y) y = t; }
+  const crSpline = (p0, p1, p2, p3, t) =>
+    p1 + .5 * t * (p2 - p0 + t * (2 * p0 - 5 * p1 + 4 * p2 - p3 + t * (3 * (p1 - p2) + p3 - p0)));
+  function sampleField(f, x, z) {
+    const u = (x - f.x0) / f.dx, v = (z - f.z0) / f.dz;
+    if (u < 0 || v < 0 || u > f.nx - 1 || v > f.nz - 1) return 0;
+    const i = Math.floor(u), j = Math.floor(v), fx = u - i, fz = v - j;
+    const at = (ii, jj) => f.a[Math.min(f.nz - 1, Math.max(0, jj)) * f.nx + Math.min(f.nx - 1, Math.max(0, ii))];
+    const row = jj => crSpline(at(i - 1, jj), at(i, jj), at(i + 1, jj), at(i + 2, jj), fx);
+    return Math.max(0, crSpline(row(j - 1), row(j), row(j + 1), row(j + 2), fz));
+  }
+  const HILLS = GEO.hills.map(t => {
+    const f = hillField(t), pk = geo(t.peak[0], t.peak[1]);
+    const SUB = 2, cols = (f.nx - 1) * SUB + 1, rows = (f.nz - 1) * SUB + 1;
+    const pos = new Float32Array(cols * rows * 3), idx = [];
+    for (let j = 0; j < rows; j++) for (let i = 0; i < cols; i++) {
+      const x = f.x0 + i / SUB * f.dx, z = f.z0 + j / SUB * f.dz, h = sampleField(f, x, z), k = (j * cols + i) * 3;
+      pos[k] = x - pk.x;                                // 以山顶为原点：皴笔自山顶放射，顺坡而下
+      pos[k + 1] = LAND_Y + h - HILL_DIP * (1 - THREE.MathUtils.smoothstep(h, 0, 1.5));
+      pos[k + 2] = z - pk.z;
+    }
+    for (let j = 0; j < rows - 1; j++) for (let i = 0; i < cols - 1; i++) {
+      const a = j * cols + i, b = a + 1, c = a + cols, d = c + 1;
+      idx.push(a, c, b, b, c, d);
+    }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.BufferAttribute(pos, 3)); g.setIndex(idx); g.computeVertexNormals();
+    const mesh = new THREE.Mesh(g, M.hill); mesh.position.set(pk.x, 0, pk.z);
+    scene.add(mesh);
+    return { name: t.name, f, mesh, peak: pk, x0: f.x0, x1: f.x0 + (f.nx - 1) * f.dx, z0: f.z0, z1: f.z0 + (f.nz - 1) * f.dz };
+  });
+  const HILL = {}; HILLS.forEach(h => { if (h.name) HILL[h.name] = h; });
+  const reliefAt = (x, z) => {
+    let y = 0;
+    for (const h of HILLS) if (x >= h.x0 && x <= h.x1 && z >= h.z0 && z <= h.z1) y = Math.max(y, sampleField(h.f, x, z));
     return y;
   };
+  const terrainTop = (x, z) => LAND_Y + reliefAt(x, z);
 
   // 远山：层层淡出，烘托「烟波浩渺」
   [

@@ -78,12 +78,13 @@
     ['蛇山', 114.3085, 30.5458, 'hill', 26],
     ['龟山', 114.2700, 30.5562, 'hill', 30],
     ['珞珈山', 114.3655, 30.5372, 'hill', 28],
-    ['磨山', 114.4062, 30.5395, 'hill', 30]
+    ['磨山', 114.4174, 30.5524, 'hill', 30]
   ].map(L => {
     const el = document.createElement('b'); el.className = L[3]; el.textContent = L[0];
     labelBox.appendChild(el);
     const p = geo(L[1], L[2]);
-    return { el, v: new THREE.Vector3(p.x, L[4], p.z), kind: L[3] };
+    const y = L[3] === 'hill' ? terrainTop(p.x, p.z) + 7 : L[4];     // 山名题在山头之上，随实测山高
+    return { el, v: new THREE.Vector3(p.x, y, p.z), kind: L[3] };
   });
   /* 地标竖牌 */
   const markBox = document.getElementById('marks');

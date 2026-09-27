@@ -88,25 +88,24 @@
   const KEEP = [AT.tower, AT.tv, AT.qc, AT.chutian, geo(114.3625, 30.5397)];
   const clearOf = (x, z, r) => KEEP.every(k => (k.x - x) ** 2 + (k.z - z) ** 2 > r * r);
   const CORE = geo(114.2950, 30.5600);
-  function dressRidge(r, n, kind, s0) {
+  // 在山的格子里撒点，只留起伏超过 3 个单位的（真在山上，不在山脚水边）。密度按格子面积
+  function dressHill(h, kind, s0, density, keep) {
+    const n = Math.round((h.x1 - h.x0) * (h.z1 - h.z0) / 40 * (density || 1));
     for (let i = 0; i < n; i++) {
-      const u = (rnd() * 2 - 1) * .92, v = (rnd() * 2 - 1) * .92;
-      if (u * u + v * v > .88) continue;
-      const x = r.cx + u * r.L * ((r.mesh.rotation.y !== 0) ? Math.cos(r.mesh.rotation.y) : 1) - v * r.w * (-Math.sin(r.mesh.rotation.y));
-      const z = r.cz - u * r.L * Math.sin(r.mesh.rotation.y) + v * r.w * Math.cos(r.mesh.rotation.y);
-      const y = terrainTop(x, z);
-      if (y < LAND_Y + 1 || !clearOf(x, z, 16)) continue;
-      const s = s0 * (.55 + rnd() * 1.05);
+      const x = h.x0 + rnd() * (h.x1 - h.x0), z = h.z0 + rnd() * (h.z1 - h.z0);
+      if (sampleField(h.f, x, z) < 3 || !clearOf(x, z, 16) || (keep && !keep(x, z))) continue;
+      const y = terrainTop(x, z), s = s0 * (.55 + rnd() * 1.05);
       if (kind === 'p') pine(x, y, z, s); else sakura(x, y, z, s);
     }
   }
-  dressRidge(SHESHAN, 150, 'p', 1.5);
-  dressRidge(GUISHAN, 150, 'p', 1.5);
-  dressRidge(MOSHAN, 130, 'p', 1.5);
-  dressRidge(MOSHAN, 90, 's', 1.4);          // 磨山樱园
-  dressRidge(LUOJIA, 90, 'p', 1.4);
-  dressRidge(SHIZI, 60, 's', 1.3);           // 武大樱顶
-  ridges.slice(5).forEach(r => dressRidge(r, 70, 'p', 1.4));
+  const WUDA_AT = geo(114.3625, 30.5397);
+  dressHill(HILL['蛇山'], 'p', 1.5);
+  dressHill(HILL['龟山'], 'p', 1.5);
+  dressHill(HILL['磨山'], 'p', 1.5);
+  dressHill(HILL['磨山'], 's', 1.4, .6);                                    // 磨山樱园
+  dressHill(HILL['珞珈山'], 'p', 1.4);
+  dressHill(HILL['珞珈山'], 's', 1.3, 1, (x, z) => (x - WUDA_AT.x) ** 2 + (z - WUDA_AT.z) ** 2 < 32 * 32);   // 武大樱顶
+  HILLS.filter(h => !['蛇山', '龟山', '磨山', '珞珈山'].includes(h.name)).forEach(h => dressHill(h, 'p', 1.4));
   {                                           // 武大樱花大道
     const a = geo(114.3585, 30.5392), b = geo(114.3672, 30.5408);
     for (let i = 0; i <= 26; i++) {
