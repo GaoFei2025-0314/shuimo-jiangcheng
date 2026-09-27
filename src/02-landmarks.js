@@ -322,8 +322,8 @@
     S.pale.geo(oct(6.4, 6.2, 1.2), 0, .6, 0);
     let y = 1.2;
     R.forEach((r, k) => {
-      const d = r * Math.cos(Math.PI / 8) + .02;
-      S.wall.geo(oct(r, R[k + 1] || r * .96, FH), 0, y + FH / 2, 0);
+      const r1 = R[k + 1] || r * .96, d = (r + r1) / 2 * Math.cos(Math.PI / 8) + .02;   // 窗在半高处，取上下径的平均，贴住收分的墙面
+      S.wall.geo(oct(r, r1, FH), 0, y + FH / 2, 0);
       for (let f = 0; f < 8; f++) {
         const a = (f + .5) * Math.PI / 4;
         S.dark.box(1.0, k === 0 ? 2.4 : 1.6, .1, Math.sin(a) * d, y + FH * .5, Math.cos(a) * d, a);
@@ -395,7 +395,7 @@
     pale.box(2 * B + 1.6, .7, 2 * half, 0, DECK, 0);
     [-1, 1].forEach(s => pale.box(.5, .5, 2 * half, s * (B + .5), DECK + .5, 0));
     TZ.forEach(z => {
-      [-1, 1].forEach(s => solid.beam(V(s * (B + 1.4), -2, z), V(s * (B - .2), TOP, z), 2.0));   // 塔肢收分
+      [-1, 1].forEach(s => solid.beam(V(s * (B + 1.4), -2, z), V(s * (B - .2), TOP, z), 2.0));   // 塔肢内倾
       solid.box(2 * B + 1.4, 1.6, 2.0, 0, DECK - 1.6, z);
       solid.box(2 * B + .2, 1.8, 2.0, 0, TOP - 2.5, z);
       solid.box(2 * B - 1, 1.2, 2.0, 0, TOP * .72, z);
@@ -417,8 +417,8 @@
   function buildGuiyuan() {
     const g = new THREE.Group(), S = mkS();
     S.pale.box(62, 5, 64, 6, -2.5, 0);
-    const wall = (x0, z0, x1, z1) => S.wall.box(Math.abs(x1 - x0) + .8, 2.4, Math.abs(z1 - z0) + .8, (x0 + x1) / 2, 1.2, (z0 + z1) / 2);
-    wall(-14, -30, 36, -30); wall(-14, 30, 36, 30); wall(-14, -30, -14, 30); wall(36, -30, 36, 30);   // 院墙
+    const wallSeg = (x0, z0, x1, z1) => S.wall.box(Math.abs(x1 - x0) + .8, 2.4, Math.abs(z1 - z0) + .8, (x0 + x1) / 2, 1.2, (z0 + z1) / 2);
+    wallSeg(-14, -30, 36, -30); wallSeg(-14, 30, 36, 30); wallSeg(-14, -30, -14, 30); wallSeg(36, -30, 36, 30);   // 院墙
     hall(S, 3.4, 0, 3.4, { R: 6.2, H: 2.0, lift: 1.0, cols: 4, z: 26 });                  // 山门
     [-1, 1].forEach(s => {                                                                 // 钟楼、鼓楼
       hall(S, 2.0, 0, 3.0, { R: 4.2, r: 2.2, H: 1.2, lift: .8, cols: 2, x: s * 8, z: 15, win: false });
@@ -428,7 +428,7 @@
     hall(S, 7.0, 1.2, 5.0, { R: 11.2, r: 1.5, H: 3.6, lift: 1.4, cols: 6 });               // 大雄宝殿
     S.roofs.geo(roofGeo(12.4, 7.3, 1.2, 1.0, 18, 5), 0, 3.8, 0);                          // 重檐
     hall(S, 5.2, 0, 3.6, { R: 8.4, r: 4.6, H: 1.4, lift: 1.0, cols: 5, z: -20 });         // 藏经阁
-    hall(S, 4.2, 3.6, 3.2, { R: 7.2, H: 2.6, lift: 1.1, cols: 4, z: -20 });
+    hall(S, 4.2, 4.9, 3.2, { R: 7.2, H: 2.6, lift: 1.1, cols: 4, z: -20 });           // 上层落在下层屋面内沿（3.6 − .1 + 1.4）
     S.wall.box(15, 3.2, 15, 24, 1.6, -6);                                                   // 罗汉堂：田字形
     [[-3.75, -3.75], [3.75, -3.75], [-3.75, 3.75], [3.75, 3.75]].forEach(([dx, dz]) =>
       S.roofs.geo(roofGeo(4.6, .3, 1.8, .6, 10, 3), 24 + dx, 3.1, -6 + dz));
