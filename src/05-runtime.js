@@ -212,9 +212,9 @@
     });
     lakeBoats.forEach(b => {
       const a = b.a + t * b.sp;
-      const x = lakeC.x + Math.cos(a) * 300 * b.k, z = lakeC.z + Math.sin(a) * 210 * b.k;
+      const x = lakeC.x + Math.cos(a) * LRX * b.k, z = lakeC.z + Math.sin(a) * LRZ * b.k;
       b.m.position.set(x, .3 + Math.sin(t * 1.1 + b.a) * .07, z);
-      const dx = -Math.sin(a) * 300 * b.k * Math.sign(b.sp), dz = Math.cos(a) * 210 * b.k * Math.sign(b.sp);
+      const dx = -Math.sin(a) * LRX * b.k * Math.sign(b.sp), dz = Math.cos(a) * LRZ * b.k * Math.sign(b.sp);
       b.m.rotation.y = Math.atan2(-dz, dx);
       boatU[b.i].set(x, z);
     });

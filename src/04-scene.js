@@ -26,7 +26,12 @@
 
   /* ── 东湖绿道：沿岸一圈淡墨 ── */
   {
-    const pts = LAKE.map(p => new THREE.Vector3(lakeC.x + (p[0] - lakeC.x) * .962, LAND_Y + .12, lakeC.z + (p[1] - lakeC.z) * .962));
+    // 沿岸线向湖内收 4 个单位：真实湖岸有凹有凸，不能再按湖心等比缩
+    const n = LAKE.length, sg = LAKE.reduce((s, p, i) => s + p[0] * LAKE[(i + 1) % n][1] - LAKE[(i + 1) % n][0] * p[1], 0) > 0 ? 1 : -1;
+    const pts = LAKE.map((p, i) => {
+      const a = LAKE[(i + n - 1) % n], b = LAKE[(i + 1) % n], tx = b[0] - a[0], tz = b[1] - a[1], L = Math.hypot(tx, tz) || 1;
+      return new THREE.Vector3(p[0] - sg * tz / L * 4, LAND_Y + .12, p[1] + sg * tx / L * 4);
+    });
     const road = new THREE.LineLoop(new THREE.BufferGeometry().setFromPoints(pts), lineSoft);
     road.raycast = function () {}; scene.add(road);
   }
@@ -118,8 +123,8 @@
   ];
   riverBoats.forEach((b, i) => { b.m.scale.setScalar(b.s); b.i = i; scene.add(b.m); });
   const lakeBoats = [
-    { m: junk(),   a: .7, k: .42, sp: .045, s: 1.1 },
-    { m: sampan(), a: 3.4, k: .30, sp: -.035, s: 1.0 }
+    { m: junk(),   a: .7, k: .92, sp: .045, s: 1.1 },
+    { m: sampan(), a: 3.4, k: .62, sp: -.035, s: 1.0 }
   ];
   lakeBoats.forEach((b, i) => { b.m.scale.setScalar(b.s); b.i = 4 + i; scene.add(b.m); });
 

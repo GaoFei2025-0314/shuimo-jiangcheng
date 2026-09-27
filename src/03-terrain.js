@@ -40,19 +40,16 @@
   const WUCHANG = yzE.slice()
     .concat([[X1, yzE[yzE.length - 1][1]], [X1, ZBOT], [yzE[0][0], ZBOT]]);
 
-  // 东湖：中国最大的城中湖，水域约 33 平方公里
-  const LAKE_G = [
-    [114.3545, 30.5545], [114.3580, 30.5620], [114.3660, 30.5675], [114.3760, 30.5700],
-    [114.3880, 30.5715], [114.4000, 30.5705], [114.4110, 30.5660], [114.4205, 30.5590],
-    [114.4270, 30.5495], [114.4300, 30.5400], [114.4250, 30.5330], [114.4140, 30.5295],
-    [114.4030, 30.5310], [114.3960, 30.5375], [114.3900, 30.5440], [114.3840, 30.5480],
-    [114.3760, 30.5470], [114.3690, 30.5430], [114.3620, 30.5440], [114.3570, 30.5485]
-  ];
-  const LAKE = (() => {                                 // 平滑成自然湖岸
-    const c = new THREE.CatmullRomCurve3(LAKE_G.map(p => gv(p[0], p[1], 0)), true, 'catmullrom', .5);
-    return c.getPoints(160).map(p => [p.x, p.z]);
-  })();
-  const lakeC = geo(114.3920, 30.5500);
+  // 湖：实测水体掩膜圆滑后的岸线。第一个是东湖——中国最大的城中湖，水域约 33 平方公里
+  const LAKES = GEO.lakes.map(L => {                    // 再过一遍 Catmull-Rom，成自然湖岸
+    const c = new THREE.CatmullRomCurve3(L.pts.map(p => gv(p[0], p[1], 0)), true, 'catmullrom', .5);
+    return c.getPoints(L.pts.length * 6).map(p => [p.x, p.z]);
+  });
+  const LAKE = LAKES[0];
+  const lakeC = geo(GEO.lakeBoat.c[0], GEO.lakeBoat.c[1]);           // 东湖主湖面中心
+  const LRX = GEO.lakeBoat.rx / MPU, LRZ = GEO.lakeBoat.rz / MPU;     // 湖上舟行椭圆的半轴
+  const LAKE_BB = LAKES.map(L => L.reduce((b, p) =>
+    [Math.min(b[0], p[0]), Math.max(b[1], p[0]), Math.min(b[2], p[1]), Math.max(b[3], p[1])], [1e9, -1e9, 1e9, -1e9]));
 
   function inPoly(poly, x, z) {
     let c = false;
@@ -62,8 +59,12 @@
     }
     return c;
   }
+  const inLake = (x, z) => LAKES.some((L, i) => {
+    const b = LAKE_BB[i];
+    return x > b[0] && x < b[1] && z > b[2] && z < b[3] && inPoly(L, x, z);
+  });
   const onLand = (x, z) =>
-    (inPoly(WUCHANG, x, z) && !inPoly(LAKE, x, z)) || inPoly(HANKOU, x, z) || inPoly(HANYANG, x, z);
+    (inPoly(WUCHANG, x, z) || inPoly(HANKOU, x, z) || inPoly(HANYANG, x, z)) && !inLake(x, z);
 
   /* 水面：以「水纹图」驱动的笔触——顺流成线，近岸留白，湖面作同心波 */
   const FN = 512, WR = { x: -1000, z: -1300, w: 2400, h: 2200 };
@@ -76,10 +77,8 @@
         CL.push({ x: s.p.x, z: s.p.z, w: s.w, nx: s.d.z / L, nz: -s.d.x / L });
       }
     };
-    grab(YZ.s, 4); grab(HAN.s, 3);
-    let lx0 = 1e9, lx1 = -1e9, lz0 = 1e9, lz1 = -1e9;
-    LAKE.forEach(p => { lx0 = Math.min(lx0, p[0]); lx1 = Math.max(lx1, p[0]); lz0 = Math.min(lz0, p[1]); lz1 = Math.max(lz1, p[1]); });
-    const LK = []; for (let k = 0; k < LAKE.length; k += 3) LK.push(LAKE[k]);
+    grab(YZ.s, 5); grab(HAN.s, 4);
+    const LK = LAKES.map(L => L.filter((p, k) => k % 3 === 0));
     for (let j2 = 0; j2 < FN; j2++) {
       const z = WR.z + (j2 + .5) / FN * WR.h;
       for (let i2 = 0; i2 < FN; i2++) {
@@ -92,15 +91,18 @@
         const dist = Math.sqrt(bd);
         let signed = (x - b.x) * b.nx + (z - b.z) * b.nz;
         let band = 1 - dist / b.w, wet = dist < b.w ? 1 : 0, lake = 0;
-        if (x > lx0 && x < lx1 && z > lz0 && z < lz1 && inPoly(LAKE, x, z)) {
+        for (let li = 0; li < LAKES.length; li++) {
+          const bb = LAKE_BB[li];
+          if (x <= bb[0] || x >= bb[1] || z <= bb[2] || z >= bb[3] || !inPoly(LAKES[li], x, z)) continue;
           let de = 1e18;
-          for (let k = 0; k < LK.length; k++) {
-            const p = LK[k], dd = (p[0] - x) * (p[0] - x) + (p[1] - z) * (p[1] - z);
+          for (const p of LK[li]) {
+            const dd = (p[0] - x) * (p[0] - x) + (p[1] - z) * (p[1] - z);
             if (dd < de) de = dd;
           }
           signed = z - lakeC.z;                               // 湖面平远：横笔数道，不作同心圆
           band = Math.min(1, Math.sqrt(de) / 120);
           wet = 1; lake = 1;
+          break;
         }
         const o = (j2 * FN + i2) * 4;
         data[o]     = Math.round(Math.min(1, Math.max(0, signed / 512 + .5)) * 255);
@@ -181,7 +183,10 @@
     m.raycast = function () {};
     return m;
   }
-  scene.add(landMesh(HANKOU), landMesh(HANYANG), landMesh(WUCHANG, [LAKE]));
+  // 湖整个落在哪块陆地里，就在哪块上挖空
+  const holesIn = poly => LAKES.filter(L => L.every(p => inPoly(poly, p[0], p[1])));
+  const LAND_HOLES = [holesIn(HANKOU), holesIn(HANYANG), holesIn(WUCHANG)];
+  scene.add(landMesh(HANKOU, LAND_HOLES[0]), landMesh(HANYANG, LAND_HOLES[1]), landMesh(WUCHANG, LAND_HOLES[2]));
 
   /* ═════════ 六、山：蛇山、龟山、珞珈山、磨山 ═════════ */
   const ridges = [];
