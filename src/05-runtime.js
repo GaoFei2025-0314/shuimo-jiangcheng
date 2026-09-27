@@ -46,6 +46,18 @@
   const cardTitle = document.getElementById('cardTitle'), cardText = document.getElementById('cardText'), card = document.getElementById('card');
   const buttons = Array.from(document.querySelectorAll('#nav button'));
   let activeView = 'home', cameraMode = 'preset', flight = null;
+  let layoutDirty = true, safeRect = null, uiBlocks = [], layoutSignature = '', markFarScale = 1;
+  const layout = createMapLayout(() => { layoutDirty = true; });
+  scene.updateMatrixWorld(true);
+  const viewBounds = {};
+  pickables.forEach(object => { viewBounds[object.userData.focus] = new THREE.Box3().setFromObject(object); });
+  viewBounds.home = new THREE.Box3();
+  ['tower', 'bridge', 'qc', 'tv', 'customs', 'wuda', 'chutian'].forEach(key => viewBounds.home.union(viewBounds[key]));
+  viewBounds.core = new THREE.Box3();
+  ['tower', 'bridge', 'qc', 'tv', 'customs'].forEach(key => viewBounds.core.union(viewBounds[key]));
+  function viewFor(key) {
+    return layout.compact ? fittedView(VIEWS[key], viewBounds[key], safeRect, W, H, camera.fov) : VIEWS[key];
+  }
   function stopFlight() {
     if (flight) { flight.kill(); flight = null; }
     gsap.killTweensOf([camera.position, controls.target, card]);
@@ -70,7 +82,9 @@
     const navKey = key === 'chutian' ? 'lake' : key;
     buttons.forEach(b => b.setAttribute('aria-pressed', String(b.dataset.view === navKey)));
     cardTitle.textContent = COPY[key][0]; cardText.textContent = COPY[key][1];
-    moveCamera(VIEWS[key], true);
+    refreshLayout(false);
+    moveCamera(viewFor(key), true);
+    if (layout.compact) buttons.find(b => b.dataset.view === navKey).scrollIntoView({ block: 'nearest', inline: 'nearest' });
   }
   buttons.forEach(b => b.addEventListener('click', () => flyTo(b.dataset.view)));
   controls.addEventListener('start', () => { stopFlight(); cameraMode = 'manual'; });
@@ -79,12 +93,14 @@
     const wasFlying = !!flight;
     stopFlight();
     controls.enableDamping = !reduce;
-    if (reduce && wasFlying) moveCamera(VIEWS[activeView], false);
+    if (reduce && wasFlying) moveCamera(viewFor(activeView), false);
   });
   function enterScene() {
+    const view = viewFor('home');
+    moveCamera(view, false);
     if (reduce) return;
-    camera.position.set(VIEWS.home.pos.x + 210, VIEWS.home.pos.y * 1.62, VIEWS.home.pos.z * 1.44);
-    moveCamera(VIEWS.home, true);
+    camera.position.sub(controls.target).multiplyScalar(1.35).add(controls.target);
+    moveCamera(view, true);
   }
 
   /* ═════════ 十三、地名题记 ═════════ */
@@ -142,7 +158,7 @@
       const d = camera.position.distanceTo(m.v);
       const nx = projV.x * .5 + .5, ny = -projV.y * .5 + .5;
       // 太近则让路，太远或出画则隐去；当前所在景点不再标注
-      let o = THREE.MathUtils.smoothstep(d, 90, 170) * (1 - THREE.MathUtils.smoothstep(d, 1500, 2100));
+      let o = THREE.MathUtils.smoothstep(d, 90, 170) * (1 - THREE.MathUtils.smoothstep(d, 1500 * markFarScale, 2100 * markFarScale));
       if (projV.z > 1 || m.key === activeView || nx < -.02 || nx > 1.02 || ny < -.12 || ny > 1.04) o = 0;
       setMarkVisibility(m, o > .35, o);
       if (o <= .35) return;
@@ -219,11 +235,32 @@
 
   /* ═════════ 十五、循环 ═════════ */
   let W = 1, H = 1;
+  function refreshLayout(refit = true) {
+    const measured = layout.measure(W, H);
+    safeRect = measured.rect; uiBlocks = measured.blocks; layoutDirty = false;
+    const signature = [layout.compact, W, H, ...Object.values(safeRect)].join(',');
+    if (signature === layoutSignature) return;
+    layoutSignature = signature;
+    if (layout.compact) {
+      const cx = (safeRect.left + safeRect.right) / 2, cy = (safeRect.top + safeRect.bottom) / 2;
+      camera.setViewOffset(W, H, W / 2 - cx, H / 2 - cy, W, H);
+      const home = viewFor('home'), distance = home.pos.distanceTo(home.target);
+      controls.maxDistance = Math.max(2600, distance * 1.4);
+      markFarScale = Math.max(1, distance / 1500);
+    } else {
+      camera.clearViewOffset(); controls.maxDistance = 2600; markFarScale = 1;
+    }
+    if (cameraMode === 'manual') controls.maxDistance = Math.max(controls.maxDistance, camera.position.distanceTo(controls.target) + 1);
+    if (refit && cameraMode === 'preset') { stopFlight(); moveCamera(viewFor(activeView), false); }
+  }
   function resize() {
+    if (app.state === 'failed') return;
     W = stage.clientWidth || window.innerWidth; H = stage.clientHeight || window.innerHeight;
     renderer.setSize(W, H, false);
     camera.aspect = W / H; camera.fov = W / H < .9 ? 52 : 38;
     camera.updateProjectionMatrix();
+    layoutSignature = '';
+    refreshLayout();
   }
   window.addEventListener('resize', resize); resize();
 
@@ -239,9 +276,10 @@
   function frame() {
     if (app.state === 'failed') return;
     try { renderFrame(); }
-    catch (_) { app.fail('三维画面已中断，请重新加载。'); }
+    catch (error) { console.error('Map rendering failed:', error); app.fail('三维画面已中断，请重新加载。'); }
   }
   function renderFrame() {
+    if (layoutDirty) refreshLayout();
     const delta = clock.getDelta();
     if (!reduce) sceneTime += Math.min(delta, .1);
     const t = sceneTime;

@@ -35,7 +35,11 @@ const test = base.extend({
       return route.fulfill({ body, contentType: 'text/javascript' });
     });
     await page.route(/https:\/\/fonts\.(googleapis|gstatic)\.com\//, route => route.fulfill({ body: '', contentType: 'text/css' }));
+    const errors = [];
+    page.on('pageerror', error => errors.push(error.message));
+    page.on('console', message => { if (message.type() === 'error') errors.push(message.text()); });
     await use(page);
+    if (errors.length) await test.info().attach('browser-errors', { body: errors.join('\n'), contentType: 'text/plain' });
   }
 });
 async function ready(page) {
