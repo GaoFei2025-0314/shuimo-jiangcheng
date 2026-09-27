@@ -16,7 +16,7 @@
   const tv      = place(buildTV(), AT.tv, 1.5, 0, '龟山电视塔', 'tv');
   const qc      = place(buildQingchuan(), AT.qc, .92, Math.PI / 2, '晴川阁', 'qc');
   const customs = place(buildCustoms(), AT.customs, .98, Math.PI / 2, '江汉关', 'customs');
-  const wuda    = place(buildWuda(), geo(114.3625, 30.5397), .74, .1, '武大 · 老斋舍', 'wuda');
+  const wuda    = place(buildWuda(), AT.wuda, .74, .1, '武大 · 老斋舍', 'wuda');
   const chutian = place(buildChutian(), AT.chutian, .82, 0, '东湖 · 楚天台', 'chutian');
   // 东湖水面本身也可点选
   const lakePick = new THREE.Mesh(new THREE.ShapeGeometry(new THREE.Shape(LAKE.map(p => new THREE.Vector2(p[0], -p[1])))), new THREE.MeshBasicMaterial({ visible: false }));
@@ -85,20 +85,22 @@
     [[0, 2.1, 0, 1.15], [.75, 1.75, .4, .85], [-.7, 1.65, -.3, .8], [.1, 2.7, .25, .72], [-.2, 1.5, .8, .7]]
       .forEach(b => sakBloom.place(ICO, x + b[0] * s, y + b[1] * s, z + b[2] * s, b[3] * s, b[3] * s * .82, b[3] * s, 0));
   }
-  const KEEP = [AT.tower, AT.tv, AT.qc, AT.chutian, geo(114.3625, 30.5397)];
+  const KEEP = [AT.tower, AT.tv, AT.qc, AT.chutian, AT.wuda];
   const clearOf = (x, z, r) => KEEP.every(k => (k.x - x) ** 2 + (k.z - z) ** 2 > r * r);
   const CORE = geo(114.2950, 30.5600);
-  // 在山的格子里撒点，只留起伏超过 3 个单位的（真在山上，不在山脚水边）。密度按格子面积
+  // 在山的格子里撒点，只留起伏超过 3 个单位的（真在山上，不在山脚水边）。密度按格子面积，
+  // 无名山只按约三分之一的密度种，免得抢了主山的戏
   function dressHill(h, kind, s0, density, keep) {
-    const n = Math.round((h.x1 - h.x0) * (h.z1 - h.z0) / 40 * (density || 1));
+    if (!h) return;                                                          // 数据重生成后山名若变了，不至于整页出错
+    const n = Math.round((h.x1 - h.x0) * (h.z1 - h.z0) / 55 * (density || 1) * (h.name ? 1 : .35));
     for (let i = 0; i < n; i++) {
       const x = h.x0 + rnd() * (h.x1 - h.x0), z = h.z0 + rnd() * (h.z1 - h.z0);
       if (sampleField(h.f, x, z) < 3 || !clearOf(x, z, 16) || (keep && !keep(x, z))) continue;
-      const y = terrainTop(x, z), s = s0 * (.55 + rnd() * 1.05);
+      const y = terrainTop(x, z) - .3, s = s0 * (.55 + rnd() * 1.05);        // 网格线性、terrainTop 双三次，树根最多悬空 0.6，略沉入地面
       if (kind === 'p') pine(x, y, z, s); else sakura(x, y, z, s);
     }
   }
-  const WUDA_AT = geo(114.3625, 30.5397);
+  const WUDA_AT = AT.wuda;
   dressHill(HILL['蛇山'], 'p', 1.5);
   dressHill(HILL['龟山'], 'p', 1.5);
   dressHill(HILL['磨山'], 'p', 1.5);

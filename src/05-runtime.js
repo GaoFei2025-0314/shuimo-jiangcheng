@@ -7,7 +7,7 @@
       target: { x: at.x, y: ty, z: at.z }
     };
   }
-  const wudaAt = geo(114.3625, 30.5397);
+  const wudaAt = AT.wuda;
   const VIEWS = {
     home:    { pos: { x: 440, y: 650, z: 1180 }, target: { x: 250, y: 0, z: -130 } },
     core:    orbit(geo(114.2855, 30.5570), 6, 660, 18, 27),
@@ -83,7 +83,8 @@
     const el = document.createElement('b'); el.className = L[3]; el.textContent = L[0];
     labelBox.appendChild(el);
     const p = geo(L[1], L[2]);
-    const y = L[3] === 'hill' ? terrainTop(p.x, p.z) + 7 : L[4];     // 山名题在山头之上，随实测山高
+    const h = HILL[L[0]];                               // 山名题在该山最高处之上 7 个单位，随实测山高
+    const y = L[3] === 'hill' ? (h ? LAND_Y + h.f.a.reduce((m, v) => Math.max(m, v), 0) : terrainTop(p.x, p.z)) + 7 : L[4];
     return { el, v: new THREE.Vector3(p.x, y, p.z), kind: L[3] };
   });
   /* 地标竖牌 */
