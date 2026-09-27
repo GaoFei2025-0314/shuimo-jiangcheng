@@ -46,126 +46,79 @@
     guiyuan:    ['归元禅寺', '始建于清顺治十五年（一六五八年），以五百罗汉堂闻名，武汉四大丛林之一。'],
     qintai:     ['古琴台', '相传春秋时俞伯牙在此鼓琴，钟子期听出「高山流水」，二人结为知音。台在龟山西麓，临月湖。']
   };
-  const reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-  camera.position.set(VIEWS.home.pos.x, VIEWS.home.pos.y, VIEWS.home.pos.z);
-  if (!reduce) camera.position.set(VIEWS.home.pos.x + 210, VIEWS.home.pos.y * 1.62, VIEWS.home.pos.z * 1.44);
+  const motionPreference = window.matchMedia('(prefers-reduced-motion: reduce)');
+  let reduce = motionPreference.matches;
+  camera.position.copy(VIEWS.home.pos);
   const controls = new THREE.OrbitControls(camera, renderer.domElement);
-  controls.enableDamping = true; controls.dampingFactor = .06;
+  controls.enableDamping = !reduce; controls.dampingFactor = .06;
   controls.rotateSpeed = .6; controls.zoomSpeed = .8;
   controls.minDistance = 22; controls.maxDistance = 2600;
   controls.maxPolarAngle = Math.PI * .47;
-  controls.target.set(VIEWS.home.target.x, VIEWS.home.target.y, VIEWS.home.target.z);
+  controls.target.copy(VIEWS.home.target);
   controls.update();
 
   const cardTitle = document.getElementById('cardTitle'), cardText = document.getElementById('cardText'), card = document.getElementById('card');
   const buttons = Array.from(document.querySelectorAll('#nav button'));
-  let activeView = 'home';
+  let activeView = 'home', cameraMode = 'preset', flight = null;
+  let layoutDirty = true, safeRect = null, uiBlocks = [], layoutSignature = '', markFarScale = 1;
+  const layout = createMapLayout(() => { layoutDirty = true; });
+  scene.updateMatrixWorld(true);
+  const viewBounds = {};
+  pickables.forEach(object => { viewBounds[object.userData.focus] = new THREE.Box3().setFromObject(object); });
+  viewBounds.home = new THREE.Box3();                  // 全城取景框住所有地标（东湖水面本身除外）
+  pickables.forEach(object => { if (object.userData.focus !== 'lake') viewBounds.home.union(viewBounds[object.userData.focus]); });
+  viewBounds.core = new THREE.Box3();
+  ['tower', 'bridge', 'qc', 'tv', 'customs'].forEach(key => viewBounds.core.union(viewBounds[key]));
+  function viewFor(key) {
+    return layout.compact ? fittedView(VIEWS[key], viewBounds[key], safeRect, W, H, camera.fov) : VIEWS[key];
+  }
+  function stopFlight() {
+    if (flight) { flight.kill(); flight = null; }
+    gsap.killTweensOf([camera.position, controls.target, card]);
+    card.style.opacity = '1'; card.style.transform = 'none';
+  }
+  function moveCamera(view, animate) {
+    if (!animate || reduce) {
+      camera.position.copy(view.pos); controls.target.copy(view.target); controls.update();
+      return;
+    }
+    flight = gsap.timeline({ onUpdate: () => controls.update(), onComplete: () => { flight = null; } });
+    flight.to(camera.position, { ...view.pos, duration: 2.6, ease: 'power3.inOut' }, 0)
+      .to(controls.target, { ...view.target, duration: 2.6, ease: 'power3.inOut' }, 0)
+      .fromTo(card, { opacity: 0, y: 8 }, { opacity: 1, y: 0, duration: .45 }, 0);
+  }
   function flyTo(key) {
-    const v = VIEWS[key]; if (!v) return;
-    activeView = key;
+    if (app.state !== 'ready' || !VIEWS[key]) return;
+    stopFlight();
+    // 消除上一次手势的惯性，防止它与新镜头竞争。
+    controls.enableDamping = false; controls.update(); controls.enableDamping = !reduce;
+    activeView = key; cameraMode = 'preset';
     const navKey = key === 'chutian' ? 'lake' : key;
     buttons.forEach(b => b.setAttribute('aria-pressed', String(b.dataset.view === navKey)));
-    gsap.killTweensOf(camera.position); gsap.killTweensOf(controls.target);
-    gsap.to(camera.position, { x: v.pos.x, y: v.pos.y, z: v.pos.z, duration: 2.6, ease: 'power3.inOut' });
-    gsap.to(controls.target, { x: v.target.x, y: v.target.y, z: v.target.z, duration: 2.6, ease: 'power3.inOut', onUpdate: () => controls.update() });
-    gsap.to(card, { opacity: 0, y: 8, duration: .3, onComplete: () => {
-      cardTitle.textContent = COPY[key][0]; cardText.textContent = COPY[key][1];
-      gsap.to(card, { opacity: 1, y: 0, duration: .6, delay: .5 });
-    } });
+    cardTitle.textContent = COPY[key][0]; cardText.textContent = COPY[key][1];
+    refreshLayout(false);
+    moveCamera(viewFor(key), true);
+    if (layout.compact) buttons.find(b => b.dataset.view === navKey).scrollIntoView({ block: 'nearest', inline: 'nearest' });
   }
   buttons.forEach(b => b.addEventListener('click', () => flyTo(b.dataset.view)));
-  // 入场只动镜头；题名与导览的浮现交给 CSS，不受渲染帧率拖累
-  if (!reduce) gsap.to(camera.position, { x: VIEWS.home.pos.x, y: VIEWS.home.pos.y, z: VIEWS.home.pos.z, duration: 3.0, ease: 'power2.inOut' });
-
-  /* ═════════ 十三、地名题记 ═════════ */
-  const labelBox = document.getElementById('labels');
-  // 汉水题记落在实测河心上：取 GEO.hanshui 中离该经度最近的一点，数据重生成后也跟着走
-  const hanLabel = lon => GEO.hanshui.reduce((a, p) => Math.abs(p[0] - lon) < Math.abs(a[0] - lon) ? p : a).slice(0, 2);
-  const LABELS = [
-    ['汉口', 114.2820, 30.5990, 'town', 26],
-    ['汉阳', 114.2610, 30.5430, 'town', 18],
-    ['武昌', 114.3220, 30.5330, 'town', 20],
-    ['长江', 114.2905, 30.5700, 'water', 4],
-    ['汉水', ...hanLabel(114.2470), 'water', 4],
-    ['东湖', 114.3880, 30.5605, 'water', 4],
-    ['南岸嘴', 114.2838, 30.5628, 'hill', 8],
-    ['蛇山', 114.3085, 30.5458, 'hill', 26],
-    ['龟山', 114.2700, 30.5562, 'hill', 30],
-    ['珞珈山', 114.3655, 30.5372, 'hill', 28],
-    ['磨山', 114.4174, 30.5524, 'hill', 30]
-  ].map(L => {
-    const el = document.createElement('b'); el.className = L[3]; el.textContent = L[0];
-    labelBox.appendChild(el);
-    const p = geo(L[1], L[2]);
-    const h = HILL[L[0]];                               // 山名题在该山最高处之上 7 个单位，随实测山高
-    const y = L[3] === 'hill' ? (h ? LAND_Y + h.f.a.reduce((m, v) => Math.max(m, v), 0) : terrainTop(p.x, p.z)) + 7 : L[4];
-    return { el, v: new THREE.Vector3(p.x, y, p.z), kind: L[3] };
+  controls.addEventListener('start', () => { stopFlight(); cameraMode = 'manual'; });
+  motionPreference.addEventListener('change', event => {
+    reduce = event.matches;
+    overlays.invalidate();
+    const wasFlying = !!flight;
+    stopFlight();
+    controls.enableDamping = !reduce;
+    if (reduce && wasFlying) moveCamera(viewFor(activeView), false);
   });
-  /* 地标竖牌 */
-  const markBox = document.getElementById('marks');
-  // 竖牌挂在模型包围盒顶上 5 个单位——山高改自实测后，写死的高度会插进楼里。
-  // 一级七处全城可见；二级七处只在推近后浮现，免得全城视角挤成一片
-  const MARKS = [
-    ['黄鹤楼', 'tower', tower, 1], ['长江大桥', 'bridge', bridge, 1], ['晴川阁', 'qc', qc, 1], ['龟山电视塔', 'tv', tv, 1],
-    ['江汉关', 'customs', customs, 1], ['武大樱园', 'wuda', wuda, 1], ['楚天台', 'chutian', chutian, 1],
-    ['洪山宝塔', 'hongshan', hongshan, 2], ['汉口水塔', 'watertower', watertower, 2], ['省博物馆', 'museum', museum, 2],
-    ['红楼', 'honglou', honglou, 2], ['鹦鹉洲大桥', 'yingwuzhou', yingwuzhou, 2], ['归元寺', 'guiyuan', guiyuan, 2], ['古琴台', 'qintai', qintai, 2]
-  ].map(m => {
-    const el = document.createElement('button');
-    el.type = 'button'; el.className = 'mark'; el.setAttribute('aria-label', '移至' + m[0]);
-    el.innerHTML = '<span class="plate">' + [...m[0]].map(c => '<i>' + c + '</i>').join('') + '</span>'
-                 + '<span class="stem"></span><span class="dot"></span>';
-    el.addEventListener('click', () => flyTo(m[1]));
-    markBox.appendChild(el);
-    const top = new THREE.Box3().setFromObject(m[2]).max.y;
-    return { el, key: m[1], tier: m[3], v: new THREE.Vector3(m[2].position.x, top + 5, m[2].position.z) };
-  });
-  function drawMarks(w, h) {
-    MARKS.forEach(m => {
-      projV.copy(m.v).project(camera);
-      const d = camera.position.distanceTo(m.v);
-      const nx = projV.x * .5 + .5, ny = -projV.y * .5 + .5;
-      // 太近则让路，太远或出画则隐去；当前所在景点不再标注
-      const far = m.tier === 1 ? [1500, 2100] : [650, 950];
-      let o = THREE.MathUtils.smoothstep(d, 90, 170) * (1 - THREE.MathUtils.smoothstep(d, far[0], far[1]));
-      if (projV.z > 1 || m.key === activeView || nx < -.02 || nx > 1.02 || ny < -.12 || ny > 1.04) o = 0;
-      m.el.style.opacity = o.toFixed(3);
-      m.el.style.pointerEvents = o > .35 ? 'auto' : 'none';
-      if (o < .01) return;
-      if (!m.h) m.h = m.el.offsetHeight || 60;
-      const px = Math.min(w - 40, Math.max(40, nx * w));
-      const py = Math.min(h - 24, Math.max(m.h + 8, ny * h));   // 牌子不出画
-      m.el.style.transform = `translate(-50%,-100%) translate(${px.toFixed(1)}px,${py.toFixed(1)}px)`;
-    });
+  function enterScene() {
+    const view = viewFor('home');
+    moveCamera(view, false);
+    if (reduce) return;
+    camera.position.sub(controls.target).multiplyScalar(1.35).add(controls.target);
+    moveCamera(view, true);
   }
 
-  const RANGE = { town: [340, 3200], water: [140, 2800], hill: [70, 1000] };
-  const projV = new THREE.Vector3();
-  function drawLabels(w, h) {
-    LABELS.forEach(L => {
-      projV.copy(L.v).project(camera);
-      if (projV.z > 1) { L.el.style.opacity = 0; return; }
-      const d = camera.position.distanceTo(L.v), r = RANGE[L.kind];
-      const o = THREE.MathUtils.smoothstep(d, r[0] * .55, r[0]) * (1 - THREE.MathUtils.smoothstep(d, r[1], r[1] * 1.35));
-      L.el.style.opacity = o.toFixed(3);
-      if (o < .01) return;
-      L.el.style.transform = `translate(-50%,-50%) translate(${((projV.x * .5 + .5) * w).toFixed(1)}px,${((-projV.y * .5 + .5) * h).toFixed(1)}px)`;
-    });
-  }
-
-  /* 罗盘与比例尺 */
-  const dial = document.querySelector('#rose .dial'), sBar = document.getElementById('scaleBar'), sTxt = document.getElementById('scaleText');
-  const NICE = [100, 200, 500, 1000, 2000, 5000, 10000, 20000];
-  function drawTools(h) {
-    const az = Math.atan2(camera.position.x - controls.target.x, camera.position.z - controls.target.z) * 180 / Math.PI;
-    dial.setAttribute('transform', `rotate(${az.toFixed(1)} 26 26)`);
-    const dist = camera.position.distanceTo(controls.target);
-    const mPerPx = 2 * dist * Math.tan(camera.fov * Math.PI / 360) / h * MPU;
-    let m = NICE[0];
-    for (const n of NICE) { m = n; if (n / mPerPx >= 64) break; }
-    sBar.style.width = Math.min(190, Math.round(m / mPerPx)) + 'px';
-    sTxt.textContent = m >= 1000 ? (m / 1000) + ' 公里' : m + ' 米';
-  }
+  const overlays = createMapOverlays(camera, controls, flyTo, buttons);
 
   /* ═════════ 十四、点选 ═════════ */
   const ray = new THREE.Raycaster(), ndc = new THREE.Vector2(), tip = document.getElementById('tip');
@@ -205,17 +158,55 @@
 
   /* ═════════ 十五、循环 ═════════ */
   let W = 1, H = 1;
+  function refreshLayout(refit = true) {
+    const measured = layout.measure(W, H);
+    safeRect = measured.rect; uiBlocks = measured.blocks; layoutDirty = false;
+    overlays.invalidate();
+    const signature = [layout.compact, W, H, ...Object.values(safeRect)].join(',');
+    if (signature === layoutSignature) return;
+    layoutSignature = signature;
+    if (layout.compact) {
+      const cx = (safeRect.left + safeRect.right) / 2, cy = (safeRect.top + safeRect.bottom) / 2;
+      camera.setViewOffset(W, H, W / 2 - cx, H / 2 - cy, W, H);
+      const home = viewFor('home'), distance = home.pos.distanceTo(home.target);
+      controls.maxDistance = Math.max(2600, distance * 1.4);
+      markFarScale = Math.max(1, distance / 1500);
+    } else {
+      camera.clearViewOffset(); controls.maxDistance = 2600; markFarScale = 1;
+    }
+    if (cameraMode === 'manual') controls.maxDistance = Math.max(controls.maxDistance, camera.position.distanceTo(controls.target) + 1);
+    if (refit && cameraMode === 'preset') { stopFlight(); moveCamera(viewFor(activeView), false); }
+  }
   function resize() {
+    if (app.state === 'failed') return;
     W = stage.clientWidth || window.innerWidth; H = stage.clientHeight || window.innerHeight;
     renderer.setSize(W, H, false);
     camera.aspect = W / H; camera.fov = W / H < .9 ? 52 : 38;
     camera.updateProjectionMatrix();
+    layoutSignature = '';
+    refreshLayout();
   }
   window.addEventListener('resize', resize); resize();
 
   const clock = new THREE.Clock();
+  let sceneTime = 0;
+  let frameId = 0;
+  app.cleanups.push(() => {
+    cancelAnimationFrame(frameId);
+    controls.enabled = false;
+    controls.dispose();
+    stopFlight();
+  });
   function frame() {
-    const t = clock.getElapsedTime() * (reduce ? .25 : 1);
+    if (app.state === 'failed') return;
+    try { renderFrame(); }
+    catch (error) { console.error('Map rendering failed:', error); app.fail('三维画面已中断，请重新加载。'); }
+  }
+  function renderFrame() {
+    if (layoutDirty) refreshLayout();
+    const delta = clock.getDelta();
+    if (!reduce) sceneTime += Math.min(delta, .1);
+    const t = sceneTime;
     waterU.uTime.value = t;
     mistMats.forEach(m => m.uniforms.uTime.value = t);
 
@@ -262,13 +253,13 @@
 
     controls.update();
     renderer.render(scene, camera);
-    drawLabels(W, H); drawMarks(W, H); drawTools(H);
-    requestAnimationFrame(frame);
+    overlays.draw(W, H, activeView, uiBlocks, markFarScale);
+    frameId = requestAnimationFrame(frame);
   }
+  enterScene();
   frame();
-  window.__ready = true;
-  // ?debug 时把内部状态挂出来，供浏览器里核对；正常访问不暴露
+  // ?debug 时把内部状态挂出来，供浏览器里核对；正常访问不暴露。就绪与否仍以 app.ready() 置的 window.__ready 为准
   if (/[?&]debug\b/.test(location.search)) window.__dbg = {
-    GEO, LAKES, LAND_HOLES, HILLS, HILL, YZ, HAN, HANKOU, HANYANG, WUCHANG, AT, VIEWS, MARKS, LABELS,
+    GEO, LAKES, LAND_HOLES, HILLS, HILL, YZ, HAN, HANKOU, HANYANG, WUCHANG, AT, VIEWS, MARKS: overlays.marks, LABELS: overlays.labels,
     LAND_Y, terrainTop, reliefAt, onLand, inPoly, geo, camera, controls, flyTo, scene
   };

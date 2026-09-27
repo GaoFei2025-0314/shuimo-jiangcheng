@@ -4,3 +4,4 @@ node_modules/
 dist/
 .venv-geo/
 /output
+output/playwright/
