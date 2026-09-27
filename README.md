@@ -22,7 +22,7 @@ src/
   geodata.gen.js     由 tools/geodata/extract.py 生成的河道、湖、山数据（勿手改）
   01-core.js         经纬度投影、水墨 Shader、几何累加器、通用构件
   02-landmarks.js    十四处地标的程序化建模
-  03-terrain.js      两江河道、三镇陆块、湖、山体（均读 geodata.gen.js）、水纹图与江面 Shader
+  03-terrain.js      两江河道、湖、山体（读 geodata.gen.js）与由此推出的三镇陆块，水纹图与江面 Shader
   04-scene.js        景点落位、草木、市廛、舟船、飞鸟、烟波
   05-runtime.js      镜头、地名题记、地标竖牌、点选、渲染循环
   06-audio.js        背景音乐：Web Audio 合成的古琴、水声与江风
@@ -102,11 +102,11 @@ Shader 据此让笔触顺河道走、近岸留白、江心笔浓，湖面则改�
 
 地名与景点坐标：OpenStreetMap 与 Nominatim，© OpenStreetMap 贡献者，ODbL 1.0。
 
-重新生成数据（原始瓦片约 532 MB，放在不入库的 `output/dem-wuhan/`）：
+重新生成数据（原始瓦片约 430 MB，拼接后整个目录约 530 MB，放在不入库的 `output/dem-wuhan/`）：
 
 ```bash
 python3 -m venv .venv-geo && .venv-geo/bin/pip install -r tools/geodata/requirements.txt
-.venv-geo/bin/python tools/geodata/download.py      # → output/dem-wuhan/ 九张瓦片
+.venv-geo/bin/python tools/geodata/download.py      # → output/dem-wuhan/ 九个格位，DEM 与水体掩膜各一份，共 18 个 GeoTIFF
 .venv-geo/bin/python tools/geodata/prepare.py       # → 拼接裁剪成两张 GeoTIFF
 .venv-geo/bin/python tools/geodata/extract.py       # → src/geodata.gen.js
 .venv-geo/bin/python tools/geodata/check_geodata.py # → 校验
@@ -115,4 +115,4 @@ python3 -m venv .venv-geo && .venv-geo/bin/pip install -r tools/geodata/requirem
 ## 资料来源
 
 坐标与建筑数据取自维基百科、武汉市人民政府门户网站、武汉市民政局、
-东湖生态旅游风景区管理委员会、武汉大学新闻网等公开资料。
+东湖生态旅游风景区管理委员会、武汉大学新闻网、OpenStreetMap 与 Nominatim 等公开资料。
