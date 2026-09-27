@@ -18,6 +18,16 @@
   const customs = place(buildCustoms(), AT.customs, .98, Math.PI / 2, '江汉关', 'customs');
   const wuda    = place(buildWuda(), AT.wuda, .74, .1, '武大 · 老斋舍', 'wuda');
   const chutian = place(buildChutian(), AT.chutian, .82, 0, '东湖 · 楚天台', 'chutian');
+  const hongshan   = place(buildPagoda(), AT.hongshan, .74, 0, '洪山宝塔 · 宝通禅寺', 'hongshan');
+  const watertower = place(buildWaterTower(), AT.watertower, .82, 0, '汉口水塔', 'watertower');
+  const museum     = place(buildMuseum(), AT.museum, .78, 0, '湖北省博物馆', 'museum');
+  const honglou    = place(buildHonglou(), AT.honglou, .8, 0, '红楼', 'honglou');
+  const guiyuan    = place(buildGuiyuan(), AT.guiyuan, .7, 0, '归元禅寺', 'guiyuan');
+  const qintai     = place(buildQintai(), AT.qintai, .7, -Math.PI / 2, '古琴台', 'qintai');   // 台面朝西，对着月湖
+  // 鹦鹉洲大桥：OSM 桥线两端，桥长随之
+  const yA = geo(114.27360, 30.53400), yB = geo(114.29056, 30.52796);
+  const yingwuzhou = place(buildSuspension(Math.hypot(yB.x - yA.x, yB.z - yA.z) / 2), AT.yingwuzhou, 1,
+    Math.atan2(yB.x - yA.x, yB.z - yA.z), '鹦鹉洲长江大桥', 'yingwuzhou', 0);
   // 东湖水面本身也可点选
   const lakePick = new THREE.Mesh(new THREE.ShapeGeometry(new THREE.Shape(LAKE.map(p => new THREE.Vector2(p[0], -p[1])))), new THREE.MeshBasicMaterial({ visible: false }));
   lakePick.rotation.x = -Math.PI / 2; lakePick.position.y = .05;
@@ -86,7 +96,10 @@
       .forEach(b => sakBloom.place(ICO, x + b[0] * s, y + b[1] * s, z + b[2] * s, b[3] * s, b[3] * s * .82, b[3] * s, 0));
   }
   const KEEP = [AT.tower, AT.tv, AT.qc, AT.chutian, AT.wuda];
-  const clearOf = (x, z, r) => KEEP.every(k => (k.x - x) ** 2 + (k.z - z) ** 2 > r * r);
+  // 新景点各按自身占地避让，不随调用方的半径——汉口水塔若按市廛的 46 单位清场，汉口就被掏空了
+  const KEEP2 = [[AT.hongshan, 20], [AT.watertower, 12], [AT.museum, 34], [AT.honglou, 26], [AT.guiyuan, 34], [AT.qintai, 20]];
+  const clearOf = (x, z, r) => KEEP.every(k => (k.x - x) ** 2 + (k.z - z) ** 2 > r * r)
+    && KEEP2.every(([k, rr]) => (k.x - x) ** 2 + (k.z - z) ** 2 > rr * rr);
   const CORE = geo(114.2950, 30.5600);
   // 在山的格子里撒点，只留起伏超过 3 个单位的（真在山上，不在山脚水边）。密度按格子面积，
   // 无名山只按约三分之一的密度种，免得抢了主山的戏

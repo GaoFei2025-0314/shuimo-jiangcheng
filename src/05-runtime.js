@@ -18,7 +18,14 @@
     customs: orbit(AT.customs, 18, 115, 92, 17),
     wuda:    orbit(wudaAt, terrainTop(wudaAt.x, wudaAt.z) + 6, 112, 8, 19),
     lake:    orbit(lakeC, 3, 560, 14, 25),
-    chutian: orbit(AT.chutian, terrainTop(AT.chutian.x, AT.chutian.z) + 14, 155, 22, 19)
+    chutian: orbit(AT.chutian, terrainTop(AT.chutian.x, AT.chutian.z) + 14, 155, 22, 19),
+    hongshan:   orbit(AT.hongshan, terrainTop(AT.hongshan.x, AT.hongshan.z) + 11, 125, 18, 18),
+    watertower: orbit(AT.watertower, 12, 95, 38, 15),
+    museum:     orbit(AT.museum, 6, 150, 12, 20),
+    honglou:    orbit(AT.honglou, terrainTop(AT.honglou.x, AT.honglou.z) + 7, 120, 8, 17),
+    yingwuzhou: orbit(AT.yingwuzhou, 14, 300, -24, 11),
+    guiyuan:    orbit(AT.guiyuan, 5, 135, 18, 22),
+    qintai:     orbit(AT.qintai, 4, 110, 250, 19)
   };
   const COPY = {
     home:    ['两江四岸', '汉水自西北来，于南岸嘴汇入长江。江北为汉口，两江之间是汉阳，大江东南岸为武昌。图上方位依实测经纬度，水平一比一，山楼竖向略作夸张。'],
@@ -30,7 +37,14 @@
     customs: ['江汉关', '一九二四年落成，主楼四层、钟楼五层，通高四十五点八五米，文艺复兴式样，钟面直径四米。正门朝东，面对长江。'],
     wuda:    ['武大 · 老斋舍', '一九三一年落成，依狮子山南坡而建，三座罗马券拱门连起四栋斋舍，门上是歇山亭楼，绿琉璃瓦掩在樱花里。'],
     lake:    ['东湖', '中国最大的城中湖，水域约三十三平方公里，绿道一百零五公里。磨山三面环水，自南岸伸入湖中。'],
-    chutian: ['东湖 · 楚天台', '立于磨山之巅，按楚国「章华台」形制而建，外五层内六层，高三十六米，台前三百四十五级石阶，顶置青铜凤标。']
+    chutian: ['东湖 · 楚天台', '立于磨山之巅，按楚国「章华台」形制而建，外五层内六层，高三十六米，台前三百四十五级石阶，顶置青铜凤标。'],
+    hongshan:   ['洪山宝塔 · 宝通禅寺', '宝通禅寺依洪山南坡层层而上，为武汉四大丛林之一。寺后洪山宝塔始建于元代，八面七级，砖石仿木。'],
+    watertower: ['汉口水塔', '一九〇九年落成，八角形塔身，高四十一米余，曾是汉口最高的建筑，塔顶兼作消防瞭望。'],
+    museum:     ['湖北省博物馆', '楚式高台建筑，一主两翼，深檐高脊。馆藏曾侯乙编钟、越王勾践剑，是楚文化的重镇。'],
+    honglou:    ['红楼', '一九一〇年建成，原为湖北谘议局。一九一一年武昌起义后，湖北军政府在此成立。今为辛亥革命博物院北区。'],
+    yingwuzhou: ['鹦鹉洲长江大桥', '三塔悬索桥，二〇一四年底通车。桥名出自崔颢「芳草萋萋鹦鹉洲」——诗里的鹦鹉洲早已没入江中。'],
+    guiyuan:    ['归元禅寺', '始建于清顺治十五年（一六五八年），以五百罗汉堂闻名，武汉四大丛林之一。'],
+    qintai:     ['古琴台', '相传春秋时俞伯牙在此鼓琴，钟子期听出「高山流水」，二人结为知音。台在龟山西麓，临月湖。']
   };
   const reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   camera.position.set(VIEWS.home.pos.x, VIEWS.home.pos.y, VIEWS.home.pos.z);
@@ -89,11 +103,13 @@
   });
   /* 地标竖牌 */
   const markBox = document.getElementById('marks');
+  // 竖牌挂在模型包围盒顶上 5 个单位——山高改自实测后，写死的高度会插进楼里。
+  // 一级七处全城可见；二级七处只在推近后浮现，免得全城视角挤成一片
   const MARKS = [
-    ['黄鹤楼', 'tower', AT.tower, 52], ['长江大桥', 'bridge', AT.bridge, 28],
-    ['晴川阁', 'qc', AT.qc, 22], ['龟山电视塔', 'tv', AT.tv, 168],
-    ['江汉关', 'customs', AT.customs, 48], ['武大樱园', 'wuda', wudaAt, 32],
-    ['楚天台', 'chutian', AT.chutian, 62]
+    ['黄鹤楼', 'tower', tower, 1], ['长江大桥', 'bridge', bridge, 1], ['晴川阁', 'qc', qc, 1], ['龟山电视塔', 'tv', tv, 1],
+    ['江汉关', 'customs', customs, 1], ['武大樱园', 'wuda', wuda, 1], ['楚天台', 'chutian', chutian, 1],
+    ['洪山宝塔', 'hongshan', hongshan, 2], ['汉口水塔', 'watertower', watertower, 2], ['省博物馆', 'museum', museum, 2],
+    ['红楼', 'honglou', honglou, 2], ['鹦鹉洲大桥', 'yingwuzhou', yingwuzhou, 2], ['归元寺', 'guiyuan', guiyuan, 2], ['古琴台', 'qintai', qintai, 2]
   ].map(m => {
     const el = document.createElement('button');
     el.type = 'button'; el.className = 'mark'; el.setAttribute('aria-label', '移至' + m[0]);
@@ -101,7 +117,8 @@
                  + '<span class="stem"></span><span class="dot"></span>';
     el.addEventListener('click', () => flyTo(m[1]));
     markBox.appendChild(el);
-    return { el, key: m[1], v: new THREE.Vector3(m[2].x, m[3], m[2].z) };
+    const top = new THREE.Box3().setFromObject(m[2]).max.y;
+    return { el, key: m[1], tier: m[3], v: new THREE.Vector3(m[2].position.x, top + 5, m[2].position.z) };
   });
   function drawMarks(w, h) {
     MARKS.forEach(m => {
@@ -109,7 +126,8 @@
       const d = camera.position.distanceTo(m.v);
       const nx = projV.x * .5 + .5, ny = -projV.y * .5 + .5;
       // 太近则让路，太远或出画则隐去；当前所在景点不再标注
-      let o = THREE.MathUtils.smoothstep(d, 90, 170) * (1 - THREE.MathUtils.smoothstep(d, 1500, 2100));
+      const far = m.tier === 1 ? [1500, 2100] : [650, 950];
+      let o = THREE.MathUtils.smoothstep(d, 90, 170) * (1 - THREE.MathUtils.smoothstep(d, far[0], far[1]));
       if (projV.z > 1 || m.key === activeView || nx < -.02 || nx > 1.02 || ny < -.12 || ny > 1.04) o = 0;
       m.el.style.opacity = o.toFixed(3);
       m.el.style.pointerEvents = o > .35 ? 'auto' : 'none';
@@ -249,3 +267,8 @@
   }
   frame();
   window.__ready = true;
+  // ?debug 时把内部状态挂出来，供浏览器里核对；正常访问不暴露
+  if (/[?&]debug\b/.test(location.search)) window.__dbg = {
+    GEO, LAKES, LAND_HOLES, HILLS, HILL, YZ, HAN, HANKOU, HANYANG, WUCHANG, AT, VIEWS, MARKS, LABELS,
+    LAND_Y, terrainTop, reliefAt, onLand, inPoly, geo, camera, controls, flyTo, scene
+  };
