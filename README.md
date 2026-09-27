@@ -23,10 +23,14 @@ npm ci
 npm run test:build
 npx playwright install chromium webkit
 npm run test:browser
+# 可选：直接打开 file:// 单文件，验证真实 CDN 和音乐开关
+node tests/live-smoke.cjs chromium
+node tests/live-smoke.cjs webkit
 ```
 
 浏览器回归测试使用与 CDN 相同版本的库的本地副本，并注入网络、超时和 WebGL 故障。
 测试依赖只用于开发，不打入页面；截图、报告和失败追踪保存在 `output/playwright/`。
+本轮修复的验收记录和截图见 [体验修复验收](docs/repair-map-experience.md)。
 
 ## 浏览与无障碍
 
