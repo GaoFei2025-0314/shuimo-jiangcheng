@@ -269,7 +269,7 @@
   // ── 武大老斋舍：四栋依山斋舍，三座罗马券拱门连为一体，门上歇山亭楼（1931 年）
   function buildWuda() {
     const g = new THREE.Group(), S = mkS(), BW = 9.4, GAP = 3.4;
-    S.pale.box(50, 7, 15, 0, -3.5, 0);
+    S.pale.box(50, 10, 15, 0, -5, 0);
     [-1.5, -.5, .5, 1.5].map(k => k * (BW + GAP)).forEach(x => {
       S.wall.box(BW, 9.6, 8, x, 4.8, 0);
       for (let f = 0; f < 3; f++) for (let k = -3; k <= 3; k++) S.dark.box(.85, 1.5, .1, x + k * 1.2, 2.2 + f * 3.1, 4.05);
