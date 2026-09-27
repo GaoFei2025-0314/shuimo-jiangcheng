@@ -16,7 +16,7 @@ Three.js（r128）、OrbitControls、BufferGeometryUtils、GSAP 从公共 CDN �
 依赖加载超过 15 秒、资源失败或图形上下文丢失时，页面提供明确提示和“重新加载”入口。
 
 `npm ci` 安装锁定版本的开发工具；构建优先使用本地 Terser，缺少压缩工具时输出未压缩版本，不临时下载工具。
-缺少 Node 时仍可拼接，但不执行语法检查。
+构建需要 Node.js 进行语法检查；缺少 Node 或源码语法错误都会中止，并保留上次有效产物。
 
 ```bash
 npm ci

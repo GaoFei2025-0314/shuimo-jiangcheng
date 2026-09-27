@@ -56,3 +56,23 @@ test('shell inline scripts are preserved without being mixed into the applicatio
   const html = fs.readFileSync(path.join(dir, 'dist/index.html'), 'utf8');
   assert.equal((html.match(/window.shellCheck = true/g) || []).length, 1);
 });
+
+test('missing Node cannot overwrite the previous artifact with unchecked code', t => {
+  const dir = fixture(t);
+  fs.unlinkSync(path.join(dir, 'bin/node'));
+  fs.mkdirSync(path.join(dir, 'dist'));
+  fs.writeFileSync(path.join(dir, 'dist/index.html'), 'previous valid artifact');
+  const result = build(dir);
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /Node/);
+  assert.equal(fs.readFileSync(path.join(dir, 'dist/index.html'), 'utf8'), 'previous valid artifact');
+});
+
+test('a failing minifier falls back to checked uncompressed output', t => {
+  const dir = fixture(t);
+  fs.writeFileSync(path.join(dir, 'bin/terser'), '#!/bin/sh\nexit 1\n', { mode: 0o755 });
+  const result = build(dir);
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /未压缩/);
+  assert.match(fs.readFileSync(path.join(dir, 'dist/index.html'), 'utf8'), /水墨江城/);
+});
