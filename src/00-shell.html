@@ -160,8 +160,13 @@
     text-shadow: 0 0 10px var(--paper), 0 0 4px var(--paper);
   }
   #nav {
-    display: flex; gap: 2px; pointer-events: auto; padding-bottom: 12px; flex-wrap: wrap;
-    max-width: min(660px, 52vw);
+    display: flex; gap: 4px 16px; pointer-events: auto; padding-bottom: 12px; flex-wrap: wrap;
+    max-width: min(700px, 56vw);
+  }
+  #nav .grp { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px; }
+  #nav .gl {
+    font-size: 11px; letter-spacing: .3em; color: var(--ink-faint); padding: 0 2px 0 4px;
+    text-shadow: 0 0 8px var(--paper);
   }
   #nav button {
     appearance: none; background: none; border: 0; cursor: pointer;
@@ -191,6 +196,10 @@
     width: 96px; min-width: 54px; transition: width .25s;
   }
   #hint { font-size: 11px; letter-spacing: .26em; text-shadow: 0 0 8px var(--paper); }
+  #credit {
+    flex-basis: 100%; margin-top: -10px; text-align: right; pointer-events: auto; cursor: help;
+    font-size: 10px; letter-spacing: .08em; color: var(--ink-faint); opacity: .75; text-shadow: 0 0 6px var(--paper);
+  }
 
   #tip {
     position: fixed; z-index: 6; pointer-events: none; padding: 4px 10px 6px;
@@ -199,6 +208,10 @@
   }
   #err { position: fixed; inset: 0; z-index: 9; display: none; place-items: center; text-align: center; font-size: 15px; letter-spacing: .1em; }
 
+  @media (max-width: 1180px) {
+    #nav { max-width: min(560px, calc(100vw - 470px)); }
+    #nav button { font-size: 17px; padding: 6px 8px 8px; }
+  }
   @media (max-width: 860px) {
     #tools { display: none; }
     #nav { max-width: 100%; }
@@ -246,15 +259,33 @@
     <p id="cardText">汉水自西北来，于南岸嘴汇入长江。江北为汉口，两江之间是汉阳，大江东南岸为武昌。</p>
   </div>
   <nav id="nav" aria-label="视角">
-    <button type="button" id="b-home" data-view="home" aria-pressed="true">全城</button>
-    <button type="button" id="b-core" data-view="core" aria-pressed="false">两江</button>
-    <button type="button" id="b-tower" data-view="tower" aria-pressed="false">黄鹤楼</button>
-    <button type="button" id="b-bridge" data-view="bridge" aria-pressed="false">大桥</button>
-    <button type="button" id="b-qc" data-view="qc" aria-pressed="false">晴川阁</button>
-    <button type="button" id="b-tv" data-view="tv" aria-pressed="false">电视塔</button>
-    <button type="button" id="b-customs" data-view="customs" aria-pressed="false">江汉关</button>
-    <button type="button" id="b-wuda" data-view="wuda" aria-pressed="false">武大</button>
-    <button type="button" id="b-lake" data-view="lake" aria-pressed="false">东湖</button>
+    <div class="grp">
+      <button type="button" id="b-home" data-view="home" aria-pressed="true">全城</button>
+      <button type="button" id="b-core" data-view="core" aria-pressed="false">两江</button>
+      <button type="button" id="b-bridge" data-view="bridge" aria-pressed="false">大桥</button>
+      <button type="button" id="b-yingwuzhou" data-view="yingwuzhou" aria-pressed="false">鹦鹉洲</button>
+    </div>
+    <div class="grp" role="group" aria-label="武昌">
+      <span class="gl" aria-hidden="true">武昌</span>
+      <button type="button" id="b-tower" data-view="tower" aria-pressed="false">黄鹤楼</button>
+      <button type="button" id="b-honglou" data-view="honglou" aria-pressed="false">红楼</button>
+      <button type="button" id="b-hongshan" data-view="hongshan" aria-pressed="false">宝通寺</button>
+      <button type="button" id="b-wuda" data-view="wuda" aria-pressed="false">武大</button>
+      <button type="button" id="b-museum" data-view="museum" aria-pressed="false">省博</button>
+      <button type="button" id="b-lake" data-view="lake" aria-pressed="false">东湖</button>
+    </div>
+    <div class="grp" role="group" aria-label="汉阳">
+      <span class="gl" aria-hidden="true">汉阳</span>
+      <button type="button" id="b-qc" data-view="qc" aria-pressed="false">晴川阁</button>
+      <button type="button" id="b-tv" data-view="tv" aria-pressed="false">电视塔</button>
+      <button type="button" id="b-guiyuan" data-view="guiyuan" aria-pressed="false">归元寺</button>
+      <button type="button" id="b-qintai" data-view="qintai" aria-pressed="false">古琴台</button>
+    </div>
+    <div class="grp" role="group" aria-label="汉口">
+      <span class="gl" aria-hidden="true">汉口</span>
+      <button type="button" id="b-customs" data-view="customs" aria-pressed="false">江汉关</button>
+      <button type="button" id="b-watertower" data-view="watertower" aria-pressed="false">水塔</button>
+    </div>
   </nav>
   <div id="tools">
     <svg id="rose" viewBox="0 0 52 52" aria-hidden="true">
@@ -271,6 +302,7 @@
     </div>
   </div>
   <div id="hint">拖拽旋转　滚轮缩放　点击景点</div>
+  <div id="credit" title="Terrain produced using Copernicus WorldDEM-30 © DLR e.V. 2010-2014 and © Airbus Defence and Space GmbH 2014-2018 provided under COPERNICUS by the European Union and ESA; all rights reserved. The organisations in charge of the Copernicus programme by law or by delegation do not incur any liability for any use of the Copernicus WorldDEM-30. Place coordinates © OpenStreetMap contributors (ODbL).">地形 Copernicus DEM GLO-30 · 地名 © OpenStreetMap 贡献者</div>
 </div>
 <div id="tip" aria-hidden="true"></div>
 <div id="err">三维场景未能加载，请检查网络后刷新。</div>
