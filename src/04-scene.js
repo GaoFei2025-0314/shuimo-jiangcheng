@@ -28,6 +28,16 @@
   const yA = geo(114.26637, 30.53657), yB = geo(114.28587, 30.52963);
   const yingwuzhou = place(buildSuspension(Math.hypot(yB.x - yA.x, yB.z - yA.z) / 2), AT.yingwuzhou, 1,
     Math.atan2(yB.x - yA.x, yB.z - yA.z), '鹦鹉洲长江大桥', 'yingwuzhou', 0);
+  // 两座大桥桥面之下不起楼、不种树：离桥轴 12 个单位内一概让开（长江大桥连引桥共 ±154 模型单位 × .74）
+  const bridgeSpan = (c, a, b, half) => {
+    const dx = b.x - a.x, dz = b.z - a.z, L = Math.hypot(dx, dz);
+    return [{ x: c.x - dx / L * half, z: c.z - dz / L * half }, { x: c.x + dx / L * half, z: c.z + dz / L * half }];
+  };
+  const BRIDGES = [bridgeSpan(AT.bridge, bA, bB, 154 * .74), [yA, yB]];
+  const offBridge = (x, z) => BRIDGES.every(([a, b]) => {
+    const dx = b.x - a.x, dz = b.z - a.z, t = Math.max(0, Math.min(1, ((x - a.x) * dx + (z - a.z) * dz) / (dx * dx + dz * dz)));
+    return Math.hypot(x - a.x - t * dx, z - a.z - t * dz) > 12;
+  });
   // 东湖水面本身也可点选
   const lakePick = new THREE.Mesh(new THREE.ShapeGeometry(new THREE.Shape(LAKE.map(p => new THREE.Vector2(p[0], -p[1])))), new THREE.MeshBasicMaterial({ visible: false }));
   lakePick.rotation.x = -Math.PI / 2; lakePick.position.y = .05;
@@ -99,7 +109,7 @@
   // 新景点各按自身占地避让，不随调用方的半径——汉口水塔若按市廛的 46 单位清场，汉口就被掏空了
   const KEEP2 = [[AT.hongshan, 22], [AT.watertower, 12], [AT.museum, 34], [AT.honglou, 26], [AT.guiyuan, 36], [AT.qintai, 20]];
   const clearOf = (x, z, r) => KEEP.every(k => (k.x - x) ** 2 + (k.z - z) ** 2 > r * r)
-    && KEEP2.every(([k, rr]) => (k.x - x) ** 2 + (k.z - z) ** 2 > rr * rr);
+    && KEEP2.every(([k, rr]) => (k.x - x) ** 2 + (k.z - z) ** 2 > rr * rr) && offBridge(x, z);
   const CORE = geo(114.2950, 30.5600);
   // 在山的格子里撒点，只留起伏超过 3 个单位的（真在山上，不在山脚水边）。密度按格子面积，
   // 无名山只按约三分之一的密度种，免得抢了主山的戏
