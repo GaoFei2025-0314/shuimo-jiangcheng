@@ -10,8 +10,9 @@
     return g;
   }
   // 大桥轴线：武昌蛇山头 → 汉阳龟山东麓
-  const bA = geo(114.28875, 30.54835), bB = geo(114.27525, 30.55685);   // 随桥心一并平移，桥向与桥长不变
+  const bA = geo(114.28957, 30.54783), bB = geo(114.27607, 30.55633);   // 随桥心一并平移（桥心改取江心，沿桥轴、按水体掩膜量得），桥向与桥长不变
   const bridge  = place(buildBridge(), AT.bridge, .74, Math.atan2(bB.x - bA.x, bB.z - bA.z), '武汉长江大桥', 'bridge', 0);
+  bridge.scale.z = .74 * .81;   // 沿桥长再收缩，缩到江宽：正桥 ±72 → ±43，配合约 85 单位（≈1.1 公里）的江面（正桥原长 1156 米）；桥头堡随之落到 ±50，正好在两岸
   const tower   = place(buildTower(), AT.tower, .88, .18, '黄鹤楼', 'tower');
   const tv      = place(buildTV(), AT.tv, 1.5, 0, '龟山电视塔', 'tv');
   const qc      = place(buildQingchuan(), AT.qc, .92, Math.PI / 2, '晴川阁', 'qc');
@@ -28,12 +29,12 @@
   const yA = geo(114.26637, 30.53657), yB = geo(114.28587, 30.52963);
   const yingwuzhou = place(buildSuspension(Math.hypot(yB.x - yA.x, yB.z - yA.z) / 2), AT.yingwuzhou, 1,
     Math.atan2(yB.x - yA.x, yB.z - yA.z), '鹦鹉洲长江大桥', 'yingwuzhou', 0);
-  // 两座大桥桥面之下不起楼、不种树：离桥轴 12 个单位内一概让开（长江大桥连引桥共 ±154 模型单位 × .74）
+  // 两座大桥桥面之下不起楼、不种树：离桥轴 12 个单位内一概让开（长江大桥连引桥共 ±154 模型单位 × .74 × .81）
   const bridgeSpan = (c, a, b, half) => {
     const dx = b.x - a.x, dz = b.z - a.z, L = Math.hypot(dx, dz);
     return [{ x: c.x - dx / L * half, z: c.z - dz / L * half }, { x: c.x + dx / L * half, z: c.z + dz / L * half }];
   };
-  const BRIDGES = [bridgeSpan(AT.bridge, bA, bB, 154 * .74), [yA, yB]];
+  const BRIDGES = [bridgeSpan(AT.bridge, bA, bB, 154 * .74 * .81), [yA, yB]];
   const offBridge = (x, z) => BRIDGES.every(([a, b]) => {
     const dx = b.x - a.x, dz = b.z - a.z, t = Math.max(0, Math.min(1, ((x - a.x) * dx + (z - a.z) * dz) / (dx * dx + dz * dz)));
     return Math.hypot(x - a.x - t * dx, z - a.z - t * dz) > 12;
