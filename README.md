@@ -19,32 +19,44 @@ Three.js（r128）、OrbitControls、BufferGeometryUtils、GSAP 均从公共 CDN
 ```
 src/
   00-shell.html      页面骨架：CSS、题名、竖排诗、导览、罗盘与比例尺、CDN 引入
+  geodata.gen.js     由 tools/geodata/extract.py 生成的河道、湖、山数据（勿手改）
   01-core.js         经纬度投影、水墨 Shader、几何累加器、通用构件
-  02-landmarks.js    七处地标的程序化建模
-  03-terrain.js      两江河道、三镇陆块、东湖、山体、水纹图与江面 Shader
+  02-landmarks.js    十四处地标的程序化建模
+  03-terrain.js      两江河道、三镇陆块、湖、山体（均读 geodata.gen.js）、水纹图与江面 Shader
   04-scene.js        景点落位、草木、市廛、舟船、飞鸟、烟波
   05-runtime.js      镜头、地名题记、地标竖牌、点选、渲染循环
   06-audio.js        背景音乐：Web Audio 合成的古琴、水声与江风
+tools/geodata/       离线管线：download.py 下载瓦片，prepare.py 拼接裁剪，extract.py 提取，check_geodata.py 校验
 build.sh             拼接脚本（<script> 与 IIFE 的包裹在此，不在源码里）
-dist/index.html      构建产物
+dist/index.html      构建产物（不入库）
 ```
 
 ## 坐标系统
 
 以黄鹤楼为原点的等距圆柱投影，`+x` 正东、`−z` 正北，1 单位 = 13 米。
 
-| 地标 | 经度 | 纬度 |
-|---|---|---|
-| 黄鹤楼 | 114.29694 | 30.54694 |
-| 武汉长江大桥（正桥中点） | 114.28775 | 30.54975 |
-| 龟山电视塔 | 114.27000 | 30.55550 |
-| 晴川阁 · 禹稷行宫 | 114.27980 | 30.55867 |
-| 江汉关 | 114.29208 | 30.57874 |
-| 武大老斋舍 | 114.36250 | 30.53950 |
-| 东湖磨山 · 楚天台 | 114.40500 | 30.54450 |
+| 地标 | 经度 | 纬度 | 坐标来源 |
+|---|---|---|---|
+| 黄鹤楼 | 114.29694 | 30.54694 | 维基百科，与 OSM 相符 |
+| 武汉长江大桥（正桥中点） | 114.28200 | 30.55260 | OSM 桥梁节点（原值偏东南约 600 米） |
+| 龟山电视塔 | 114.27508 | 30.55802 | OSM；与 DEM 实测龟山峰顶相距约 45 米 |
+| 晴川阁 · 禹稷行宫 | 114.27980 | 30.55867 | OSM |
+| 江汉关 | 114.29208 | 30.57874 | OSM |
+| 汉口水塔 | 114.28471 | 30.58153 | OSM |
+| 红楼 · 辛亥革命博物院北区 | 114.30084 | 30.54445 | Nominatim |
+| 归元禅寺 | 114.25369 | 30.54784 | Nominatim |
+| 古琴台 | 114.26073 | 30.55940 | **近似**：鹦鹉大道同名公交站位 |
+| 鹦鹉洲长江大桥（桥心） | 114.27612 | 30.53310 | 沿 OSM 桥向，取水体掩膜上两岸之间的中点 |
+| 宝通禅寺 · 洪山宝塔 | 114.33497 | 30.53454 | Nominatim |
+| 武大老斋舍 | 114.36250 | 30.53950 | 维基百科 |
+| 湖北省博物馆 | 114.35973 | 30.56374 | OSM |
+| 东湖磨山 · 楚天台 | 114.40500 | 30.55450 | 原纬度 30.5445 为笔误；与 DEM 实测磨山峰顶相距约 45 米 |
 
-长江与汉水的中泓线、东湖轮廓是按控制点拟合的平滑曲线，不是测绘岸线；
-江心洲、天兴洲等未绘。大的走向与相对位置可靠，细节不能当地图用。
+长江与汉水的中泓线、半宽，以及各湖岸线，均由 Copernicus GLO-30 的水体掩膜提取：
+在掩膜里走最小代价路径取河心，半宽取离岸距离；湖取高斯圆滑后的 0.5 等值线
+（东湖 σ=300 米，小湖 σ=90 米），去掉 30 米格网抖出的碎边。山体形状取自 DSM
+「高出局部基面」的连通地块，峰值改用实测海拔。这不是测绘岸线，大的走向与相对位置可靠，
+细节不能当地图用。
 
 ## 渲染要点
 
@@ -55,8 +67,11 @@ dist/index.html      构建产物
 「距中泓的世界距离」「离岸远近」「是否水面」「是江还是湖」。
 Shader 据此让笔触顺河道走、近岸留白、江心笔浓，湖面则改为平远的横笔。
 
-**山** —— 皴（顺坡放射的短笔，只在陡处见笔）、廓（法线与视线垂直处落墨，
-等于一道随镜头走的轮廓线）、山脚云气（下缘虚入纸中）。
+**山** —— 形状取自 Copernicus GLO-30，每座山一块高程格子（相对平原的起伏）；
+   峰值改用实测海拔，因为 DSM 含建筑，能抹净楼群的滤波会连山一起削掉六成。
+   网格点之间作 Catmull-Rom 双三次插值，轮廓是圆的，不见格子。
+   笔法仍是皴（顺坡放射的短笔，只在陡处见笔）、廓（法线与视线垂直处落墨）、
+   山脚云气（下缘虚入纸中）。
 
 **镜头穿过时的消隐** —— 屋舍在靠近镜头时按世界坐标抖动溶解，边线同步淡出；
 镜头高度另有地形兜底，不钻山不入地。
@@ -74,6 +89,28 @@ Shader 据此让笔触顺河道走、近岸留白、江心笔浓，湖面则改�
 2. **GSAP 的时间轴走 rAF。** 弱显卡上渲染帧率掉到个位数时，`lagSmoothing`
    会把动画拖得极慢，UI 可能长时间卡在不可见状态。因此入场的题名与导览
    改用 CSS 动画驱动（走合成器时钟，不受渲染帧率影响），GSAP 只留给镜头。
+
+## 数据与许可
+
+地形与水系：Copernicus DEM GLO-30。衍生品按许可须附以下措辞（页面右下角署名可展开查看）：
+
+> produced using Copernicus WorldDEM-30 © DLR e.V. 2010-2014 and © Airbus Defence and Space
+> GmbH 2014-2018 provided under COPERNICUS by the European Union and ESA; all rights reserved.
+>
+> The organisations in charge of the Copernicus programme by law or by delegation do not incur
+> any liability for any use of the Copernicus WorldDEM-30.
+
+地名与景点坐标：OpenStreetMap 与 Nominatim，© OpenStreetMap 贡献者，ODbL 1.0。
+
+重新生成数据（原始瓦片约 532 MB，放在不入库的 `output/dem-wuhan/`）：
+
+```bash
+python3 -m venv .venv-geo && .venv-geo/bin/pip install -r tools/geodata/requirements.txt
+.venv-geo/bin/python tools/geodata/download.py      # → output/dem-wuhan/ 九张瓦片
+.venv-geo/bin/python tools/geodata/prepare.py       # → 拼接裁剪成两张 GeoTIFF
+.venv-geo/bin/python tools/geodata/extract.py       # → src/geodata.gen.js
+.venv-geo/bin/python tools/geodata/check_geodata.py # → 校验
+```
 
 ## 资料来源
 
