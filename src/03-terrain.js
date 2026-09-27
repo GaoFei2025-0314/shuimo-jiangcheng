@@ -50,6 +50,8 @@
   const LRX = GEO.lakeBoat.rx / MPU, LRZ = GEO.lakeBoat.rz / MPU;     // 湖上舟行椭圆的半轴
   const LAKE_BB = LAKES.map(L => L.reduce((b, p) =>
     [Math.min(b[0], p[0]), Math.max(b[1], p[0]), Math.min(b[2], p[1]), Math.max(b[3], p[1])], [1e9, -1e9, 1e9, -1e9]));
+  // 湖面笔触的取样半径：按各湖尺寸定，小湖（沙湖、月湖等）也能收到几笔，东湖仍按 120 封顶不变
+  const LAKE_REACH = LAKE_BB.map(b => Math.min(120, .4 * Math.min(b[1] - b[0], b[3] - b[2])));
 
   function inPoly(poly, x, z) {
     let c = false;
@@ -77,7 +79,7 @@
         CL.push({ x: s.p.x, z: s.p.z, w: s.w, nx: s.d.z / L, nz: -s.d.x / L });
       }
     };
-    grab(YZ.s, 5); grab(HAN.s, 4);
+    grab(YZ.s, 5); grab(HAN.s, 4);   // 汉水原始采样点比长江少，跨步也按比例调小，取完两条中泓线的点数、烘焙开销大致相当
     const LK = LAKES.map(L => L.filter((p, k) => k % 3 === 0));
     for (let j2 = 0; j2 < FN; j2++) {
       const z = WR.z + (j2 + .5) / FN * WR.h;
@@ -99,8 +101,8 @@
             const dd = (p[0] - x) * (p[0] - x) + (p[1] - z) * (p[1] - z);
             if (dd < de) de = dd;
           }
-          signed = z - lakeC.z;                               // 湖面平远：横笔数道，不作同心圆
-          band = Math.min(1, Math.sqrt(de) / 120);
+          signed = z - lakeC.z;                               // 湖面平远：横笔数道，不作同心圆；所有湖都借东湖湖心定相，仅为横笔取一致的相位基准，与各湖自身位置无关
+          band = Math.min(1, Math.sqrt(de) / LAKE_REACH[li]); // 按各湖尺寸定取样半径，小湖也能收到几笔，东湖（半径已封顶 120）不受影响
           wet = 1; lake = 1;
           break;
         }
