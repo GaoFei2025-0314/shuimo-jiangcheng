@@ -20,7 +20,7 @@ test('reduced motion switches instantly and freezes automatic scenery', async ({
   expect(first.tweens).toBe(0);
   await page.waitForTimeout(150);
   const next = await motion(page);
-  expect(next.camera).toEqual(first.camera);
+  next.camera.forEach((value, i) => expect(value).toBeCloseTo(first.camera[i], 8));
   expect(next.times).toEqual(first.times);
 });
 

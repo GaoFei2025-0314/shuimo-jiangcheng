@@ -103,99 +103,7 @@
     moveCamera(view, true);
   }
 
-  /* ═════════ 十三、地名题记 ═════════ */
-  const labelBox = document.getElementById('labels');
-  const LABELS = [
-    ['汉口', 114.2820, 30.5990, 'town', 26],
-    ['汉阳', 114.2610, 30.5430, 'town', 18],
-    ['武昌', 114.3220, 30.5330, 'town', 20],
-    ['长江', 114.2905, 30.5700, 'water', 4],
-    ['汉水', 114.2470, 30.5868, 'water', 4],
-    ['东湖', 114.3880, 30.5605, 'water', 4],
-    ['南岸嘴', 114.2838, 30.5628, 'hill', 8],
-    ['蛇山', 114.3085, 30.5458, 'hill', 26],
-    ['龟山', 114.2700, 30.5562, 'hill', 30],
-    ['珞珈山', 114.3655, 30.5372, 'hill', 28],
-    ['磨山', 114.4062, 30.5395, 'hill', 30]
-  ].map(L => {
-    const el = document.createElement('b'); el.className = L[3]; el.textContent = L[0];
-    labelBox.appendChild(el);
-    const p = geo(L[1], L[2]);
-    return { el, v: new THREE.Vector3(p.x, L[4], p.z), kind: L[3] };
-  });
-  /* 地标竖牌 */
-  const markBox = document.getElementById('marks');
-  const MARKS = [
-    ['黄鹤楼', 'tower', AT.tower, 52], ['长江大桥', 'bridge', AT.bridge, 28],
-    ['晴川阁', 'qc', AT.qc, 22], ['龟山电视塔', 'tv', AT.tv, 168],
-    ['江汉关', 'customs', AT.customs, 48], ['武大樱园', 'wuda', wudaAt, 32],
-    ['楚天台', 'chutian', AT.chutian, 62]
-  ].map(m => {
-    const el = document.createElement('button');
-    el.type = 'button'; el.className = 'mark'; el.setAttribute('aria-label', '移至' + m[0]);
-    el.innerHTML = '<span class="plate">' + [...m[0]].map(c => '<i>' + c + '</i>').join('') + '</span>'
-                 + '<span class="stem"></span><span class="dot"></span>';
-    el.addEventListener('click', () => flyTo(m[1]));
-    markBox.appendChild(el);
-    return { el, key: m[1], v: new THREE.Vector3(m[2].x, m[3], m[2].z) };
-  });
-  function setMarkVisibility(mark, visible, opacity) {
-    if (!visible && document.activeElement === mark.el) {
-      const key = mark.key === 'chutian' ? 'lake' : mark.key;
-      const button = buttons.find(b => b.dataset.view === key);
-      if (button) button.focus({ preventScroll: true });
-    }
-    mark.el.disabled = !visible;
-    mark.el.tabIndex = visible ? 0 : -1;
-    mark.el.setAttribute('aria-hidden', String(!visible));
-    mark.el.style.visibility = visible ? 'visible' : 'hidden';
-    mark.el.style.opacity = visible ? opacity.toFixed(3) : '0';
-    mark.el.style.pointerEvents = visible ? 'auto' : 'none';
-  }
-  function drawMarks(w, h) {
-    MARKS.forEach(m => {
-      projV.copy(m.v).project(camera);
-      const d = camera.position.distanceTo(m.v);
-      const nx = projV.x * .5 + .5, ny = -projV.y * .5 + .5;
-      // 太近则让路，太远或出画则隐去；当前所在景点不再标注
-      let o = THREE.MathUtils.smoothstep(d, 90, 170) * (1 - THREE.MathUtils.smoothstep(d, 1500 * markFarScale, 2100 * markFarScale));
-      if (projV.z > 1 || m.key === activeView || nx < -.02 || nx > 1.02 || ny < -.12 || ny > 1.04) o = 0;
-      setMarkVisibility(m, o > .35, o);
-      if (o <= .35) return;
-      if (!m.h) m.h = m.el.offsetHeight || 60;
-      const px = Math.min(w - 40, Math.max(40, nx * w));
-      const py = Math.min(h - 24, Math.max(m.h + 8, ny * h));   // 牌子不出画
-      m.el.style.transform = `translate(-50%,-100%) translate(${px.toFixed(1)}px,${py.toFixed(1)}px)`;
-    });
-  }
-
-  const RANGE = { town: [340, 3200], water: [140, 2800], hill: [70, 1000] };
-  const projV = new THREE.Vector3();
-  function drawLabels(w, h) {
-    LABELS.forEach(L => {
-      projV.copy(L.v).project(camera);
-      if (projV.z > 1) { L.el.style.opacity = 0; return; }
-      const d = camera.position.distanceTo(L.v), r = RANGE[L.kind];
-      const o = THREE.MathUtils.smoothstep(d, r[0] * .55, r[0]) * (1 - THREE.MathUtils.smoothstep(d, r[1], r[1] * 1.35));
-      L.el.style.opacity = o.toFixed(3);
-      if (o < .01) return;
-      L.el.style.transform = `translate(-50%,-50%) translate(${((projV.x * .5 + .5) * w).toFixed(1)}px,${((-projV.y * .5 + .5) * h).toFixed(1)}px)`;
-    });
-  }
-
-  /* 罗盘与比例尺 */
-  const dial = document.querySelector('#rose .dial'), sBar = document.getElementById('scaleBar'), sTxt = document.getElementById('scaleText');
-  const NICE = [100, 200, 500, 1000, 2000, 5000, 10000, 20000];
-  function drawTools(h) {
-    const az = Math.atan2(camera.position.x - controls.target.x, camera.position.z - controls.target.z) * 180 / Math.PI;
-    dial.setAttribute('transform', `rotate(${az.toFixed(1)} 26 26)`);
-    const dist = camera.position.distanceTo(controls.target);
-    const mPerPx = 2 * dist * Math.tan(camera.fov * Math.PI / 360) / h * MPU;
-    let m = NICE[0];
-    for (const n of NICE) { m = n; if (n / mPerPx >= 64) break; }
-    sBar.style.width = Math.min(190, Math.round(m / mPerPx)) + 'px';
-    sTxt.textContent = m >= 1000 ? (m / 1000) + ' 公里' : m + ' 米';
-  }
+  const overlays = createMapOverlays(camera, controls, flyTo, buttons);
 
   /* ═════════ 十四、点选 ═════════ */
   const ray = new THREE.Raycaster(), ndc = new THREE.Vector2(), tip = document.getElementById('tip');
@@ -238,6 +146,7 @@
   function refreshLayout(refit = true) {
     const measured = layout.measure(W, H);
     safeRect = measured.rect; uiBlocks = measured.blocks; layoutDirty = false;
+    overlays.invalidate();
     const signature = [layout.compact, W, H, ...Object.values(safeRect)].join(',');
     if (signature === layoutSignature) return;
     layoutSignature = signature;
@@ -329,7 +238,7 @@
 
     controls.update();
     renderer.render(scene, camera);
-    drawLabels(W, H); drawMarks(W, H); drawTools(H);
+    overlays.draw(W, H, activeView, uiBlocks, markFarScale);
     frameId = requestAnimationFrame(frame);
   }
   enterScene();
