@@ -95,7 +95,7 @@
     const n = Math.round((h.x1 - h.x0) * (h.z1 - h.z0) / 55 * (density || 1) * (h.name ? 1 : .35));
     for (let i = 0; i < n; i++) {
       const x = h.x0 + rnd() * (h.x1 - h.x0), z = h.z0 + rnd() * (h.z1 - h.z0);
-      if (sampleField(h.f, x, z) < 3 || !clearOf(x, z, 16) || (keep && !keep(x, z))) continue;
+      if (sampleField(h.f, x, z) < 3 || !clearOf(x, z, 22) || (keep && !keep(x, z))) continue;   // 22：盖住电视塔 30×30 台座的四角
       const y = terrainTop(x, z) - .3, s = s0 * (.55 + rnd() * 1.05);        // 网格线性、terrainTop 双三次，树根最多悬空 0.6，略沉入地面
       if (kind === 'p') pine(x, y, z, s); else sakura(x, y, z, s);
     }

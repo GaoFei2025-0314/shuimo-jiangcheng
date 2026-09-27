@@ -162,6 +162,7 @@
   function buildTV() {
     const g = new THREE.Group(), S = mkS();
     const P = a => a.map(p => new THREE.Vector2(p[0], p[1]));
+    S.pale.box(18, 14, 18, 0, -7, 0);                                     // 塔基没入龟山脊：峰顶窄，台座四角外地面陡落
     S.pale.box(20, 3.4, 20, 0, 1.7, 0); S.pale.box(13, 2.4, 13, 0, 4.6, 0);
     S.roofs.geo(roofGeo(12, 5, 2.4, .6, 12, 3), 0, 5.6, 0);
     const shaft = new THREE.Mesh(new THREE.LatheGeometry(P([[7.4, 0], [5.6, 4], [4.0, 10], [3.3, 20], [2.9, 40], [2.7, 60], [2.5, 76]]), 30), M.dbl);
