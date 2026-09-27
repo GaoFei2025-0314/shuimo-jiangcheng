@@ -787,7 +787,7 @@ if __name__ == '__main__':
   山 —    峰 114.4126,30.5229  起伏  25.9 米（实测  55.8）  32×14
   山 —    峰 114.4374,30.5151  起伏  22.6 米（实测  50.3）  26×13
   山 —    峰 114.4315,30.5304  起伏  11.1 米（实测  24.7）  17×12
-写出 /private/tmp/claude-501/-Users-gf-Documents-Projects-2026-09-----demo2-shuimo-jiangcheng/ccf2b724-2882-47cf-b0ff-583e53774cc6/scratchpad/sync.gen.js（13.1 KB）
+写出 .../src/geodata.gen.js（13.1 KB）
 ```
 
 蛇山那行「实测 0.8」是对的：它的横截面是按山脊线补的，实测值只是归一化前的幅值，没有意义。
