@@ -24,8 +24,8 @@
   const honglou    = place(buildHonglou(), AT.honglou, .8, 0, '红楼', 'honglou');
   const guiyuan    = place(buildGuiyuan(), AT.guiyuan, .7, 0, '归元禅寺', 'guiyuan');
   const qintai     = place(buildQintai(), AT.qintai, .7, -Math.PI / 2, '古琴台', 'qintai');   // 台面朝西，对着月湖
-  // 鹦鹉洲大桥：OSM 桥线两端，桥长随之
-  const yA = geo(114.27360, 30.53400), yB = geo(114.29056, 30.52796);
+  // 鹦鹉洲大桥：沿 OSM 桥向（原两端点连线并非江岸），两端各在水体掩膜江面之外 150 米落岸，桥长随之
+  const yA = geo(114.26637, 30.53657), yB = geo(114.28587, 30.52963);
   const yingwuzhou = place(buildSuspension(Math.hypot(yB.x - yA.x, yB.z - yA.z) / 2), AT.yingwuzhou, 1,
     Math.atan2(yB.x - yA.x, yB.z - yA.z), '鹦鹉洲长江大桥', 'yingwuzhou', 0);
   // 东湖水面本身也可点选
@@ -97,7 +97,7 @@
   }
   const KEEP = [AT.tower, AT.tv, AT.qc, AT.chutian, AT.wuda];
   // 新景点各按自身占地避让，不随调用方的半径——汉口水塔若按市廛的 46 单位清场，汉口就被掏空了
-  const KEEP2 = [[AT.hongshan, 20], [AT.watertower, 12], [AT.museum, 34], [AT.honglou, 26], [AT.guiyuan, 34], [AT.qintai, 20]];
+  const KEEP2 = [[AT.hongshan, 22], [AT.watertower, 12], [AT.museum, 34], [AT.honglou, 26], [AT.guiyuan, 36], [AT.qintai, 20]];
   const clearOf = (x, z, r) => KEEP.every(k => (k.x - x) ** 2 + (k.z - z) ** 2 > r * r)
     && KEEP2.every(([k, rr]) => (k.x - x) ** 2 + (k.z - z) ** 2 > rr * rr);
   const CORE = geo(114.2950, 30.5600);
