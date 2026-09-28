@@ -2,22 +2,8 @@
   /* ═════════ 五、两江与三镇：按真实河道生成水面与陆地 ═════════ */
   const LAND_Y = .75, X0 = -2200, X1 = 2400, ZTOP = -2600, ZBOT = 2200;
 
-  // 长江：自西南上游经龟蛇之间北上，过南岸嘴与江汉关后折向东北 [经度, 纬度, 半宽(米)]
-  const YANGTZE = [
-    [114.1800, 30.3800, 600], [114.1950, 30.4100, 620], [114.2200, 30.4500, 640],
-    [114.2510, 30.4870, 700], [114.2650, 30.5120, 650], [114.2760, 30.5310, 600],
-    [114.2845, 30.5450, 570], [114.2880, 30.5560, 575], [114.2900, 30.5660, 600],
-    [114.2988, 30.5760, 625], [114.3082, 30.5865, 680], [114.3215, 30.5950, 750],
-    [114.3400, 30.6020, 820], [114.3650, 30.6080, 900], [114.3950, 30.6120, 950],
-    [114.4300, 30.6500, 980], [114.4700, 30.7000, 1000], [114.5000, 30.7400, 1000]
-  ];
-  // 汉水：自西北来，沿龟山北麓东行，于南岸嘴汇入长江
-  const HANSHUI = [
-    [114.0600, 30.6220, 150], [114.1200, 30.6150, 145], [114.1700, 30.6050, 140],
-    [114.2180, 30.5960, 135], [114.2340, 30.5905, 135], [114.2500, 30.5855, 140],
-    [114.2640, 30.5790, 145], [114.2730, 30.5720, 150], [114.2800, 30.5660, 175],
-    [114.2870, 30.5630, 215]
-  ];
+  // 长江与汉水：中泓线与半宽按实测水体掩膜追出（tools/geodata/extract.py）[经度, 纬度, 半宽(米)]
+  const YANGTZE = GEO.yangtze, HANSHUI = GEO.hanshui;
 
   function sampleRiver(pts, n) {
     const curve = new THREE.CatmullRomCurve3(pts.map(p => gv(p[0], p[1], 0)), false, 'catmullrom', .5);
@@ -35,7 +21,7 @@
       return [s.p.x + side * nx / L * s.w, s.p.z + side * nz / L * s.w];
     });
   }
-  const YZ = sampleRiver(YANGTZE, 150), HAN = sampleRiver(HANSHUI, 70);
+  const YZ = sampleRiver(YANGTZE, 360), HAN = sampleRiver(HANSHUI, 200);   // 约 150 米一个采样
   const yzW = bank(YZ.s, +1), yzE = bank(YZ.s, -1);    // 长江北流：左岸即西岸
   const hanN = bank(HAN.s, +1), hanS = bank(HAN.s, -1);// 汉水东流：左岸即北岸
 
@@ -43,30 +29,29 @@
   const mouth = HAN.s[HAN.s.length - 1].p;
   let kk = 0, best = 1e18;
   yzW.forEach((p, i) => { const d = (p[0] - mouth.x) ** 2 + (p[1] - mouth.z) ** 2; if (d < best) { best = d; kk = i; } });
-  const HCUT = 4;                                       // 河口张开的余量
+  const HCUT = 3;                                       // 河口张开的余量：约 450 米
 
   const HANKOU = hanN.slice(0, hanN.length - HCUT)
     .concat(yzW.slice(kk + HCUT))
-    .concat([[yzW[yzW.length - 1][0], ZTOP], [X0, ZTOP], [X0, hanN[0][1]]]);
+    .concat([[X1, yzW[yzW.length - 1][1]], [X1, ZTOP], [X0, ZTOP], [X0, hanN[0][1]]]);   // 长江自东缘出图：北岸沿江向东收到场景边，东北角是陆地
   const HANYANG = yzW.slice(0, Math.max(1, kk - HCUT)).reverse()
     .concat([[yzW[0][0], ZBOT], [X0, ZBOT], [X0, hanS[0][1]]])
     .concat(hanS.slice(0, hanS.length - HCUT));
   const WUCHANG = yzE.slice()
     .concat([[X1, yzE[yzE.length - 1][1]], [X1, ZBOT], [yzE[0][0], ZBOT]]);
 
-  // 东湖：中国最大的城中湖，水域约 33 平方公里
-  const LAKE_G = [
-    [114.3545, 30.5545], [114.3580, 30.5620], [114.3660, 30.5675], [114.3760, 30.5700],
-    [114.3880, 30.5715], [114.4000, 30.5705], [114.4110, 30.5660], [114.4205, 30.5590],
-    [114.4270, 30.5495], [114.4300, 30.5400], [114.4250, 30.5330], [114.4140, 30.5295],
-    [114.4030, 30.5310], [114.3960, 30.5375], [114.3900, 30.5440], [114.3840, 30.5480],
-    [114.3760, 30.5470], [114.3690, 30.5430], [114.3620, 30.5440], [114.3570, 30.5485]
-  ];
-  const LAKE = (() => {                                 // 平滑成自然湖岸
-    const c = new THREE.CatmullRomCurve3(LAKE_G.map(p => gv(p[0], p[1], 0)), true, 'catmullrom', .5);
-    return c.getPoints(160).map(p => [p.x, p.z]);
-  })();
-  const lakeC = geo(114.3920, 30.5500);
+  // 湖：实测水体掩膜圆滑后的岸线。第一个是东湖——中国最大的城中湖，水域约 33 平方公里
+  const LAKES = GEO.lakes.map(L => {                    // 再过一遍 Catmull-Rom，成自然湖岸
+    const c = new THREE.CatmullRomCurve3(L.pts.map(p => gv(p[0], p[1], 0)), true, 'catmullrom', .5);
+    return c.getPoints(L.pts.length * 6).map(p => [p.x, p.z]);
+  });
+  const LAKE = LAKES[0];
+  const lakeC = geo(GEO.lakeBoat.c[0], GEO.lakeBoat.c[1]);           // 东湖主湖面中心
+  const LRX = GEO.lakeBoat.rx / MPU, LRZ = GEO.lakeBoat.rz / MPU;     // 湖上舟行椭圆的半轴
+  const LAKE_BB = LAKES.map(L => L.reduce((b, p) =>
+    [Math.min(b[0], p[0]), Math.max(b[1], p[0]), Math.min(b[2], p[1]), Math.max(b[3], p[1])], [1e9, -1e9, 1e9, -1e9]));
+  // 湖面笔触的取样半径：按各湖尺寸定，小湖（沙湖、月湖等）也能收到几笔，东湖仍按 120 封顶不变
+  const LAKE_REACH = LAKE_BB.map(b => Math.min(120, .4 * Math.min(b[1] - b[0], b[3] - b[2])));
 
   function inPoly(poly, x, z) {
     let c = false;
@@ -76,8 +61,12 @@
     }
     return c;
   }
+  const inLake = (x, z) => LAKES.some((L, i) => {
+    const b = LAKE_BB[i];
+    return x > b[0] && x < b[1] && z > b[2] && z < b[3] && inPoly(L, x, z);
+  });
   const onLand = (x, z) =>
-    (inPoly(WUCHANG, x, z) && !inPoly(LAKE, x, z)) || inPoly(HANKOU, x, z) || inPoly(HANYANG, x, z);
+    (inPoly(WUCHANG, x, z) || inPoly(HANKOU, x, z) || inPoly(HANYANG, x, z)) && !inLake(x, z);
 
   /* 水面：以「水纹图」驱动的笔触——顺流成线，近岸留白，湖面作同心波 */
   const FN = 512, WR = { x: -1000, z: -1300, w: 2400, h: 2200 };
@@ -90,10 +79,8 @@
         CL.push({ x: s.p.x, z: s.p.z, w: s.w, nx: s.d.z / L, nz: -s.d.x / L });
       }
     };
-    grab(YZ.s, 4); grab(HAN.s, 3);
-    let lx0 = 1e9, lx1 = -1e9, lz0 = 1e9, lz1 = -1e9;
-    LAKE.forEach(p => { lx0 = Math.min(lx0, p[0]); lx1 = Math.max(lx1, p[0]); lz0 = Math.min(lz0, p[1]); lz1 = Math.max(lz1, p[1]); });
-    const LK = []; for (let k = 0; k < LAKE.length; k += 3) LK.push(LAKE[k]);
+    grab(YZ.s, 5); grab(HAN.s, 4);   // 汉水原始采样点比长江少，跨步也按比例调小，取完两条中泓线的点数、烘焙开销大致相当
+    const LK = LAKES.map(L => L.filter((p, k) => k % 3 === 0));
     for (let j2 = 0; j2 < FN; j2++) {
       const z = WR.z + (j2 + .5) / FN * WR.h;
       for (let i2 = 0; i2 < FN; i2++) {
@@ -106,15 +93,18 @@
         const dist = Math.sqrt(bd);
         let signed = (x - b.x) * b.nx + (z - b.z) * b.nz;
         let band = 1 - dist / b.w, wet = dist < b.w ? 1 : 0, lake = 0;
-        if (x > lx0 && x < lx1 && z > lz0 && z < lz1 && inPoly(LAKE, x, z)) {
+        for (let li = 0; li < LAKES.length; li++) {
+          const bb = LAKE_BB[li];
+          if (x <= bb[0] || x >= bb[1] || z <= bb[2] || z >= bb[3] || !inPoly(LAKES[li], x, z)) continue;
           let de = 1e18;
-          for (let k = 0; k < LK.length; k++) {
-            const p = LK[k], dd = (p[0] - x) * (p[0] - x) + (p[1] - z) * (p[1] - z);
+          for (const p of LK[li]) {
+            const dd = (p[0] - x) * (p[0] - x) + (p[1] - z) * (p[1] - z);
             if (dd < de) de = dd;
           }
-          signed = z - lakeC.z;                               // 湖面平远：横笔数道，不作同心圆
-          band = Math.min(1, Math.sqrt(de) / 120);
+          signed = z - lakeC.z;                               // 湖面平远：横笔数道，不作同心圆；所有湖都借东湖湖心定相，仅为横笔取一致的相位基准，与各湖自身位置无关
+          band = Math.min(1, Math.sqrt(de) / LAKE_REACH[li]); // 按各湖尺寸定取样半径，小湖也能收到几笔，东湖（半径已封顶 120）不受影响
           wet = 1; lake = 1;
+          break;
         }
         const o = (j2 * FN + i2) * 4;
         data[o]     = Math.round(Math.min(1, Math.max(0, signed / 512 + .5)) * 255);
@@ -195,40 +185,59 @@
     m.raycast = function () {};
     return m;
   }
-  scene.add(landMesh(HANKOU), landMesh(HANYANG), landMesh(WUCHANG, [LAKE]));
+  // 湖整个落在哪块陆地里，就在哪块上挖空
+  const holesIn = poly => LAKES.filter(L => L.every(p => inPoly(poly, p[0], p[1])));
+  const LAND_HOLES = [holesIn(HANKOU), holesIn(HANYANG), holesIn(WUCHANG)];
+  scene.add(landMesh(HANKOU, LAND_HOLES[0]), landMesh(HANYANG, LAND_HOLES[1]), landMesh(WUCHANG, LAND_HOLES[2]));
 
-  /* ═════════ 六、山：蛇山、龟山、珞珈山、磨山 ═════════ */
-  const ridges = [];
-  function makeRidge(aG, bG, halfWm, h, seg, mat) {
-    const a = geo(aG[0], aG[1]), b = geo(bG[0], bG[1]);
-    const cx = (a.x + b.x) / 2, cz = (a.z + b.z) / 2, dx = b.x - a.x, dz = b.z - a.z;
-    const L = Math.hypot(dx, dz) / 2, ux = dx / (2 * L), uz = dz / (2 * L), w = halfWm / MPU;
-    const base = LAND_Y - h * .34;
-    const m = ellipsoid(L, h, w, cx, base, cz, mat || M.hill, seg || 34);
-    m.rotation.y = Math.atan2(-dz, dx);
-    const r = {
-      mesh: m, cx, cz, L, w, h, base,
-      top: (x, z) => {
-        const px = x - cx, pz = z - cz;
-        const u = (px * ux + pz * uz) / L, v = (-px * uz + pz * ux) / w, q = 1 - u * u - v * v;
-        return q <= 0 ? -1e9 : base + h * Math.sqrt(q);
-      }
-    };
-    ridges.push(r); scene.add(m); return r;
+  /* ═════════ 六、山：形取 DEM，高取实测海拔（tools/geodata/extract.py） ═════════
+     每座山一块高程格子（相对平原的起伏，0.5 米一级）。网格点之间用 Catmull-Rom 双三次插值，
+     轮廓是圆的，不见格子。山脚没入水下，临江临湖的山自然入水。 */
+  const VEX = 5 / MPU;                                  // 米 → 场景单位，竖向五倍
+  const HILL_DIP = 2.6;                                 // 起伏归零处沉到水面以下，山裙不浮在水上
+  function hillField(t) {
+    const bin = atob(t.q), a = new Float32Array(bin.length);
+    for (let i = 0; i < bin.length; i++) a[i] = bin.charCodeAt(i) * .5 * VEX;
+    const o = geo(t.lon0, t.lat0), e = geo(t.lon0 + t.dlon, t.lat0 + t.dlat);
+    return { a, nx: t.nx, nz: t.nz, x0: o.x, z0: o.z, dx: e.x - o.x, dz: e.z - o.z };
   }
-  const SHESHAN  = makeRidge([114.2930, 30.5476], [114.3170, 30.5444], 260, 32);   // 蛇山（黄鹤楼所在）
-  const GUISHAN  = makeRidge([114.2800, 30.5590], [114.2635, 30.5528], 260, 34);   // 龟山（电视塔所在，全长 1730 米）
-  const MOSHAN   = makeRidge([114.4015, 30.5508], [114.4098, 30.5318], 330, 40);   // 磨山（东湖南岸，楚天台所在）
-  const LUOJIA   = makeRidge([114.3608, 30.5352], [114.3700, 30.5392], 255, 36);   // 珞珈山
-  const SHIZI    = makeRidge([114.3590, 30.5402], [114.3668, 30.5418], 170, 23);   // 狮子山（老斋舍所在）
-  makeRidge([114.3370, 30.5420], [114.3455, 30.5438], 175, 21);                    // 洪山
-  makeRidge([114.4140, 30.5250], [114.4270, 30.5288], 245, 25);                    // 马鞍山
-  makeRidge([114.2680, 30.5430], [114.2790, 30.5408], 205, 18);                    // 汉阳米粮山一带
-  const terrainTop = (x, z) => {
-    let y = LAND_Y;
-    for (const r of ridges) { const t = r.top(x, z); if (t > y) y = t; }
+  const crSpline = (p0, p1, p2, p3, t) =>
+    p1 + .5 * t * (p2 - p0 + t * (2 * p0 - 5 * p1 + 4 * p2 - p3 + t * (3 * (p1 - p2) + p3 - p0)));
+  function sampleField(f, x, z) {
+    const u = (x - f.x0) / f.dx, v = (z - f.z0) / f.dz;
+    if (u < 0 || v < 0 || u > f.nx - 1 || v > f.nz - 1) return 0;
+    const i = Math.floor(u), j = Math.floor(v), fx = u - i, fz = v - j;
+    const at = (ii, jj) => f.a[Math.min(f.nz - 1, Math.max(0, jj)) * f.nx + Math.min(f.nx - 1, Math.max(0, ii))];
+    const row = jj => crSpline(at(i - 1, jj), at(i, jj), at(i + 1, jj), at(i + 2, jj), fx);
+    return Math.max(0, crSpline(row(j - 1), row(j), row(j + 1), row(j + 2), fz));
+  }
+  const HILLS = GEO.hills.map(t => {
+    const f = hillField(t), pk = geo(t.peak[0], t.peak[1]);
+    const SUB = 2, cols = (f.nx - 1) * SUB + 1, rows = (f.nz - 1) * SUB + 1;
+    const pos = new Float32Array(cols * rows * 3), idx = [];
+    for (let j = 0; j < rows; j++) for (let i = 0; i < cols; i++) {
+      const x = f.x0 + i / SUB * f.dx, z = f.z0 + j / SUB * f.dz, h = sampleField(f, x, z), k = (j * cols + i) * 3;
+      pos[k] = x - pk.x;                                // 以山顶为原点：皴笔自山顶放射，顺坡而下
+      pos[k + 1] = LAND_Y + h - HILL_DIP * (1 - THREE.MathUtils.smoothstep(h, 0, 1.5));
+      pos[k + 2] = z - pk.z;
+    }
+    for (let j = 0; j < rows - 1; j++) for (let i = 0; i < cols - 1; i++) {
+      const a = j * cols + i, b = a + 1, c = a + cols, d = c + 1;
+      idx.push(a, c, b, b, c, d);
+    }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.BufferAttribute(pos, 3)); g.setIndex(idx); g.computeVertexNormals();
+    const mesh = new THREE.Mesh(g, M.hill); mesh.position.set(pk.x, 0, pk.z);
+    scene.add(mesh);
+    return { name: t.name, f, mesh, peak: pk, x0: f.x0, x1: f.x0 + (f.nx - 1) * f.dx, z0: f.z0, z1: f.z0 + (f.nz - 1) * f.dz };
+  });
+  const HILL = {}; HILLS.forEach(h => { if (h.name) HILL[h.name] = h; });
+  const reliefAt = (x, z) => {
+    let y = 0;
+    for (const h of HILLS) if (x >= h.x0 && x <= h.x1 && z >= h.z0 && z <= h.z1) y = Math.max(y, sampleField(h.f, x, z));
     return y;
   };
+  const terrainTop = (x, z) => LAND_Y + reliefAt(x, z);
 
   // 远山：层层淡出，烘托「烟波浩渺」
   [

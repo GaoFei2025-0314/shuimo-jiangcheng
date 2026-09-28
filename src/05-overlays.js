@@ -1,32 +1,38 @@
   // 屏幕排版独立于场景动画：只有镜头、焦点或界面变化时才重新投影。
   function createMapOverlays(camera, controls, onSelect, buttons) {
-    const wudaAt = geo(114.3625, 30.5397);
     const labelBox = document.getElementById('labels');
+    // 汉水题记落在实测河心上：取 GEO.hanshui 中离该经度最近的一点，数据重生成后也跟着走
+    const hanLabel = lon => GEO.hanshui.reduce((a, p) => Math.abs(p[0] - lon) < Math.abs(a[0] - lon) ? p : a).slice(0, 2);
     const LABELS = [
       ['汉口', 114.2820, 30.5990, 'town', 26],
       ['汉阳', 114.2610, 30.5430, 'town', 18],
       ['武昌', 114.3220, 30.5330, 'town', 20],
       ['长江', 114.2905, 30.5700, 'water', 4],
-      ['汉水', 114.2470, 30.5868, 'water', 4],
+      ['汉水', ...hanLabel(114.2470), 'water', 4],
       ['东湖', 114.3880, 30.5605, 'water', 4],
       ['南岸嘴', 114.2838, 30.5628, 'hill', 8],
       ['蛇山', 114.3085, 30.5458, 'hill', 26],
       ['龟山', 114.2700, 30.5562, 'hill', 30],
       ['珞珈山', 114.3655, 30.5372, 'hill', 28],
-      ['磨山', 114.4062, 30.5395, 'hill', 30]
+      ['磨山', 114.4174, 30.5524, 'hill', 30]
     ].map(L => {
       const el = document.createElement('b'); el.className = L[3]; el.textContent = L[0];
       labelBox.appendChild(el);
       const p = geo(L[1], L[2]);
-      return { el, v: new THREE.Vector3(p.x, L[4], p.z), kind: L[3] };
+      const h = HILL[L[0]];                               // 山名题在该山最高处之上 7 个单位，随实测山高
+      const y = L[3] === 'hill' ? (h ? LAND_Y + h.f.a.reduce((m, v) => Math.max(m, v), 0) : terrainTop(p.x, p.z)) + 7 : L[4];
+      return { el, v: new THREE.Vector3(p.x, y, p.z), kind: L[3] };
     });
     /* 地标竖牌 */
     const markBox = document.getElementById('marks');
+    // 竖牌挂在模型包围盒顶上 5 个单位——山高改自实测后，写死的高度会插进楼里。
+    // 一级七处全城可见；二级七处只在推近后浮现，免得全城视角挤成一片
+    const FAR = { 1: [1500, 2100], 2: [650, 950] };
     const MARKS = [
-      ['黄鹤楼', 'tower', AT.tower, 52], ['长江大桥', 'bridge', AT.bridge, 28],
-      ['晴川阁', 'qc', AT.qc, 22], ['龟山电视塔', 'tv', AT.tv, 168],
-      ['江汉关', 'customs', AT.customs, 48], ['武大樱园', 'wuda', wudaAt, 32],
-      ['楚天台', 'chutian', AT.chutian, 62]
+      ['黄鹤楼', 'tower', tower, 1], ['长江大桥', 'bridge', bridge, 1], ['晴川阁', 'qc', qc, 1], ['龟山电视塔', 'tv', tv, 1],
+      ['江汉关', 'customs', customs, 1], ['武大樱园', 'wuda', wuda, 1], ['楚天台', 'chutian', chutian, 1],
+      ['洪山宝塔', 'hongshan', hongshan, 2], ['汉口水塔', 'watertower', watertower, 2], ['省博物馆', 'museum', museum, 2],
+      ['红楼', 'honglou', honglou, 2], ['鹦鹉洲大桥', 'yingwuzhou', yingwuzhou, 2], ['归元寺', 'guiyuan', guiyuan, 2], ['古琴台', 'qintai', qintai, 2]
     ].map(m => {
       const el = document.createElement('button');
       el.type = 'button'; el.className = 'mark'; el.setAttribute('aria-label', '移至' + m[0]);
@@ -34,7 +40,8 @@
                    + '<span class="stem"></span><span class="dot"></span>';
       el.addEventListener('click', () => onSelect(m[1]));
       markBox.appendChild(el);
-      return { el, key: m[1], v: new THREE.Vector3(m[2].x, m[3], m[2].z) };
+      const top = new THREE.Box3().setFromObject(m[2]).max.y;
+      return { el, key: m[1], tier: m[3], v: new THREE.Vector3(m[2].position.x, top + 5, m[2].position.z) };
     });
     let entering = true;
     function setMarkVisibility(mark, visible, opacity) {
@@ -72,8 +79,9 @@
       const focused = MARKS.find(m => m.el === document.activeElement);
       const ordered = focused ? [focused, ...MARKS.filter(m => m !== focused)] : MARKS;
       ordered.forEach(m => {
-        const r = screenRect(m, false), d = camera.position.distanceTo(m.v);
-        const o = THREE.MathUtils.smoothstep(d, 90, 170) * (1 - THREE.MathUtils.smoothstep(d, 1500 * farScale, 2100 * farScale));
+        const r = screenRect(m, false), d = camera.position.distanceTo(m.v), far = FAR[m.tier];
+        // 远端按层级淡出，再随紧凑取景拉远的全城距离等比放宽，两级之比不变：全城视角下二级牌仍隐去
+        const o = THREE.MathUtils.smoothstep(d, 90, 170) * (1 - THREE.MathUtils.smoothstep(d, far[0] * farScale, far[1] * farScale));
         const visible = o > .35 && m.key !== activeView && r.inDepth && within(r, w, h)
           && ![...blocks, ...placed].some(block => collides(r, block));
         setMarkVisibility(m, visible, o);
@@ -120,6 +128,7 @@
     [...MARKS, ...LABELS].forEach(item => observer.observe(item.el));
     app.cleanups.push(() => observer.disconnect());
     return {
+      marks: MARKS, labels: LABELS,                        // 只供 ?debug 核对，运行时不经此读写
       invalidate,
       draw(w, h, activeView, blocks, farScale) {
         const focus = document.activeElement;

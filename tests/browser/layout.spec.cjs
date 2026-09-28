@@ -32,7 +32,8 @@ for (const [width, height] of [[390, 844], [360, 640], [844, 390]]) {
     await expect(page.locator('#poem')).toBeHidden();
     await expect(page.locator('#cardText')).toBeHidden();
     await expect(page.locator('#poem-toggle')).toBeVisible();
-    for (const key of ['home', 'core', 'tower', 'bridge', 'qc', 'tv', 'customs', 'wuda', 'lake']) {
+    for (const key of ['home', 'core', 'tower', 'bridge', 'qc', 'tv', 'customs', 'wuda', 'lake',
+      'yingwuzhou', 'honglou', 'hongshan', 'museum', 'guiyuan', 'qintai', 'watertower']) {
       await page.locator(`#b-${key}`).click();
       await expect.poll(async () => {
         const b = await subjectBounds(page, key);

@@ -25,7 +25,7 @@ test('navigation stays disabled while dependencies load', async ({ page }) => {
   await expect(page.locator('#nav button:enabled')).toHaveCount(0);
   release();
   await expect.poll(() => page.evaluate(() => window.__ready === true)).toBe(true);
-  await expect(page.locator('#nav button:enabled')).toHaveCount(9);
+  await expect(page.locator('#nav button:enabled')).toHaveCount(16);
 });
 
 test('missing library globals are reported without an uncaught error', async ({ page }) => {
@@ -78,6 +78,6 @@ test('system fonts can be used and scene loads without runtime errors', async ({
   page.on('pageerror', error => errors.push(error.message));
   await ready(page);
   await expect(page.locator('#err')).toBeHidden();
-  await expect(page.locator('#nav button:enabled')).toHaveCount(9);
+  await expect(page.locator('#nav button:enabled')).toHaveCount(16);
   expect(errors).toEqual([]);
 });

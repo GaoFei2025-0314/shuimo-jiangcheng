@@ -7,7 +7,7 @@
       target: { x: at.x, y: ty, z: at.z }
     };
   }
-  const wudaAt = geo(114.3625, 30.5397);
+  const wudaAt = AT.wuda;
   const VIEWS = {
     home:    { pos: { x: 440, y: 650, z: 1180 }, target: { x: 250, y: 0, z: -130 } },
     core:    orbit(geo(114.2855, 30.5570), 6, 660, 18, 27),
@@ -18,7 +18,14 @@
     customs: orbit(AT.customs, 18, 115, 92, 17),
     wuda:    orbit(wudaAt, terrainTop(wudaAt.x, wudaAt.z) + 6, 112, 8, 19),
     lake:    orbit(lakeC, 3, 560, 14, 25),
-    chutian: orbit(AT.chutian, terrainTop(AT.chutian.x, AT.chutian.z) + 14, 155, 22, 19)
+    chutian: orbit(AT.chutian, terrainTop(AT.chutian.x, AT.chutian.z) + 14, 155, 22, 19),
+    hongshan:   orbit(AT.hongshan, terrainTop(AT.hongshan.x, AT.hongshan.z) + 11, 125, 18, 18),
+    watertower: orbit(AT.watertower, 12, 95, 38, 15),
+    museum:     orbit(AT.museum, 6, 150, 12, 20),
+    honglou:    orbit(AT.honglou, terrainTop(AT.honglou.x, AT.honglou.z) + 7, 120, 8, 17),
+    yingwuzhou: orbit(AT.yingwuzhou, 14, 300, -24, 11),
+    guiyuan:    orbit(AT.guiyuan, 5, 135, 18, 22),
+    qintai:     orbit(AT.qintai, 4, 110, 250, 19)
   };
   const COPY = {
     home:    ['两江四岸', '汉水自西北来，于南岸嘴汇入长江。江北为汉口，两江之间是汉阳，大江东南岸为武昌。图上方位依实测经纬度，水平一比一，山楼竖向略作夸张。'],
@@ -30,7 +37,14 @@
     customs: ['江汉关', '一九二四年落成，主楼四层、钟楼五层，通高四十五点八五米，文艺复兴式样，钟面直径四米。正门朝东，面对长江。'],
     wuda:    ['武大 · 老斋舍', '一九三一年落成，依狮子山南坡而建，三座罗马券拱门连起四栋斋舍，门上是歇山亭楼，绿琉璃瓦掩在樱花里。'],
     lake:    ['东湖', '中国最大的城中湖，水域约三十三平方公里，绿道一百零五公里。磨山三面环水，自南岸伸入湖中。'],
-    chutian: ['东湖 · 楚天台', '立于磨山之巅，按楚国「章华台」形制而建，外五层内六层，高三十六米，台前三百四十五级石阶，顶置青铜凤标。']
+    chutian: ['东湖 · 楚天台', '立于磨山之巅，按楚国「章华台」形制而建，外五层内六层，高三十六米，台前三百四十五级石阶，顶置青铜凤标。'],
+    hongshan:   ['洪山宝塔 · 宝通禅寺', '宝通禅寺依洪山南坡层层而上，为武汉四大丛林之一。寺后洪山宝塔始建于元代，八面七级，砖石仿木。'],
+    watertower: ['汉口水塔', '一九〇九年落成，八角形塔身，高四十一米余，曾是汉口最高的建筑，塔顶兼作消防瞭望。'],
+    museum:     ['湖北省博物馆', '楚式高台建筑，一主两翼，深檐高脊。馆藏曾侯乙编钟、越王勾践剑，是楚文化的重镇。'],
+    honglou:    ['红楼', '一九一〇年建成，原为湖北谘议局。一九一一年武昌起义后，湖北军政府在此成立。今为辛亥革命博物院北区。'],
+    yingwuzhou: ['鹦鹉洲长江大桥', '三塔悬索桥，二〇一四年底通车。桥名出自崔颢「芳草萋萋鹦鹉洲」——诗里的鹦鹉洲早已没入江中。'],
+    guiyuan:    ['归元禅寺', '始建于清顺治十五年（一六五八年），以五百罗汉堂闻名，武汉四大丛林之一。'],
+    qintai:     ['古琴台', '相传春秋时俞伯牙在此鼓琴，钟子期听出「高山流水」，二人结为知音。台在龟山西麓，临月湖。']
   };
   const motionPreference = window.matchMedia('(prefers-reduced-motion: reduce)');
   let reduce = motionPreference.matches;
@@ -51,8 +65,8 @@
   scene.updateMatrixWorld(true);
   const viewBounds = {};
   pickables.forEach(object => { viewBounds[object.userData.focus] = new THREE.Box3().setFromObject(object); });
-  viewBounds.home = new THREE.Box3();
-  ['tower', 'bridge', 'qc', 'tv', 'customs', 'wuda', 'chutian'].forEach(key => viewBounds.home.union(viewBounds[key]));
+  viewBounds.home = new THREE.Box3();                  // 全城取景框住所有地标（东湖水面本身除外）
+  pickables.forEach(object => { if (object.userData.focus !== 'lake') viewBounds.home.union(viewBounds[object.userData.focus]); });
   viewBounds.core = new THREE.Box3();
   ['tower', 'bridge', 'qc', 'tv', 'customs'].forEach(key => viewBounds.core.union(viewBounds[key]));
   function viewFor(key) {
@@ -209,9 +223,9 @@
     });
     lakeBoats.forEach(b => {
       const a = b.a + t * b.sp;
-      const x = lakeC.x + Math.cos(a) * 300 * b.k, z = lakeC.z + Math.sin(a) * 210 * b.k;
+      const x = lakeC.x + Math.cos(a) * LRX * b.k, z = lakeC.z + Math.sin(a) * LRZ * b.k;
       b.m.position.set(x, .3 + Math.sin(t * 1.1 + b.a) * .07, z);
-      const dx = -Math.sin(a) * 300 * b.k * Math.sign(b.sp), dz = Math.cos(a) * 210 * b.k * Math.sign(b.sp);
+      const dx = -Math.sin(a) * LRX * b.k * Math.sign(b.sp), dz = Math.cos(a) * LRZ * b.k * Math.sign(b.sp);
       b.m.rotation.y = Math.atan2(-dz, dx);
       boatU[b.i].set(x, z);
     });
@@ -244,3 +258,8 @@
   }
   enterScene();
   frame();
+  // ?debug 时把内部状态挂出来，供浏览器里核对；正常访问不暴露。就绪与否仍以 app.ready() 置的 window.__ready 为准
+  if (/[?&]debug\b/.test(location.search)) window.__dbg = {
+    GEO, LAKES, LAND_HOLES, HILLS, HILL, YZ, HAN, HANKOU, HANYANG, WUCHANG, AT, VIEWS, MARKS: overlays.marks, LABELS: overlays.labels,
+    LAND_Y, terrainTop, reliefAt, onLand, inPoly, geo, camera, controls, flyTo, scene
+  };

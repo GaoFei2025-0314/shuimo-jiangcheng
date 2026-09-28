@@ -163,8 +163,13 @@
     text-shadow: 0 0 10px var(--paper), 0 0 4px var(--paper);
   }
   #nav {
-    display: flex; gap: 2px; pointer-events: auto; padding-bottom: 12px; flex-wrap: wrap;
-    max-width: min(660px, 52vw);
+    display: flex; gap: 4px 16px; pointer-events: auto; padding-bottom: 12px; flex-wrap: wrap;
+    max-width: min(700px, 56vw);
+  }
+  #nav .grp { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px; }
+  #nav .gl {
+    font-size: 11px; letter-spacing: .3em; color: var(--ink-faint); padding: 0 2px 0 4px;
+    text-shadow: 0 0 8px var(--paper);
   }
   #nav button {
     appearance: none; background: none; border: 0; cursor: pointer;
@@ -194,6 +199,16 @@
     width: 96px; min-width: 54px; transition: width .25s;
   }
   #hint { font-size: 11px; letter-spacing: .26em; text-shadow: 0 0 8px var(--paper); }
+  #credit {
+    flex-basis: 100%; margin-top: -10px; text-align: right; pointer-events: auto;
+    font-size: 10px; letter-spacing: .08em; color: var(--ink-faint); opacity: .75; text-shadow: 0 0 6px var(--paper);
+  }
+  #credit summary { list-style: none; cursor: pointer; }
+  #credit summary::-webkit-details-marker { display: none; }
+  #credit summary:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+  #credit p {
+    margin: 4px 0 0 auto; max-width: 520px; line-height: 1.5; letter-spacing: 0; text-align: left;
+  }
 
   #tip {
     position: fixed; z-index: 6; pointer-events: none; padding: 4px 10px 6px;
@@ -209,6 +224,10 @@
   button:disabled { cursor: default; }
   [hidden] { display: none !important; }
 
+  @media (max-width: 1180px) {
+    #nav { max-width: min(560px, max(440px, calc(100vw - 470px))); }
+    #nav button { font-size: 17px; padding: 6px 8px 8px; }
+  }
   @media (max-width: 860px) {
     #tools { display: none; }
     #nav { max-width: 100%; }
@@ -238,6 +257,8 @@
     #nav { max-width: 100%; min-width: 0; flex-wrap: nowrap; overflow-x: auto; overscroll-behavior-x: contain;
       padding: 0 0 4px; scrollbar-width: thin; touch-action: pan-x; }
     #nav button { flex: 0 0 auto; min-height: 44px; font-size: 17px; padding: 8px; }
+    #nav .grp { flex: none; flex-wrap: nowrap; }
+    #credit { flex-basis: auto; margin-top: 0; }
     #tools { display: none; }
     #hint { font-size: 10px; letter-spacing: .12em; }
     #labels b.town { font-size: 20px; }
@@ -246,11 +267,10 @@
     .mark .plate { font-size: 13px; padding: 5px 3px 6px; }
     .mark .stem { height: 14px; }
   }
-
 </style>
 
 <div id="sun" aria-hidden="true"></div>
-<div id="stage" aria-busy="true" role="img" aria-label="水墨风格的武汉三维地图：长江与汉江交汇，汉口、汉阳、武昌三镇，黄鹤楼、长江大桥、晴川阁、龟山电视塔、江汉关、武大樱园与东湖"></div>
+<div id="stage" aria-busy="true" role="img" aria-label="水墨风格的武汉三维地图：长江与汉江交汇，汉口、汉阳、武昌三镇，黄鹤楼、长江大桥、晴川阁、龟山电视塔、江汉关、武大樱园、汉口水塔、红楼、洪山宝塔、湖北省博物馆、鹦鹉洲长江大桥、归元禅寺、古琴台与东湖"></div>
 <div id="grain" aria-hidden="true"></div>
 <div id="vignette" aria-hidden="true"></div>
 <div id="labels" aria-hidden="true"></div>
@@ -279,15 +299,33 @@
     <p id="cardText">汉水自西北来，于南岸嘴汇入长江。江北为汉口，两江之间是汉阳，大江东南岸为武昌。</p>
   </div>
   <nav id="nav" aria-label="视角">
-    <button type="button" id="b-home" disabled data-view="home" aria-pressed="true">全城</button>
-    <button type="button" id="b-core" disabled data-view="core" aria-pressed="false">两江</button>
-    <button type="button" id="b-tower" disabled data-view="tower" aria-pressed="false">黄鹤楼</button>
-    <button type="button" id="b-bridge" disabled data-view="bridge" aria-pressed="false">大桥</button>
-    <button type="button" id="b-qc" disabled data-view="qc" aria-pressed="false">晴川阁</button>
-    <button type="button" id="b-tv" disabled data-view="tv" aria-pressed="false">电视塔</button>
-    <button type="button" id="b-customs" disabled data-view="customs" aria-pressed="false">江汉关</button>
-    <button type="button" id="b-wuda" disabled data-view="wuda" aria-pressed="false">武大</button>
-    <button type="button" id="b-lake" disabled data-view="lake" aria-pressed="false">东湖</button>
+    <div class="grp">
+      <button type="button" id="b-home" disabled data-view="home" aria-pressed="true">全城</button>
+      <button type="button" id="b-core" disabled data-view="core" aria-pressed="false">两江</button>
+      <button type="button" id="b-bridge" disabled data-view="bridge" aria-pressed="false">大桥</button>
+      <button type="button" id="b-yingwuzhou" disabled data-view="yingwuzhou" aria-pressed="false">鹦鹉洲</button>
+    </div>
+    <div class="grp" role="group" aria-label="武昌">
+      <span class="gl" aria-hidden="true">武昌</span>
+      <button type="button" id="b-tower" disabled data-view="tower" aria-pressed="false">黄鹤楼</button>
+      <button type="button" id="b-honglou" disabled data-view="honglou" aria-pressed="false">红楼</button>
+      <button type="button" id="b-hongshan" disabled data-view="hongshan" aria-pressed="false">宝通寺</button>
+      <button type="button" id="b-wuda" disabled data-view="wuda" aria-pressed="false">武大</button>
+      <button type="button" id="b-museum" disabled data-view="museum" aria-pressed="false">省博</button>
+      <button type="button" id="b-lake" disabled data-view="lake" aria-pressed="false">东湖</button>
+    </div>
+    <div class="grp" role="group" aria-label="汉阳">
+      <span class="gl" aria-hidden="true">汉阳</span>
+      <button type="button" id="b-qc" disabled data-view="qc" aria-pressed="false">晴川阁</button>
+      <button type="button" id="b-tv" disabled data-view="tv" aria-pressed="false">电视塔</button>
+      <button type="button" id="b-guiyuan" disabled data-view="guiyuan" aria-pressed="false">归元寺</button>
+      <button type="button" id="b-qintai" disabled data-view="qintai" aria-pressed="false">古琴台</button>
+    </div>
+    <div class="grp" role="group" aria-label="汉口">
+      <span class="gl" aria-hidden="true">汉口</span>
+      <button type="button" id="b-customs" disabled data-view="customs" aria-pressed="false">江汉关</button>
+      <button type="button" id="b-watertower" disabled data-view="watertower" aria-pressed="false">水塔</button>
+    </div>
   </nav>
   <div id="tools">
     <svg id="rose" viewBox="0 0 52 52" aria-hidden="true">
@@ -304,6 +342,10 @@
     </div>
   </div>
   <div id="hint">拖拽旋转　滚轮缩放　点击景点</div>
+  <details id="credit">
+    <summary>地形 Copernicus DEM GLO-30 · 地名 © OpenStreetMap 贡献者</summary>
+    <p>Terrain produced using Copernicus WorldDEM-30 © DLR e.V. 2010-2014 and © Airbus Defence and Space GmbH 2014-2018 provided under COPERNICUS by the European Union and ESA; all rights reserved. The organisations in charge of the Copernicus programme by law or by delegation do not incur any liability for any use of the Copernicus WorldDEM-30. Place coordinates © OpenStreetMap contributors (ODbL).</p>
+  </details>
 </div>
 <div id="tip" aria-hidden="true"></div>
 <div id="err" role="status" aria-live="polite"><p id="loadMessage">正在铺展江城画卷…</p><button id="retry" type="button" hidden>重新加载</button></div>

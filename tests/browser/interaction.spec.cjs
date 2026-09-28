@@ -78,10 +78,14 @@ test('invisible landmark buttons cannot enter the tab order', async ({ page }) =
   expect(invisibleFocusable).toBe(0);
 });
 
-test('all nine navigation destinations and music toggle remain usable', async ({ page }) => {
+test('all sixteen navigation destinations and music toggle remain usable', async ({ page }) => {
+  // 与其他逐个走遍景点的用例一样放宽到 60 秒：无 GPU 的 Chromium 用软件光栅，每帧约 0.2 秒
+  test.setTimeout(60000);
   await page.emulateMedia({ reducedMotion: 'reduce' });
   await ready(page);
-  const titles = { home: '两江四岸', core: '南岸嘴', tower: '黄鹤楼', bridge: '武汉长江大桥', qc: '晴川阁', tv: '龟山电视塔', customs: '江汉关', wuda: '武大 · 老斋舍', lake: '东湖' };
+  const titles = { home: '两江四岸', core: '南岸嘴', tower: '黄鹤楼', bridge: '武汉长江大桥', qc: '晴川阁', tv: '龟山电视塔', customs: '江汉关', wuda: '武大 · 老斋舍', lake: '东湖',
+    yingwuzhou: '鹦鹉洲长江大桥', honglou: '红楼', hongshan: '洪山宝塔 · 宝通禅寺', museum: '湖北省博物馆', guiyuan: '归元禅寺', qintai: '古琴台', watertower: '汉口水塔' };
+  await expect(page.locator('#nav button')).toHaveCount(Object.keys(titles).length);
   for (const [id, title] of Object.entries(titles)) {
     await page.locator(`#b-${id}`).click();
     await expect(page.locator('#cardTitle')).toHaveText(title);

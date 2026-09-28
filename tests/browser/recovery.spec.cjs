@@ -7,7 +7,7 @@ test('a stalled font stylesheet does not delay map readiness', async ({ page }) 
   await page.goto('/', { waitUntil: 'commit' });
   try {
     await expect.poll(() => page.evaluate(() => window.__ready === true)).toBe(true);
-    await expect(page.locator('#nav button:enabled')).toHaveCount(9);
+    await expect(page.locator('#nav button:enabled')).toHaveCount(16);
   } finally { release(); }
 });
 

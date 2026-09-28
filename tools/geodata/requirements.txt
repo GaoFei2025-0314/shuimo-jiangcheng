@@ -1,0 +1,5 @@
+# 在 Python 3.9.6 上验证过：src/geodata.gen.js 可逐字节复现。换版本后输出可能有细微差异，须重跑 check_geodata.py
+rasterio==1.4.3
+numpy==2.0.2
+scipy==1.13.1
+scikit-image==0.24.0

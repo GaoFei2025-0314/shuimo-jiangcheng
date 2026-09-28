@@ -10,14 +10,35 @@
     return g;
   }
   // 大桥轴线：武昌蛇山头 → 汉阳龟山东麓
-  const bA = geo(114.2945, 30.5455), bB = geo(114.2810, 30.5540);
+  const bA = geo(114.28957, 30.54783), bB = geo(114.27607, 30.55633);   // 随桥心一并平移（桥心改取江心，沿桥轴、按水体掩膜量得），桥向与桥长不变
   const bridge  = place(buildBridge(), AT.bridge, .74, Math.atan2(bB.x - bA.x, bB.z - bA.z), '武汉长江大桥', 'bridge', 0);
+  bridge.scale.z = .74 * .81;   // 沿桥长再收缩，缩到江宽：正桥 ±72 → ±43，配合约 85 单位（≈1.1 公里）的江面（正桥原长 1156 米）；桥头堡随之落到 ±50，正好在两岸
   const tower   = place(buildTower(), AT.tower, .88, .18, '黄鹤楼', 'tower');
   const tv      = place(buildTV(), AT.tv, 1.5, 0, '龟山电视塔', 'tv');
   const qc      = place(buildQingchuan(), AT.qc, .92, Math.PI / 2, '晴川阁', 'qc');
   const customs = place(buildCustoms(), AT.customs, .98, Math.PI / 2, '江汉关', 'customs');
-  const wuda    = place(buildWuda(), geo(114.3625, 30.5397), .74, .1, '武大 · 老斋舍', 'wuda');
+  const wuda    = place(buildWuda(), AT.wuda, .74, .1, '武大 · 老斋舍', 'wuda');
   const chutian = place(buildChutian(), AT.chutian, .82, 0, '东湖 · 楚天台', 'chutian');
+  const hongshan   = place(buildPagoda(), AT.hongshan, .74, 0, '洪山宝塔 · 宝通禅寺', 'hongshan');
+  const watertower = place(buildWaterTower(), AT.watertower, .82, 0, '汉口水塔', 'watertower');
+  const museum     = place(buildMuseum(), AT.museum, .78, 0, '湖北省博物馆', 'museum');
+  const honglou    = place(buildHonglou(), AT.honglou, .8, 0, '红楼', 'honglou');
+  const guiyuan    = place(buildGuiyuan(), AT.guiyuan, .7, 0, '归元禅寺', 'guiyuan');
+  const qintai     = place(buildQintai(), AT.qintai, .7, -Math.PI / 2, '古琴台', 'qintai');   // 台面朝西，对着月湖
+  // 鹦鹉洲大桥：沿 OSM 桥向（原两端点连线并非江岸），两端各在水体掩膜江面之外 150 米落岸，桥长随之
+  const yA = geo(114.26637, 30.53657), yB = geo(114.28587, 30.52963);
+  const yingwuzhou = place(buildSuspension(Math.hypot(yB.x - yA.x, yB.z - yA.z) / 2), AT.yingwuzhou, 1,
+    Math.atan2(yB.x - yA.x, yB.z - yA.z), '鹦鹉洲长江大桥', 'yingwuzhou', 0);
+  // 两座大桥桥面之下不起楼、不种树：离桥轴 12 个单位内一概让开（长江大桥连引桥共 ±154 模型单位 × .74 × .81）
+  const bridgeSpan = (c, a, b, half) => {
+    const dx = b.x - a.x, dz = b.z - a.z, L = Math.hypot(dx, dz);
+    return [{ x: c.x - dx / L * half, z: c.z - dz / L * half }, { x: c.x + dx / L * half, z: c.z + dz / L * half }];
+  };
+  const BRIDGES = [bridgeSpan(AT.bridge, bA, bB, 154 * .74 * .81), [yA, yB]];
+  const offBridge = (x, z) => BRIDGES.every(([a, b]) => {
+    const dx = b.x - a.x, dz = b.z - a.z, t = Math.max(0, Math.min(1, ((x - a.x) * dx + (z - a.z) * dz) / (dx * dx + dz * dz)));
+    return Math.hypot(x - a.x - t * dx, z - a.z - t * dz) > 12;
+  });
   // 东湖水面本身也可点选
   const lakePick = new THREE.Mesh(new THREE.ShapeGeometry(new THREE.Shape(LAKE.map(p => new THREE.Vector2(p[0], -p[1])))), new THREE.MeshBasicMaterial({ visible: false }));
   lakePick.rotation.x = -Math.PI / 2; lakePick.position.y = .05;
@@ -26,8 +47,50 @@
 
   /* ── 东湖绿道：沿岸一圈淡墨 ── */
   {
-    const pts = LAKE.map(p => new THREE.Vector3(lakeC.x + (p[0] - lakeC.x) * .962, LAND_Y + .12, lakeC.z + (p[1] - lakeC.z) * .962));
-    const road = new THREE.LineLoop(new THREE.BufferGeometry().setFromPoints(pts), lineSoft);
+    // 沿岸线向湖内收：真实湖岸有凹有凸，不能再按湖心等比缩。收进量本应固定 4，但岸线
+    // 打结处（局部转弯半径小于收进量）会把偏移折线收出自交的小环，所以按局部曲率限一
+    // 限：半径取相邻 ±3 点的外接圆估计，只在岸线朝收进方向弯曲（外心在收进一侧，说明
+    // 再收下去会穿过去）时收紧到 0.8 倍半径，其余仍收 4；万一还剩打结，直接切掉夹在
+    // 中间的那一小环。
+    const n = LAKE.length, sg = LAKE.reduce((s, p, i) => s + p[0] * LAKE[(i + 1) % n][1] - LAKE[(i + 1) % n][0] * p[1], 0) > 0 ? 1 : -1;
+    const normal = i => {                                 // 该点的内收方向（单位向量）
+      const a = LAKE[(i + n - 1) % n], b = LAKE[(i + 1) % n], tx = b[0] - a[0], tz = b[1] - a[1], L = Math.hypot(tx, tz) || 1;
+      return [-sg * tz / L, sg * tx / L];
+    };
+    const circumcenter = (a, b, c) => {                   // 三点外接圆心，共线则无解
+      const d = 2 * (a[0] * (b[1] - c[1]) + b[0] * (c[1] - a[1]) + c[0] * (a[1] - b[1]));
+      if (Math.abs(d) < 1e-9) return null;
+      const a2 = a[0] * a[0] + a[1] * a[1], b2 = b[0] * b[0] + b[1] * b[1], c2 = c[0] * c[0] + c[1] * c[1];
+      return [(a2 * (b[1] - c[1]) + b2 * (c[1] - a[1]) + c2 * (a[1] - b[1])) / d,
+              (a2 * (c[0] - b[0]) + b2 * (a[0] - c[0]) + c2 * (b[0] - a[0])) / d];
+    };
+    const insets = LAKE.map((p, i) => {
+      const cc = circumcenter(LAKE[(i - 3 + n) % n], p, LAKE[(i + 3) % n]);
+      if (!cc) return 4;
+      const [ox, oz] = normal(i), R = Math.hypot(cc[0] - p[0], cc[1] - p[1]);
+      return (cc[0] - p[0]) * ox + (cc[1] - p[1]) * oz > 0 ? Math.min(4, Math.max(.5, .8 * R)) : 4;
+    });
+    let pts = LAKE.map((p, i) => { const [ox, oz] = normal(i); return [p[0] + ox * insets[i], p[1] + oz * insets[i]]; });
+
+    const segX = (a1, a2, b1, b2) => {                    // 严格线段相交，返回交点或 null
+      const dax = a2[0] - a1[0], daz = a2[1] - a1[1], dbx = b2[0] - b1[0], dbz = b2[1] - b1[1];
+      const den = dax * dbz - daz * dbx;
+      if (Math.abs(den) < 1e-9) return null;
+      const t = ((b1[0] - a1[0]) * dbz - (b1[1] - a1[1]) * dbx) / den, u = ((b1[0] - a1[0]) * daz - (b1[1] - a1[1]) * dax) / den;
+      return (t > 0 && t < 1 && u > 0 && u < 1) ? [a1[0] + t * dax, a1[1] + t * daz] : null;
+    };
+    for (let guard = 0; guard < 20; guard++) {            // 逐轮找相交的两条边，先切最短的那一小环
+      const m = pts.length; let hit = null;
+      for (let i = 0; i < m; i++) for (let j = i + 2; j < m; j++) {
+        if (i === 0 && j === m - 1) continue;             // 首尾相邻，不算相交
+        const P = segX(pts[i], pts[(i + 1) % m], pts[j], pts[(j + 1) % m]);
+        if (P && (!hit || j - i < hit.j - hit.i)) hit = { i, j, P };
+      }
+      if (!hit) break;
+      pts = pts.slice(0, hit.i + 1).concat([hit.P], pts.slice(hit.j + 1));   // 用交点取代夹在中间的一段，切掉小环
+    }
+
+    const road = new THREE.LineLoop(new THREE.BufferGeometry().setFromPoints(pts.map(p => new THREE.Vector3(p[0], LAND_Y + .12, p[1]))), lineSoft);
     road.raycast = function () {}; scene.add(road);
   }
 
@@ -43,28 +106,32 @@
     [[0, 2.1, 0, 1.15], [.75, 1.75, .4, .85], [-.7, 1.65, -.3, .8], [.1, 2.7, .25, .72], [-.2, 1.5, .8, .7]]
       .forEach(b => sakBloom.place(ICO, x + b[0] * s, y + b[1] * s, z + b[2] * s, b[3] * s, b[3] * s * .82, b[3] * s, 0));
   }
-  const KEEP = [AT.tower, AT.tv, AT.qc, AT.chutian, geo(114.3625, 30.5397)];
-  const clearOf = (x, z, r) => KEEP.every(k => (k.x - x) ** 2 + (k.z - z) ** 2 > r * r);
+  const KEEP = [AT.tower, AT.tv, AT.qc, AT.chutian, AT.wuda];
+  // 新景点各按自身占地避让，不随调用方的半径——汉口水塔若按市廛的 46 单位清场，汉口就被掏空了
+  const KEEP2 = [[AT.hongshan, 22], [AT.watertower, 12], [AT.museum, 34], [AT.honglou, 26], [AT.guiyuan, 36], [AT.qintai, 20]];
+  const clearOf = (x, z, r) => KEEP.every(k => (k.x - x) ** 2 + (k.z - z) ** 2 > r * r)
+    && KEEP2.every(([k, rr]) => (k.x - x) ** 2 + (k.z - z) ** 2 > rr * rr) && offBridge(x, z);
   const CORE = geo(114.2950, 30.5600);
-  function dressRidge(r, n, kind, s0) {
+  // 在山的格子里撒点，只留起伏超过 3 个单位的（真在山上，不在山脚水边）。密度按格子面积，
+  // 无名山只按约三分之一的密度种，免得抢了主山的戏
+  function dressHill(h, kind, s0, density, keep) {
+    if (!h) return;                                                          // 数据重生成后山名若变了，不至于整页出错
+    const n = Math.round((h.x1 - h.x0) * (h.z1 - h.z0) / 55 * (density || 1) * (h.name ? 1 : .35));
     for (let i = 0; i < n; i++) {
-      const u = (rnd() * 2 - 1) * .92, v = (rnd() * 2 - 1) * .92;
-      if (u * u + v * v > .88) continue;
-      const x = r.cx + u * r.L * ((r.mesh.rotation.y !== 0) ? Math.cos(r.mesh.rotation.y) : 1) - v * r.w * (-Math.sin(r.mesh.rotation.y));
-      const z = r.cz - u * r.L * Math.sin(r.mesh.rotation.y) + v * r.w * Math.cos(r.mesh.rotation.y);
-      const y = terrainTop(x, z);
-      if (y < LAND_Y + 1 || !clearOf(x, z, 16)) continue;
-      const s = s0 * (.55 + rnd() * 1.05);
+      const x = h.x0 + rnd() * (h.x1 - h.x0), z = h.z0 + rnd() * (h.z1 - h.z0);
+      if (sampleField(h.f, x, z) < 3 || !clearOf(x, z, 22) || (keep && !keep(x, z))) continue;   // 22：盖住电视塔 30×30 台座的四角
+      const y = terrainTop(x, z) - .3, s = s0 * (.55 + rnd() * 1.05);        // 网格线性、terrainTop 双三次，树根最多悬空 0.6，略沉入地面
       if (kind === 'p') pine(x, y, z, s); else sakura(x, y, z, s);
     }
   }
-  dressRidge(SHESHAN, 150, 'p', 1.5);
-  dressRidge(GUISHAN, 150, 'p', 1.5);
-  dressRidge(MOSHAN, 130, 'p', 1.5);
-  dressRidge(MOSHAN, 90, 's', 1.4);          // 磨山樱园
-  dressRidge(LUOJIA, 90, 'p', 1.4);
-  dressRidge(SHIZI, 60, 's', 1.3);           // 武大樱顶
-  ridges.slice(5).forEach(r => dressRidge(r, 70, 'p', 1.4));
+  const WUDA_AT = AT.wuda;
+  dressHill(HILL['蛇山'], 'p', 1.5);
+  dressHill(HILL['龟山'], 'p', 1.5);
+  dressHill(HILL['磨山'], 'p', 1.5);
+  dressHill(HILL['磨山'], 's', 1.4, .6);                                    // 磨山樱园
+  dressHill(HILL['珞珈山'], 'p', 1.4);
+  dressHill(HILL['珞珈山'], 's', 1.3, 1, (x, z) => (x - WUDA_AT.x) ** 2 + (z - WUDA_AT.z) ** 2 < 32 * 32);   // 武大樱顶
+  HILLS.filter(h => !['蛇山', '龟山', '磨山', '珞珈山'].includes(h.name)).forEach(h => dressHill(h, 'p', 1.4));
   {                                           // 武大樱花大道
     const a = geo(114.3585, 30.5392), b = geo(114.3672, 30.5408);
     for (let i = 0; i <= 26; i++) {
@@ -97,12 +164,12 @@
   town(114.2100, 114.2520, 30.5650, 30.6150, 130, 14);   // 汉口西
   scene.add(townW.mesh(M.town, true, 32, townLineA, townLineB), townR.mesh(M.townRoof, true, 24, townLineA, townLineB));
 
-  {   // 汉口江滩：护岸与路灯，江汉关就立在岸上
-    const B = new Acc(), L = new Acc();
-    for (let i = 8; i < 60; i++) {
+  {   // 汉口江滩：汉水口以下的长江西岸，护岸与路灯，江汉关就立在岸上
+    const B = new Acc(), L = new Acc(), latOf = z => O[1] - z * MPU / M_LAT;
+    for (let i = 0; i < YZ.s.length; i++) {
       const s = YZ.s[i], nx = s.d.z, nz = -s.d.x, Ln = Math.hypot(nx, nz) || 1;
-      const x = s.p.x + nx / Ln * (s.w - .9), z = s.p.z + nz / Ln * (s.w - .9);
-      if (!inPoly(HANKOU, x, z)) continue;
+      const x = s.p.x + nx / Ln * (s.w - .9), z = s.p.z + nz / Ln * (s.w - .9), lat = latOf(z);
+      if (lat < 30.566 || lat > 30.600 || !inPoly(HANKOU, s.p.x + nx / Ln * (s.w + 2), s.p.z + nz / Ln * (s.w + 2))) continue;   // 护岸骑在水线上，取岸上 2 个单位处判定是否属汉口；纬度窗 30.566～30.600：南界在汉水入江口略北，北界约当武汉长江二桥
       B.box(6, 1.2, 5.2, x, LAND_Y - .1, z, Math.atan2(s.d.x, s.d.z));
       if (i % 3 === 0) { L.cyl(.09, 4.2, x, LAND_Y + 2.1, z); L.box(.7, .22, .7, x, LAND_Y + 4.3, z); }
     }
@@ -118,8 +185,8 @@
   ];
   riverBoats.forEach((b, i) => { b.m.scale.setScalar(b.s); b.i = i; scene.add(b.m); });
   const lakeBoats = [
-    { m: junk(),   a: .7, k: .42, sp: .045, s: 1.1 },
-    { m: sampan(), a: 3.4, k: .30, sp: -.035, s: 1.0 }
+    { m: junk(),   a: .7, k: .92, sp: .045, s: 1.1 },
+    { m: sampan(), a: 3.4, k: .62, sp: -.035, s: 1.0 }
   ];
   lakeBoats.forEach((b, i) => { b.m.scale.setScalar(b.s); b.i = 4 + i; scene.add(b.m); });
 

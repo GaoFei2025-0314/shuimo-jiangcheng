@@ -87,3 +87,16 @@ test('entry animations and their cancellation keep marks clear of moving UI', as
   await page.emulateMedia({ reducedMotion: 'reduce' });
   await expect.poll(() => collisions(page)).toEqual([]);
 });
+
+test('second-tier landmarks stay out of the city view and appear on approach', async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await ready(page);
+  const tier2 = ['洪山宝塔', '汉口水塔', '省博物馆', '红楼', '鹦鹉洲大桥', '归元寺', '古琴台'].map(n => '移至' + n);
+  const shown = () => page.locator('.mark').evaluateAll(marks => marks
+    .filter(m => getComputedStyle(m).visibility === 'visible').map(m => m.getAttribute('aria-label')));
+  await expect(page.locator('.mark')).toHaveCount(14);
+  await expect.poll(async () => { const s = await shown(); return s.length > 0 && s.every(n => !tier2.includes(n)); }).toBe(true);
+  await page.locator('#b-core').click();
+  await expect.poll(async () => (await shown()).some(n => tier2.includes(n))).toBe(true);
+  await expect.poll(() => collisions(page)).toEqual([]);
+});
