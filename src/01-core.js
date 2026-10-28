@@ -38,7 +38,7 @@
   });
   app.cleanups.push(() => renderer.dispose());
 
-  const PAPER = new THREE.Color('#E6E3DA');
+  const PAPER = new THREE.Color('#F2EFE6');
   const scene = new THREE.Scene();
   scene.fog = new THREE.Fog(PAPER, 300, 1800);                    // 随镜头距离逐帧调整
   const camera = new THREE.PerspectiveCamera(38, 1, 0.5, 9000);
@@ -54,7 +54,7 @@
   `;
   const fogU = { uFog: { value: PAPER }, uNear: { value: 300 }, uFar: { value: 1800 } };
   const camU = { uCam: { value: new THREE.Vector3() } };        // 逐帧同步镜头位置
-  const sharedInk = { uInk: { value: new THREE.Color('#25241f') }, uPaper: { value: PAPER }, uLight: { value: new THREE.Vector3(-.45, .85, .5) } };
+  const sharedInk = { uInk: { value: new THREE.Color('#29332f') }, uPaper: { value: PAPER }, uLight: { value: new THREE.Vector3(-.45, .85, .5) } };
 
   const inkVert = `
     varying vec3 vN; varying vec3 vW; varying float vD; varying vec3 vC;
@@ -97,7 +97,7 @@
       }
       if(uRim > .5){                                      // 廓：侧影处落墨，代替硬描边
         float rim = pow(1.0 - abs(dot(n, normalize(uCam - vW))), 1.9);
-        tone = mix(tone, .05, clamp(rim, 0., 1.) * .92);
+        tone = mix(tone, .05, clamp(rim, 0., 1.) * .40);
       }
       if(uFoot > .5){                                     // 山脚化入云气，只虚下缘
         tone = mix(mix(1., tone, .42), tone, smoothstep(.4, 7.5, vW.y));
@@ -117,35 +117,16 @@
         tint ? { uInk: { value: new THREE.Color(tint[0]) }, uPaper: { value: new THREE.Color(tint[1]) } } : {})
     });
   }
-  // 与之配套的勾线材质：同样随镜头淡出
-  function lineMatOf(color, opacity, fade) {
-    return new THREE.ShaderMaterial({
-      transparent: true, depthWrite: false,
-      uniforms: Object.assign({ uCol: { value: new THREE.Color(color) }, uOp: { value: opacity },
-        uFade: { value: new THREE.Vector2(fade ? fade[0] : 0, fade ? fade[1] : 0) } }, fogU, camU),
-      vertexShader: `varying vec3 vW; varying float vD;
-        void main(){ vec4 w = modelMatrix * vec4(position,1.); vW = w.xyz; vec4 mv = viewMatrix * w; vD = -mv.z; gl_Position = projectionMatrix * mv; }`,
-      fragmentShader: `uniform vec3 uCol, uFog, uCam; uniform float uNear, uFar, uOp; uniform vec2 uFade;
-        varying vec3 vW; varying float vD;
-        void main(){
-          float a = uOp;
-          if(uFade.y > .5) a *= smoothstep(uFade.x, uFade.y, distance(vW.xz, uCam.xz));
-          if(a < .012) discard;
-          gl_FragColor = vec4(mix(uCol, uFog, smoothstep(uNear, uFar, vD)), a);
-        }`
-    });
-  }
   const M = {
-    std:  inkMat(0),     land: inkMat(.52),   roof: inkMat(-.12, true), pale: inkMat(.24),
-    wall: inkMat(.10),   dbl:  inkMat(.08, true),
-    hill: inkMat(.02, false, null, null, { rim: 1, cun: 1, foot: 1 }),
-    town: inkMat(.14, false, null, [20, 78]), townRoof: inkMat(-.08, true, null, [20, 78]),
+    std:  inkMat(0),     land: inkMat(.60),   roof: inkMat(.06, true, ['#29332f', '#9ba49a']), pale: inkMat(.46),
+    wall: inkMat(.32),   dbl:  inkMat(.08, true),
+    hill: inkMat(.18, false, null, null, { rim: 1, cun: 1, foot: 1 }),
+    town: inkMat(.48, false, null, [20, 78]), townRoof: inkMat(.26, true, null, [20, 78]),
     pine: inkMat(-.08, false, null, [12, 46]),
     sakura: inkMat(.60, false, ['#7f5a55', '#f0dcd6'])
   };
-  const lineMat  = new THREE.LineBasicMaterial({ color: 0x22211d, fog: true });
-  const lineMat2 = new THREE.LineBasicMaterial({ color: 0x5a5851, fog: true, transparent: true, opacity: .45 });
-  const townLineA = lineMatOf(0x22211d, 1, [20, 78]), townLineB = lineMatOf(0x5a5851, .45, [20, 78]);
+  const lineMat  = new THREE.LineBasicMaterial({ color: 0x343d36, fog: true, transparent: true, opacity: .72 });
+  const lineMat2 = new THREE.LineBasicMaterial({ color: 0x5a5851, fog: true, transparent: true, opacity: .18 });
   const lineSoft = new THREE.LineBasicMaterial({ color: 0x6b6960, fog: true, transparent: true, opacity: .6 });
   const brushMat = new THREE.MeshBasicMaterial({ color: 0x2a2924, fog: true, side: THREE.DoubleSide });
   const dashMat  = new THREE.MeshBasicMaterial({ color: 0xece9e0, fog: true });

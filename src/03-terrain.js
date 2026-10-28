@@ -154,17 +154,17 @@
                      * smoothstep(mix(.30, .42, lake), .68, fbm(p * .0068 + vec2(uTime * .010, 0.)));
           float vary = .42 + .58 * fbm(vec2(aw * .035, fbm(p * .0035) * 4.0));
           float mid = smoothstep(.02, .26, band);    // 近岸留白
-          float ink = smoothstep(.42, .94, s1) * wash * vary * mid * .80
-                    + smoothstep(.80, .99, s2) * wash * mid * .38;
+          float ink = smoothstep(.42, .94, s1) * wash * vary * mid * .24
+                    + smoothstep(.80, .99, s2) * wash * mid * .10;
           ink *= wet * mix(1.0, .34, lake);          // 湖面平静，笔淡
 
           for(int i = 0; i < 6; i++){
             float r = distance(p, uBoats[i]);
             float ring = smoothstep(.86, 1., sin(r * 1.7 - uTime * 1.6)) * smoothstep(9., 1.5, r);
-            ink = max(ink, ring * .5 * wet);
+            ink = max(ink, ring * .24 * wet);
           }
 
-          vec3 base = uPaper * mix(1.0, .935 - fbm(p * .004) * .06, wet);
+          vec3 base = uPaper * mix(1.0, .99 - fbm(p * .004) * .018, wet);
           vec3 col = mix(base, uInk, clamp(ink, 0., 1.));
           col = mix(col, uFog, smoothstep(uNear, uFar, vD));
           gl_FragColor = vec4(col, 1.);
@@ -246,7 +246,7 @@
     { z:  1080, tone: .32, n: 9,  h: 54, w: 340 },
     { z:  1520, tone: .52, n: 8,  h: 76, w: 430 }
   ].forEach(Lr => {
-    const mat = inkMat(Lr.tone, false, null, null, { rim: 1, foot: 1 });
+    const mat = inkMat(.82 + Lr.tone * .15, false, null, null, { foot: 1 });
     for (let i = 0; i < Lr.n; i++) {
       const x = (i - (Lr.n - 1) / 2) * Lr.w * .95 + (rnd() - .5) * 200 + 200;
       scene.add(ellipsoid(Lr.w * (.6 + rnd() * .5), Lr.h * (.55 + rnd() * .7), Lr.w * .35, x, -6, Lr.z + (rnd() - .5) * 160, mat, 20));

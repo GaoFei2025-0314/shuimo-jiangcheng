@@ -150,7 +150,8 @@
       const far = Math.hypot(p.x - CORE.x, p.z - CORE.z);
       if (rnd() > 1.15 - far / 900) continue;                       // 近江稠密，远郊疏落
       const k = Math.max(.45, 1.15 - far / 700);
-      const w = (2.2 + rnd() * 3.4) * k, d = (2.2 + rnd() * 3.4) * k, h = (1.8 + Math.pow(rnd(), 2.5) * tall) * k;
+      // 背景市廛概括为低矮屋面，减少散点高楼的针状轮廓；地标模型保持原状。
+      const w = (5 + rnd() * 7) * k, d = (4 + rnd() * 6) * k, h = (2 + Math.pow(rnd(), 2.5) * tall * .32) * k;
       townW.box(w, h, d, p.x, LAND_Y + h / 2, p.z);
       if (h < 5.5) townR.geo(roofGeo(Math.max(w, d) * .60, .18, .9, .12, 6, 2), p.x, LAND_Y + h, p.z);
       else townW.box(w * 1.08, .3, d * 1.08, p.x, LAND_Y + h + .15, p.z);
@@ -162,7 +163,7 @@
   town(114.3520, 114.4200, 30.4900, 30.5240, 180, 20);   // 南湖 · 光谷
   town(114.3400, 114.4050, 30.5950, 30.6280, 160, 18);   // 青山
   town(114.2100, 114.2520, 30.5650, 30.6150, 130, 14);   // 汉口西
-  scene.add(townW.mesh(M.town, true, 32, townLineA, townLineB), townR.mesh(M.townRoof, true, 24, townLineA, townLineB));
+  scene.add(townW.mesh(M.town, false), townR.mesh(M.townRoof, false));
 
   {   // 汉口江滩：汉水口以下的长江西岸，护岸与路灯，江汉关就立在岸上
     const B = new Acc(), L = new Acc(), latOf = z => O[1] - z * MPU / M_LAT;

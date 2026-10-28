@@ -91,6 +91,7 @@ test('entry animations and their cancellation keep marks clear of moving UI', as
 test('second-tier landmarks stay out of the city view and appear on approach', async ({ page }) => {
   await page.emulateMedia({ reducedMotion: 'reduce' });
   await ready(page);
+  await page.locator('#b-home').click();
   const tier2 = ['洪山宝塔', '汉口水塔', '省博物馆', '红楼', '鹦鹉洲大桥', '归元寺', '古琴台'].map(n => '移至' + n);
   const shown = () => page.locator('.mark').evaluateAll(marks => marks
     .filter(m => getComputedStyle(m).visibility === 'visible').map(m => m.getAttribute('aria-label')));
