@@ -11,7 +11,7 @@
   /* 单一视觉世界：宣纸 + 墨。仅两处色：朱砂的印与落日，樱花的淡绯。 */
   :root {
     color-scheme: light;
-    --paper: #E6E3DA;
+    --paper: #F2EFE6;
     --paper-deep: #d9d5c9;
     --ink: #1f1e1b;
     --ink-soft: #4a4842;
@@ -37,14 +37,14 @@
   #stage.hot { cursor: pointer; }
   #grain {
     position: fixed; inset: 0; z-index: 2; pointer-events: none; mix-blend-mode: multiply;
-    opacity: .5;
+    opacity: .14;
     background-image:
       url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='320' height='320'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 .42  0 0 0 0 .38  0 0 0 0 .3  1.1 0 0 0 -.32'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E"),
       url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='900' height='900'%3E%3Cfilter id='f'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.004 .05' numOctaves='2' seed='4'/%3E%3CfeColorMatrix values='0 0 0 0 .55  0 0 0 0 .5  0 0 0 0 .4  1.2 0 0 0 -.45'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23f)'/%3E%3C/svg%3E");
   }
   #vignette {
     position: fixed; inset: 0; z-index: 3; pointer-events: none;
-    background: radial-gradient(ellipse at 50% 48%, rgba(230,227,218,0) 55%, rgba(200,194,178,.55) 100%);
+    background: radial-gradient(ellipse at 50% 48%, rgba(230,227,218,0) 55%, rgba(200,194,178,.20) 100%);
   }
 
   /* 地名题记：随三维位置投影 */
@@ -295,13 +295,13 @@
 
 <div id="dock" class="ui">
   <div id="card" aria-live="polite">
-    <div class="card-heading"><h2 id="cardTitle">两江四岸</h2><button type="button" id="details-toggle" class="panel-toggle" disabled aria-controls="cardText" aria-expanded="false">详情</button></div>
-    <p id="cardText">汉水自西北来，于南岸嘴汇入长江。江北为汉口，两江之间是汉阳，大江东南岸为武昌。</p>
+    <div class="card-heading"><h2 id="cardTitle">龟蛇锁大江</h2><button type="button" id="details-toggle" class="panel-toggle" disabled aria-controls="cardText" aria-expanded="false">详情</button></div>
+    <p id="cardText">龟蛇隔江对峙：蛇山踞武昌，上有黄鹤楼；龟山在汉阳，顶立电视塔。大桥自蛇山头跨向龟山东麓。</p>
   </div>
   <nav id="nav" aria-label="视角">
     <div class="grp">
-      <button type="button" id="b-home" disabled data-view="home" aria-pressed="true">全城</button>
-      <button type="button" id="b-core" disabled data-view="core" aria-pressed="false">两江</button>
+      <button type="button" id="b-home" disabled data-view="home" aria-pressed="false">全城</button>
+      <button type="button" id="b-core" disabled data-view="core" aria-pressed="true">两江</button>
       <button type="button" id="b-bridge" disabled data-view="bridge" aria-pressed="false">大桥</button>
       <button type="button" id="b-yingwuzhou" disabled data-view="yingwuzhou" aria-pressed="false">鹦鹉洲</button>
     </div>

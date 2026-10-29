@@ -65,23 +65,31 @@
             if (id === 'dock') bottom = Math.min(bottom, rect.top - 8);
             else top = Math.max(top, rect.bottom + 8);
           });
+        } else {
+          blocks.forEach(({ id, rect }) => {
+            if (id === 'title') top = Math.max(top, rect.bottom + 24);
+            if (id === 'dock') bottom = Math.min(bottom, rect.top - 24);
+          });
         }
         return { blocks: blocks.map(b => b.rect), rect: { left: 16, top, right: width - 16, bottom: Math.max(top + 40, bottom) } };
       }
     };
   }
 
-  // 在原观察方向上，将包围盒八角投影进可用画幅，四边各留 10%。
+  // 在原观察方向上将各建筑八角放进画幅，四边各留 10%。
+  // 多建筑分别计算，避免把远处高塔的高度套到近处建筑上，徒增留白。
   function fittedView(base, bounds, rect, width, height, fov) {
     const back = new THREE.Vector3().copy(base.pos).sub(base.target).normalize();
     const right = new THREE.Vector3().crossVectors(new THREE.Vector3(0, 1, 0), back).normalize();
     const up = new THREE.Vector3().crossVectors(back, right);
-    const target = bounds.getCenter(new THREE.Vector3());
+    const boxes = Array.isArray(bounds) ? bounds : [bounds];
+    const union = new THREE.Box3(); boxes.forEach(box => union.union(box));
+    const target = union.getCenter(new THREE.Vector3());
     const tanY = Math.tan(fov * Math.PI / 360);
     const tanX = tanY * width / height * (rect.right - rect.left) / width * .8;
     const tanSafeY = tanY * (rect.bottom - rect.top) / height * .8;
     let distance = 22;
-    for (const x of [bounds.min.x, bounds.max.x]) for (const y of [bounds.min.y, bounds.max.y]) for (const z of [bounds.min.z, bounds.max.z]) {
+    for (const box of boxes) for (const x of [box.min.x, box.max.x]) for (const y of [box.min.y, box.max.y]) for (const z of [box.min.z, box.max.z]) {
       const v = new THREE.Vector3(x, y, z).sub(target);
       distance = Math.max(distance, v.dot(back) + Math.max(Math.abs(v.dot(right)) / tanX, Math.abs(v.dot(up)) / tanSafeY));
     }

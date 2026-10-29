@@ -10,8 +10,8 @@
   const wudaAt = AT.wuda;
   const VIEWS = {
     home:    { pos: { x: 440, y: 650, z: 1180 }, target: { x: 250, y: 0, z: -130 } },
-    core:    orbit(geo(114.2855, 30.5570), 6, 660, 18, 27),
-    tower:   orbit(AT.tower, terrainTop(AT.tower.x, AT.tower.z) + 13, 120, 28, 21),
+    core:    orbit(geo(114.2855, 30.5528), 32, 440, 22, 30),
+    tower:   orbit(AT.tower, terrainTop(AT.tower.x, AT.tower.z) + 13, 100, -32, 24),
     bridge:  orbit(AT.bridge, 12, 245, 58, 16),
     qc:      orbit(AT.qc, terrainTop(AT.qc.x, AT.qc.z) + 7, 112, 82, 19),
     tv:      orbit(AT.tv, 82, 350, 104, 10),
@@ -29,7 +29,7 @@
   };
   const COPY = {
     home:    ['两江四岸', '汉水自西北来，于南岸嘴汇入长江。江北为汉口，两江之间是汉阳，大江东南岸为武昌。图上方位依实测经纬度，水平一比一，山楼竖向略作夸张。'],
-    core:    ['南岸嘴', '龟蛇隔江对峙：蛇山踞武昌，上有黄鹤楼；龟山在汉阳，顶立电视塔。大桥自蛇山头跨向龟山东麓。'],
+    core:    ['龟蛇锁大江', '龟蛇隔江对峙：蛇山踞武昌，上有黄鹤楼；龟山在汉阳，顶立电视塔。大桥自蛇山头跨向龟山东麓。'],
     tower:   ['黄鹤楼', '现楼为一九八五年重建，通高五十一点四米，五层攒尖、层层飞檐，顶冠五米高的葫芦形宝顶。踞蛇山西端，下临大江。'],
     bridge:  ['武汉长江大桥', '全长一千六百七十米，正桥一千一百五十六米，九孔八墩，最大跨径一百二十八米；上层行车、下层走火车，两端立着七层桥头堡。'],
     qc:      ['晴川阁', '在汉阳龟山东麓的禹功矶上，北望汉水入江口，东濒长江，与黄鹤楼夹江相望。一九八四年起复建，旁有铁门关。'],
@@ -48,18 +48,18 @@
   };
   const motionPreference = window.matchMedia('(prefers-reduced-motion: reduce)');
   let reduce = motionPreference.matches;
-  camera.position.copy(VIEWS.home.pos);
+  camera.position.copy(VIEWS.core.pos);
   const controls = new THREE.OrbitControls(camera, renderer.domElement);
   controls.enableDamping = !reduce; controls.dampingFactor = .06;
   controls.rotateSpeed = .6; controls.zoomSpeed = .8;
   controls.minDistance = 22; controls.maxDistance = 2600;
   controls.maxPolarAngle = Math.PI * .47;
-  controls.target.copy(VIEWS.home.target);
+  controls.target.copy(VIEWS.core.target);
   controls.update();
 
   const cardTitle = document.getElementById('cardTitle'), cardText = document.getElementById('cardText'), card = document.getElementById('card');
   const buttons = Array.from(document.querySelectorAll('#nav button'));
-  let activeView = 'home', cameraMode = 'preset', flight = null;
+  let activeView = 'core', cameraMode = 'preset', flight = null;
   let layoutDirty = true, safeRect = null, uiBlocks = [], layoutSignature = '', markFarScale = 1;
   const layout = createMapLayout(() => { layoutDirty = true; });
   scene.updateMatrixWorld(true);
@@ -67,10 +67,11 @@
   pickables.forEach(object => { viewBounds[object.userData.focus] = new THREE.Box3().setFromObject(object); });
   viewBounds.home = new THREE.Box3();                  // 全城取景框住所有地标（东湖水面本身除外）
   pickables.forEach(object => { if (object.userData.focus !== 'lake') viewBounds.home.union(viewBounds[object.userData.focus]); });
-  viewBounds.core = new THREE.Box3();
-  ['tower', 'bridge', 'qc', 'tv', 'customs'].forEach(key => viewBounds.core.union(viewBounds[key]));
+  viewBounds.core = ['tower', 'bridge', 'qc', 'tv'].map(key => viewBounds[key]);
   function viewFor(key) {
-    return layout.compact ? fittedView(VIEWS[key], viewBounds[key], safeRect, W, H, camera.fov) : VIEWS[key];
+    // 竖屏沿龟蛇两山的轴线取景，让地标前后展开。
+    const base = key === 'core' && W < H ? orbit(geo(114.2855, 30.5528), 32, 440, 55, 30) : VIEWS[key];
+    return layout.compact || key === 'core' || key === 'tower' ? fittedView(base, viewBounds[key], safeRect, W, H, camera.fov) : base;
   }
   function stopFlight() {
     if (flight) { flight.kill(); flight = null; }
@@ -111,7 +112,7 @@
     if (reduce && wasFlying) moveCamera(viewFor(activeView), false);
   });
   function enterScene() {
-    const view = viewFor('home');
+    const view = viewFor(activeView);
     moveCamera(view, false);
     if (reduce) return;
     camera.position.sub(controls.target).multiplyScalar(1.35).add(controls.target);
@@ -162,17 +163,20 @@
     const measured = layout.measure(W, H);
     safeRect = measured.rect; uiBlocks = measured.blocks; layoutDirty = false;
     overlays.invalidate();
-    const signature = [layout.compact, W, H, ...Object.values(safeRect)].join(',');
+    const framed = layout.compact || activeView === 'core' || activeView === 'tower';
+    const signature = [framed, W, H, ...Object.values(safeRect)].join(',');
     if (signature === layoutSignature) return;
     layoutSignature = signature;
-    if (layout.compact) {
+    if (framed) {
       const cx = (safeRect.left + safeRect.right) / 2, cy = (safeRect.top + safeRect.bottom) / 2;
       camera.setViewOffset(W, H, W / 2 - cx, H / 2 - cy, W, H);
+    } else camera.clearViewOffset();
+    if (layout.compact) {
       const home = viewFor('home'), distance = home.pos.distanceTo(home.target);
       controls.maxDistance = Math.max(2600, distance * 1.4);
       markFarScale = Math.max(1, distance / 1500);
     } else {
-      camera.clearViewOffset(); controls.maxDistance = 2600; markFarScale = 1;
+      controls.maxDistance = 2600; markFarScale = 1;
     }
     if (cameraMode === 'manual') controls.maxDistance = Math.max(controls.maxDistance, camera.position.distanceTo(controls.target) + 1);
     if (refit && cameraMode === 'preset') { stopFlight(); moveCamera(viewFor(activeView), false); }

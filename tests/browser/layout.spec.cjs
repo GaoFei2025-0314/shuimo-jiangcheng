@@ -8,11 +8,10 @@ async function subjectBounds(page, key) {
   return page.evaluate(key => {
     const scene = window.__testScene, camera = window.__testCamera;
     scene.updateMatrixWorld(true); camera.updateMatrixWorld(true);
-    const bounds = new THREE.Box3();
-    scene.children.filter(o => o.userData.focus && (key === 'home' ? o.userData.focus !== 'lake' : key === 'core' ? ['tower', 'bridge', 'qc', 'tv', 'customs'].includes(o.userData.focus) : o.userData.focus === key))
-      .forEach(o => bounds.union(new THREE.Box3().setFromObject(o)));
+    const boxes = scene.children.filter(o => o.userData.focus && (key === 'home' ? o.userData.focus !== 'lake' : key === 'core' ? ['tower', 'bridge', 'qc', 'tv'].includes(o.userData.focus) : o.userData.focus === key))
+      .map(o => new THREE.Box3().setFromObject(o));
     const points = [];
-    for (const x of [bounds.min.x, bounds.max.x]) for (const y of [bounds.min.y, bounds.max.y]) for (const z of [bounds.min.z, bounds.max.z]) {
+    for (const bounds of boxes) for (const x of [bounds.min.x, bounds.max.x]) for (const y of [bounds.min.y, bounds.max.y]) for (const z of [bounds.min.z, bounds.max.z]) {
       const p = new THREE.Vector3(x, y, z).project(camera);
       points.push({ x: (p.x + 1) / 2 * innerWidth, y: (1 - p.y) / 2 * innerHeight });
     }
