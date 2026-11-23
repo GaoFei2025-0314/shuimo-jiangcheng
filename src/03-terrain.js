@@ -31,12 +31,14 @@
   yzW.forEach((p, i) => { const d = (p[0] - mouth.x) ** 2 + (p[1] - mouth.z) ** 2; if (d < best) { best = d; kk = i; } });
   const HCUT = 3;                                       // 河口张开的余量：约 450 米
 
-  const HANKOU = hanN.slice(0, hanN.length - HCUT)
-    .concat(yzW.slice(kk + HCUT))
+  const hanNorthBank = hanN.slice(0, hanN.length - HCUT), hanSouthBank = hanS.slice(0, hanS.length - HCUT);
+  const yangtzeUpperWest = yzW.slice(0, Math.max(1, kk - HCUT));
+  const yangtzeLowerWest = yzW.slice(kk + HCUT);
+  const HANKOU = hanNorthBank.concat(yangtzeLowerWest)
     .concat([[X1, yzW[yzW.length - 1][1]], [X1, ZTOP], [X0, ZTOP], [X0, hanN[0][1]]]);   // 长江自东缘出图：北岸沿江向东收到场景边，东北角是陆地
-  const HANYANG = yzW.slice(0, Math.max(1, kk - HCUT)).reverse()
+  const HANYANG = yangtzeUpperWest.slice().reverse()
     .concat([[yzW[0][0], ZBOT], [X0, ZBOT], [X0, hanS[0][1]]])
-    .concat(hanS.slice(0, hanS.length - HCUT));
+    .concat(hanSouthBank);
   const WUCHANG = yzE.slice()
     .concat([[X1, yzE[yzE.length - 1][1]], [X1, ZBOT], [yzE[0][0], ZBOT]]);
 
@@ -67,6 +69,102 @@
   });
   const onLand = (x, z) =>
     (inPoly(WUCHANG, x, z) || inPoly(HANKOU, x, z) || inPoly(HANYANG, x, z)) && !inLake(x, z);
+
+  // Bridge-local stationing is shared by the terrain cut and the bank connectors.
+  // Match tools/blender/bridge.py. Positive station is the bend around Guishan.
+  const bA = geo(114.28957, 30.54783), bB = geo(114.27607, 30.55633);
+  const bridgeAngle = Math.atan2(bB.x - bA.x, bB.z - bA.z);
+  const bridgeScale = .74, bridgeLengthRatio = .81, bridgeLift = -.3;
+  const bridgeDeckEnd = 154, approachHalfWidth = 6.025 * bridgeScale;
+  const bridgeLocal = (u, y, s) => V(
+    AT.bridge.x + bridgeScale*(Math.cos(bridgeAngle)*u + Math.sin(bridgeAngle)*s*bridgeLengthRatio), y,
+    AT.bridge.z + bridgeScale*(-Math.sin(bridgeAngle)*u + Math.cos(bridgeAngle)*s*bridgeLengthRatio));
+  const deckGrade = s => bridgeLift + bridgeScale*(11.9-Math.max(0,Math.abs(s)-72)*.127);
+  function hanyangOffset(s) {
+    const d = Math.max(0, s-83), t = Math.min(1, d/12);
+    return 1.24*(12*t**3*(1-.5*t)+Math.max(0,d-12));
+  }
+  // Continue the bridge surface into the adjacent street grid at their landward ends.
+  const approachLinks = [
+    [[0,-154],[.8,-159],[3.9,-163],[9,-164],[14,-161],[17.8,-156],[20.9,-150.8]],
+    [[hanyangOffset(154),154],[87.3,159.4],[94.5,163.9],[102.1,167.3],
+      [110,170],[119,172.5],[128,174.7],[136,176]]
+  ].map(link => {
+    const controls = link.map(([u,s],i) => {
+      const t = i/(link.length-1), y = THREE.MathUtils.lerp(deckGrade(bridgeDeckEnd),LAND_Y+.058,t);
+      return bridgeLocal(u,y,s);
+    });
+    return new THREE.CatmullRomCurve3(controls).getPoints((controls.length-1)*3);
+  });
+  const approachRoads = [-1,1].map((sign,index) => [
+    ...Array.from({length: 83}, (_,i) => {
+      const s = sign*(72+i);
+      return bridgeLocal(sign > 0 ? hanyangOffset(s) : 0,deckGrade(s),s);
+    }),
+    ...approachLinks[index].slice(1)
+  ]);
+  const approachSegments = approachRoads.flatMap(points => points.slice(1).map((b,i) => {
+    const a = points[i], dx = b.x-a.x, dz = b.z-a.z;
+    return { a,b,dx,dz,squared: dx*dx+dz*dz };
+  }));
+  const bridgeRoadBounds = new THREE.Box3().setFromPoints(approachRoads.flat()).expandByScalar(19);
+  function roadAt(x,z) {
+    if (x < bridgeRoadBounds.min.x || x > bridgeRoadBounds.max.x ||
+        z < bridgeRoadBounds.min.z || z > bridgeRoadBounds.max.z) return null;
+    let distanceSquared = 19*19, height;
+    for (const {a,b,dx,dz,squared} of approachSegments) {
+      const u = THREE.MathUtils.clamp(((x-a.x)*dx+(z-a.z)*dz)/squared,0,1);
+      const d = (x-a.x-u*dx)**2 + (z-a.z-u*dz)**2;
+      if (d >= distanceSquared) continue;
+      distanceSquared = d;
+      height = THREE.MathUtils.lerp(a.y,b.y,u);
+    }
+    return height === undefined ? null : { distance: Math.sqrt(distanceSquared), height };
+  }
+  function cutForApproach(x,z,y) {
+    const road = roadAt(x,z);
+    if (!road) return y;
+    const cut = 1-THREE.MathUtils.smoothstep(road.distance, approachHalfWidth+1.5, 15.5);
+    const top = Math.max(LAND_Y-.12, road.height-.36);
+    return y-Math.max(0,y-top)*cut;
+  }
+
+  const GROUND_BIN = 12;
+  function groundTriangle(bins, a, b, c) {
+    const xmin = Math.floor(Math.min(a[0], b[0], c[0])/GROUND_BIN);
+    const xmax = Math.floor(Math.max(a[0], b[0], c[0])/GROUND_BIN);
+    const zmin = Math.floor(Math.min(a[2], b[2], c[2])/GROUND_BIN);
+    const zmax = Math.floor(Math.max(a[2], b[2], c[2])/GROUND_BIN);
+    const area = (b[2]-a[2])*(c[0]-a[0]) - (b[0]-a[0])*(c[2]-a[2]);
+    if (Math.abs(area) < 1e-6) return false;
+    const triangle = { a, b, c, area };
+    for (let z = zmin; z <= zmax; z++) for (let x = xmin; x <= xmax; x++) {
+      const key = x + ',' + z;
+      if (!bins.has(key)) bins.set(key, []);
+      bins.get(key).push(triangle);
+    }
+    return area;
+  }
+  const coastGround = new Map(), shoulderGround = new Map();
+  function groundSampler(bins, x, z) {
+    const triangles = bins.get(Math.floor(x/GROUND_BIN) + ',' + Math.floor(z/GROUND_BIN));
+    if (!triangles) return -Infinity;
+    let height = -Infinity;
+    for (const { a, b, c, area } of triangles) {
+      const ax = x-a[0], az = z-a[2];
+      const v = (az*(c[0]-a[0])-ax*(c[2]-a[2])) / area;
+      const w = ((b[2]-a[2])*ax-(b[0]-a[0])*az) / area;
+      const u = 1-v-w;
+      if (u >= -1e-5 && v >= -1e-5 && w >= -1e-5) height = Math.max(height, u*a[1]+v*b[1]+w*c[1]);
+    }
+    return height;
+  }
+  function registerPlantingSurface(geometry) {
+    const p = geometry.attributes.position, index = geometry.index.array;
+    const point = i => [p.getX(i), p.getY(i), p.getZ(i)];
+    for (let i = 0; i < index.length; i += 3)
+      groundTriangle(shoulderGround, point(index[i]), point(index[i+1]), point(index[i+2]));
+  }
 
   /* 水面：以「水纹图」驱动的笔触——顺流成线，近岸留白，湖面作同心波 */
   const FN = 512, WR = { x: -1000, z: -1300, w: 2400, h: 2200 };
@@ -175,9 +273,66 @@
   water.position.set((X0 + X1) / 2, 0, (ZTOP + ZBOT) / 2);
   scene.add(water);
 
-  /* 陆地：三镇各自成块，东湖在武昌之中挖空；棱边即是岸线 */
+  /* 岸脚接原水线，岸顶接回三镇陆块。分带退入陆侧，桥下江宽不变。 */
+  function riverBanks() {
+    const cap = new Map();
+    const batches = [
+      { name: '两江近水石驳岸', material: 'BankStone', ink: M.bankStone, vertices: [], indices: [] },
+      { name: '两江岸坡', material: 'BankGrass', ink: M.bankGrass, vertices: [], indices: [] },
+      { name: '两江分阶近水步道', material: 'Path', ink: M.bankPath, vertices: [], indices: [] }
+    ];
+    const profile = [[0, .035], [.15, .17], [.27, .23], [.45, .23],
+      [.52, .43], [.66, .43], [.82, .59], [1, LAND_Y]];
+    const materialAt = [0, 0, 2, 0, 2, 1, 1];
+    const segments = [[hanNorthBank, 1, 2.65], [hanSouthBank, -1, 2.65],
+      [yangtzeUpperWest, 1, 4.6], [yangtzeLowerWest, 1, 4.6], [yzE, -1, 4.6]];
+    const fade = THREE.MathUtils.smoothstep;
+    for (const [edge, side, width] of segments) {
+      const sections = edge.map(([x, z], i) => {
+        const a = edge[Math.max(0, i-1)], b = edge[Math.min(edge.length-1, i+1)];
+        const tx = b[0]-a[0], tz = b[1]-a[1], len = Math.hypot(tx, tz) || 1;
+        const nx = side*tz/len, nz = -side*tx/len;
+        const center = Math.hypot((x-AT.bridge.x)*.84, (z-AT.bridge.z)*.72);
+        const entry = fade(Math.min(i, edge.length-i-1), 0, 7);
+        const setback = width * entry * (1-fade(center, 302, 720));
+        let w = Math.min(setback, .62*Math.min(Math.hypot(x-a[0], z-a[1]), Math.hypot(b[0]-x, b[1]-z)));
+        // Very tight bends can fold parallel offsets back across the water mask.
+        while (w > .10 && ![.15, .52, 1].every(t => onLand(x+nx*w*t, z+nz*w*t))) w *= .55;
+        if (w <= .10) w = 0;
+        const depth = fade(w, 0, .98);
+        const row = profile.map(([t, y]) => [x+nx*w*t, LAND_Y+(y-LAND_Y)*depth, z+nz*w*t]);
+        cap.set(edge[i], [row.at(-1)[0], row.at(-1)[2]]);
+        return row;
+      });
+      for (let i = 1; i < sections.length; i++) for (let j = 0; j < materialAt.length; j++) {
+        const q = [sections[i-1][j], sections[i][j], sections[i-1][j+1], sections[i][j+1]];
+        const { vertices, indices } = batches[materialAt[j]], start = vertices.length / 3;
+        const first = indices.length;
+        for (const [a, b, c] of [[0, 1, 2], [1, 3, 2]]) {
+          const area = groundTriangle(coastGround, q[a], q[b], q[c]);
+          if (area > 0) indices.push(start+a, start+b, start+c);
+          if (area < 0) indices.push(start+a, start+c, start+b);
+        }
+        if (indices.length > first) for (const point of q) vertices.push(...point);
+      }
+    }
+    for (const batch of batches) {
+      const geometry = new THREE.BufferGeometry();
+      geometry.setAttribute('position', new THREE.Float32BufferAttribute(batch.vertices, 3));
+      geometry.setIndex(batch.indices); geometry.computeVertexNormals();
+      const mesh = new THREE.Mesh(geometry, batch.ink);
+      mesh.name = batch.name;
+      mesh.userData.landscapeSurface = { group: '三镇河岸', name: batch.name, material: batch.material };
+      mesh.raycast = function () {};
+      scene.add(mesh);
+    }
+    return cap;
+  }
+  const coastCap = riverBanks();
+
+  /* 陆地：三镇分别成块，湖洞沿用水体掩膜。 */
   function landMesh(poly, holes) {
-    const sh = new THREE.Shape(poly.map(p => new THREE.Vector2(p[0], -p[1])));
+    const sh = new THREE.Shape(poly.map(p => coastCap.get(p) || p).map(p => new THREE.Vector2(p[0], -p[1])));
     (holes || []).forEach(h => sh.holes.push(new THREE.Path(h.map(p => new THREE.Vector2(p[0], -p[1])))));
     const g = new THREE.ExtrudeGeometry(sh, { depth: 1.3, bevelEnabled: false });
     g.rotateX(-Math.PI / 2);
@@ -190,11 +345,18 @@
   const LAND_HOLES = [holesIn(HANKOU), holesIn(HANYANG), holesIn(WUCHANG)];
   scene.add(landMesh(HANKOU, LAND_HOLES[0]), landMesh(HANYANG, LAND_HOLES[1]), landMesh(WUCHANG, LAND_HOLES[2]));
 
-  /* ═════════ 六、山：形取 DEM，高取实测海拔（tools/geodata/extract.py） ═════════
-     每座山一块高程格子（相对平原的起伏，0.5 米一级）。网格点之间用 Catmull-Rom 双三次插值，
-     轮廓是圆的，不见格子。山脚没入水下，临江临湖的山自然入水。 */
+  /* ═════════ 六、山：DEM 决定形状和高度 ═════════
+     Catmull-Rom 加密格点。山脚在低起伏处缓缓归入平原，网格与地表采样共用三角面。 */
   const VEX = 5 / MPU;                                  // 米 → 场景单位，竖向五倍
-  const HILL_DIP = 2.6;                                 // 起伏归零处沉到水面以下，山裙不浮在水上
+  const landHeight = (x, z) => {
+    const shore = groundSampler(coastGround, x, z);
+    return Number.isFinite(shore) ? shore : LAND_Y;
+  };
+  function triangleOnLand(a, b, c) {
+    return [a, b, c].every(p => onLand(p[0], p[2]))
+      && onLand((a[0]+b[0]+c[0])/3, (a[2]+b[2]+c[2])/3)
+      && [[a,b], [b,c], [c,a]].every(([p,q]) => onLand((p[0]+q[0])/2, (p[2]+q[2])/2));
+  }
   function hillField(t) {
     const bin = atob(t.q), a = new Float32Array(bin.length);
     for (let i = 0; i < bin.length; i++) a[i] = bin.charCodeAt(i) * .5 * VEX;
@@ -211,33 +373,43 @@
     const row = jj => crSpline(at(i - 1, jj), at(i, jj), at(i + 1, jj), at(i + 2, jj), fx);
     return Math.max(0, crSpline(row(j - 1), row(j), row(j + 1), row(j + 2), fz));
   }
+  const hillGround = new Map();
   const HILLS = GEO.hills.map(t => {
     const f = hillField(t), pk = geo(t.peak[0], t.peak[1]);
-    const SUB = 2, cols = (f.nx - 1) * SUB + 1, rows = (f.nz - 1) * SUB + 1;
-    const pos = new Float32Array(cols * rows * 3), idx = [];
+    const SUB = 3, cols = (f.nx - 1) * SUB + 1, rows = (f.nz - 1) * SUB + 1;
+    const pos = new Float32Array(cols * rows * 3), idx = [], points = [];
     for (let j = 0; j < rows; j++) for (let i = 0; i < cols; i++) {
       const x = f.x0 + i / SUB * f.dx, z = f.z0 + j / SUB * f.dz, h = sampleField(f, x, z), k = (j * cols + i) * 3;
-      pos[k] = x - pk.x;                                // 以山顶为原点：皴笔自山顶放射，顺坡而下
-      pos[k + 1] = LAND_Y + h - HILL_DIP * (1 - THREE.MathUtils.smoothstep(h, 0, 1.5));
-      pos[k + 2] = z - pk.z;
+      const toe = THREE.MathUtils.smoothstep(h, .04, 1.45);
+      const coast = groundSampler(coastGround, x, z);
+      const y = LAND_Y + (.03+h)*toe - .075*(1-toe);
+      pos[k] = x - pk.x;
+      pos[k+1] = Number.isFinite(coast) || !onLand(x,z) ? -.12 : cutForApproach(x,z,y);
+      pos[k+2] = z - pk.z;
+      points.push([x, pos[k+1], z]);
     }
     for (let j = 0; j < rows - 1; j++) for (let i = 0; i < cols - 1; i++) {
       const a = j * cols + i, b = a + 1, c = a + cols, d = c + 1;
-      idx.push(a, c, b, b, c, d);
+      for (const tri of [[a, c, b], [b, c, d]]) {
+        const [p, q, r] = tri.map(k => points[k]);
+        if (Math.max(p[1], q[1], r[1]) <= LAND_Y-.05 || !triangleOnLand(p, q, r)) continue;
+        idx.push(...tri);
+        groundTriangle(hillGround, p, q, r);
+      }
     }
     const g = new THREE.BufferGeometry();
     g.setAttribute('position', new THREE.BufferAttribute(pos, 3)); g.setIndex(idx); g.computeVertexNormals();
     const mesh = new THREE.Mesh(g, M.hill); mesh.position.set(pk.x, 0, pk.z);
+    mesh.name = t.name || '城郊低岭';
+    mesh.userData.landscapeSurface = { group: '山林', name: mesh.name, material: 'Hills' };
     scene.add(mesh);
     return { name: t.name, f, mesh, peak: pk, x0: f.x0, x1: f.x0 + (f.nx - 1) * f.dx, z0: f.z0, z1: f.z0 + (f.nz - 1) * f.dz };
   });
   const HILL = {}; HILLS.forEach(h => { if (h.name) HILL[h.name] = h; });
-  const reliefAt = (x, z) => {
-    let y = 0;
-    for (const h of HILLS) if (x >= h.x0 && x <= h.x1 && z >= h.z0 && z <= h.z1) y = Math.max(y, sampleField(h.f, x, z));
-    return y;
-  };
-  const terrainTop = (x, z) => LAND_Y + reliefAt(x, z);
+  const landSurface = (x, z) => Math.max(landHeight(x, z), groundSampler(hillGround, x, z));
+  const terrainTop = (x, z) => onLand(x, z) ? landSurface(x, z) : 0;
+  const reliefAt = (x, z) => Math.max(0, terrainTop(x, z)-LAND_Y);
+  const plantingSurface = (x, z) => onLand(x, z) ? Math.max(landSurface(x, z), groundSampler(shoulderGround, x, z)) : null;
 
   // 远山：层层淡出，烘托「烟波浩渺」
   [

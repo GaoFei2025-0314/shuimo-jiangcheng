@@ -11,6 +11,7 @@
   "rootAllow": ["build.sh"],
   "keepLocal": {
     "output/architecture/*.blend": "可在 Blender 中直接打开、编辑和渲染的建筑与城市工程",
-    "output/architecture/*.png": "通过 Blender 相机渲染的建筑和城市预览"
+    "output/architecture/*.png": "通过 Blender 相机渲染的建筑和城市预览",
+    "output/architecture/*.jpg": "建筑图录与前后版本的场景对照图"
   }
 }

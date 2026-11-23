@@ -105,14 +105,17 @@
       tone = clamp(mix(clamp(tone, 0., 1.), 1., uTone), 0., 1.);
       tone = mix(1., tone, .18 + .82 * near);
 
-      if(uCun > .5){                                      // 皴：顺坡放射的短笔，陡处见笔
-        vec3 rel = vW - vC;
-        float ang = atan(rel.z, rel.x);
-        float steep = smoothstep(.92, .18, abs(n.y));
-        float k = sin(ang * 38.0 + fbm(rel.xz * .055) * 6.0 + rel.y * .07);
-        float k2 = sin(ang * 14.0 - fbm(rel.xz * .03) * 4.0);
-        float cun = (smoothstep(.70, .99, k) * .6 + smoothstep(.86, .995, k2) * .35) * steep;
-        tone = mix(tone, tone * .52, clamp(cun, 0., 1.) * .45);
+      if(uCun > .5){                                      // 随坡向的短皴，远处留山势和墨色
+        vec2 p = vW.xz;
+        vec2 slope = n.xz / max(length(n.xz), .02);
+        vec2 across = vec2(-slope.y, slope.x);
+        float steep = smoothstep(.07, .64, length(n.xz));
+        float nearHill = 1. - smoothstep(145., 570., vD);
+        float wash = fbm(p * .058);
+        float strokes = sin(dot(p, across) * .74 + fbm(p * .12) * 8.0);
+        float clumps = smoothstep(.34, .64, fbm(vec2(dot(p, across)*.16, dot(p, slope)*.10)));
+        tone -= steep * (.08 + wash * .14) + nearHill * steep * clumps * smoothstep(.32, .86, strokes) * .21;
+        tone = clamp(tone + (fbm(p * .021) - .5) * .22, 0., 1.);
       }
       if(uRim > .5){                                      // 廓：侧影处落墨，代替硬描边
         float rim = pow(1.0 - abs(dot(n, normalize(uCam - vW))), 1.9);
@@ -123,6 +126,7 @@
       }
 
       vec3 col = mix(uInk, uPaper, tone);
+      if(uCun > .5) col = mix(uFog * .948, col, smoothstep(.74, 4.3, vW.y));
       #ifdef ARCHITECTURE_AO
         col *= mix(.62, 1., vSky);
       #endif
@@ -142,7 +146,10 @@
   const M = {
     std:  inkMat(0),     land: inkMat(.60),   roof: inkMat(.06, true, ['#29332f', '#9ba49a']), pale: inkMat(.46),
     wall: inkMat(.32),   dbl:  inkMat(.08, true),
-    hill: inkMat(.18, false, null, null, { rim: 1, cun: 1, foot: 1 }),
+    hill: inkMat(.13, false, ['#495a50', '#b7bcaa'], null, { cun: 1 }),
+    bankStone: inkMat(.22, false, ['#72786e', '#c2c1aa']),
+    bankGrass: inkMat(.18, false, ['#687967', '#bfc4a8']),
+    bankPath: inkMat(.36, false, ['#827d70', '#d6cfb8']),
     pine: inkMat(-.08, false, null, [12, 46]),
     sakura: inkMat(.60, false, ['#7f5a55', '#f0dcd6'])
   };

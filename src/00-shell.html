@@ -98,6 +98,10 @@
   }
 
   #title { left: max(16px, 3vw); top: max(16px, 4vh); }
+  #title::before {
+    content: ""; position: absolute; z-index: -1; pointer-events: none; inset: -12px -18px;
+    background: radial-gradient(ellipse at 42% 52%, rgba(242,239,230,.89) 24%, rgba(242,239,230,.65) 55%, transparent 77%);
+  }
   #title h1 {
     margin: 0; font: 400 clamp(38px, 6vw, 72px)/1 var(--brush); letter-spacing: .08em;
     text-shadow: 0 0 18px var(--paper), 0 0 6px var(--paper);

@@ -52,7 +52,7 @@ def paint(name, hexcolor):
     shader = mat.node_tree.nodes.get("Principled BSDF")
     shader.inputs["Roughness"].default_value = .93
     shader.inputs["Base Color"].default_value = mat.diffuse_color
-    if name in ("Water", "Land", "Hills"):
+    if name in ("Water", "Land", "Hills", "BankGrass", "BankStone", "Path"):
         # A broad tonal wash run through physical scene coordinates, consistent across the banks.
         nodes, links = mat.node_tree.nodes, mat.node_tree.links
         coords = nodes.new("ShaderNodeNewGeometry")
@@ -64,26 +64,51 @@ def paint(name, hexcolor):
             element.color = (*[min(1, c * factor) for c in values], 1)
         links.new(coords.outputs["Position"], noise.inputs["Vector"])
         links.new(noise.outputs["Fac"], ramp.inputs["Fac"])
-        links.new(ramp.outputs["Color"], shader.inputs["Base Color"])
+        surface = ramp.outputs["Color"]
+        if name == "Hills":
+            # At grade, hills and the adjacent plain use the same palette and noise.
+            lowland = nodes.new("ShaderNodeValToRGB")
+            soil = [((v / 255 + .055) / 1.055) ** 2.4 for v in bytes.fromhex("e4dcc9")]
+            for element, factor in zip(lowland.color_ramp.elements, (.78, 1.08)):
+                element.color = (*[min(1, c * factor) for c in soil], 1)
+            links.new(noise.outputs["Fac"], lowland.inputs["Fac"])
+            axes = nodes.new("ShaderNodeSeparateXYZ")
+            links.new(coords.outputs["Position"], axes.inputs["Vector"])
+            blend = nodes.new("ShaderNodeMapRange")
+            blend.interpolation_type = 'SMOOTHERSTEP'
+            blend.inputs["From Min"].default_value = .70
+            blend.inputs["From Max"].default_value = 8
+            links.new(axes.outputs["Z"], blend.inputs["Value"])
+            slopes = nodes.new("ShaderNodeMixRGB")
+            links.new(blend.outputs["Result"], slopes.inputs[0])
+            links.new(lowland.outputs["Color"], slopes.inputs[1])
+            links.new(surface, slopes.inputs[2])
+            surface = slopes.outputs["Color"]
+        links.new(surface, shader.inputs["Base Color"])
     return mat
 
 
-def imported_mesh(item, mat, dest):
+def geometry_arrays(item):
     points = np.frombuffer(base64.b64decode(item["positions"]), dtype="<f4").reshape(-1, 3)
     points = points[:, [0, 2, 1]].copy()
     points[:, 1] *= -1
     indices = (np.frombuffer(base64.b64decode(item["index"]), dtype="<u4") if item["index"]
                else np.arange(len(points))).reshape(-1, 3)
+    return points, indices
+
+
+def imported_mesh(item, mat, dest):
+    points, indices = geometry_arrays(item)
     data = bpy.data.meshes.new(item["name"])
     data.from_pydata(points.tolist(), [], indices.tolist())
     data.materials.append(mat)
-    if item["material"] == "Hills":
+    if item["material"] in ("Hills", "BankGrass"):
         data.polygons.foreach_set("use_smooth", np.ones(len(indices), dtype=bool))
     data.update()
     obj = bpy.data.objects.new(item["name"], data)
     dest.objects.link(obj)
     obj.matrix_world = placement(item["matrix"])
-    if item["material"] == "Streets":
+    if item["material"] in ("Streets", "ApproachPaving"):
         # Thin paving ribbons meet at intersections; their pigment casts no extra shadow.
         obj.visible_shadow = False
         obj.visible_diffuse = False
@@ -92,7 +117,8 @@ def imported_mesh(item, mat, dest):
 
 def city_blocks(scene, captured, streets):
     labels = {"lane": "里分", "arcade": "沿江洋行", "wharf": "码头货仓",
-              "apartment": "退台住宅", "highrise": "现代塔楼"}
+              "apartment": "退台住宅", "highrise": "现代塔楼",
+              "terrace_tower": "退台塔楼", "slab_tower": "板式高楼"}
     for kind, lots in captured.items():
         before = set(scene.objects)
         getattr(neighborhood, kind)()
@@ -111,6 +137,42 @@ def city_blocks(scene, captured, streets):
             if i:
                 dest.objects.link(obj)
             obj.name = f"{labels[kind]} {i+1:03}"
+            obj.matrix_world = placement(matrix)
+
+
+def city_trees(captured, parent):
+    """Link editable trees to one colored mesh per species, using the web placements."""
+    names = {"pine": "松林", "broadleaf": "阔叶树", "willow": "岸柳", "cherry": "樱树"}
+    for species, batch in captured.items():
+        name = names[species]
+        data = bpy.data.meshes.new(name + " · 共享树型")
+        coords, tris, colors, slots = [], [], [], []
+        for part in batch["parts"].values():
+            points, indices = geometry_arrays(part)
+            rgb = np.frombuffer(base64.b64decode(part["colors"]), dtype="<f4").reshape(-1, 3)
+            # The material swatch is also visible in Blender's default solid viewport.
+            base = np.rint(np.clip(rgb.mean(axis=0), 0, 1) * 255).astype("uint8").tobytes().hex()
+            pigment = paint(part["material"], base)
+            color = pigment.node_tree.nodes.new("ShaderNodeVertexColor")
+            color.layer_name = "Plant pigment"
+            shader = pigment.node_tree.nodes.get("Principled BSDF")
+            pigment.node_tree.links.new(color.outputs["Color"], shader.inputs["Base Color"])
+            slots.extend([len(data.materials)] * len(indices))
+            data.materials.append(pigment)
+            tris.extend((indices + len(coords)).tolist())
+            coords.extend(points.tolist())
+            colors.extend(rgb)
+        data.from_pydata(coords, [], tris)
+        data.polygons.foreach_set("material_index", np.asarray(slots, dtype="int32"))
+        rgb = np.asarray(colors, dtype=np.float32)
+        rgba = np.ones((len(rgb), 4), dtype=np.float32)
+        rgba[:, :3] = np.where(rgb <= .04045, rgb / 12.92, ((rgb + .055) / 1.055) ** 2.4)
+        data.color_attributes.new("Plant pigment", 'FLOAT_COLOR', 'POINT').data.foreach_set("color", rgba.ravel())
+        data.update()
+        dest = collection(parent, name)
+        for i, matrix in enumerate(batch["matrices"], 1):
+            obj = bpy.data.objects.new(f"{name} {i:04}", data)
+            dest.objects.link(obj)
             obj.matrix_world = placement(matrix)
 
 
@@ -205,7 +267,15 @@ def lighting(scene, camera_group):
     overview.location = centre + back * 1700
     overview.rotation_euler = rotation.to_euler()
     overview.data.ortho_scale = max(ranges[0][1]-ranges[0][0], (ranges[1][1]-ranges[1][0])*5/3)*1.16
-    return overview
+    hillside = cam.copy()
+    hillside.data = lens.copy()
+    hillside.name = hillside.data.name = "蛇山与武昌街景"
+    camera_group.objects.link(hillside)
+    bank_view = Vector((-.90, -1.12, .75)).normalized()
+    hillside.location = Vector((4, 4, 15)) + bank_view * 420
+    hillside.rotation_euler = (-bank_view).to_track_quat('-Z', 'Y').to_euler()
+    hillside.data.ortho_scale = 173
+    return overview, hillside
 
 
 def build():
@@ -218,9 +288,10 @@ def build():
     window.scene = scene
     try:
         mats = {k: paint(k, v) for k,v in {
-            "Land":"e4dcc9", "Hills":"a4af91", "Pines":"526d59", "Slate":"677872",
+            "Land":"e4dcc9", "Hills":"a4af91", "BankGrass":"9da887",
+            "BankStone":"b4a88d", "Path":"d1c3a7", "Slate":"677872",
             "Masonry":"c4b9a2", "Ink":"4b5049", "Paper":"d4cfc2",
-            "Water":"9ab7b2", "Ripples":"c4d1c4", "Streets":"c6c1af", "Boat":"aa9980"}.items()}
+            "Water":"9ab7b2", "Ripples":"c4d1c4", "Streets":"c6c1af", "ApproachPaving":"98998b", "Boat":"aa9980"}.items()}
         groups = {}
         def group(name):
             if name not in groups:
@@ -230,17 +301,19 @@ def build():
             imported_mesh(item, mats[item["material"]], group(item["group"]))
         water(capture["rivers"], mats, group("两江水墨"))
         city_blocks(scene, capture["lots"], group("武汉街坊"))
+        city_trees(capture["vegetation"], group("武汉草木"))
         for key, record in capture["landmarks"].items():
             main_landmark(scene, key, record, group(record["name"]))
         bpy.context.view_layer.update()
-        overview = lighting(scene, group("镜头与光"))
+        overview, hillside = lighting(scene, group("镜头与光"))
         bpy.context.view_layer.update()
         mesh.save_project(scene, OUT / "city.blend")
         scene.render.filepath = str(OUT / "city.png")
         bpy.ops.render.render(write_still=True, scene=scene.name)
-        scene.camera = overview
-        scene.render.filepath = str(OUT / "city-wide.png")
-        bpy.ops.render.render(write_still=True, scene=scene.name)
+        for camera, filename in ((overview, "city-wide.png"), (hillside, "city-hillside.png")):
+            scene.camera = camera
+            scene.render.filepath = str(OUT / filename)
+            bpy.ops.render.render(write_still=True, scene=scene.name)
         print(f"Rendered city with {len(scene.objects)} objects and {sum(map(len, capture['lots'].values()))} buildings.")
     finally:
         window.scene = previous

@@ -12,11 +12,11 @@
     home:    { pos: { x: 440, y: 650, z: 1180 }, target: { x: 250, y: 0, z: -130 } },
     core:    orbit(geo(114.2855, 30.5528), 32, 440, 22, 30),
     tower:   orbit(AT.tower, terrainTop(AT.tower.x, AT.tower.z) + 13, 100, -68, 11),
-    bridge:  orbit(AT.bridge, 6.2, 174, 121, 18),
+    bridge:  orbit(AT.bridge, 6.2, 174, -85, 23),
     qc:      orbit(AT.qc, terrainTop(AT.qc.x, AT.qc.z) + 7, 112, 82, 19),
     tv:      orbit(AT.tv, 82, 350, 104, 10),
     customs: orbit(AT.customs, 18, 115, 92, 17),
-    wuda:    orbit(wudaAt, terrainTop(wudaAt.x, wudaAt.z) + 6, 112, 8, 19),
+    wuda:    orbit(wudaAt, terrainTop(wudaAt.x, wudaAt.z) + 6, 112, 152, 26),
     xingyin:  orbit(AT.xingyin, terrainTop(AT.xingyin.x, AT.xingyin.z) + 5, 68, 22, 17),
     lake:    orbit(lakeC, 3, 560, 14, 25),
     chutian: orbit(AT.chutian, terrainTop(AT.chutian.x, AT.chutian.z) + 14, 155, 22, 19),
@@ -70,17 +70,20 @@
   pickables.forEach(object => { viewBounds[object.userData.focus] = new THREE.Box3().setFromObject(object); });
   viewBounds.home = new THREE.Box3();                  // 全城取景框住所有地标（东湖水面本身除外）
   pickables.forEach(object => { if (object.userData.focus !== 'lake') viewBounds.home.union(viewBounds[object.userData.focus]); });
-  viewBounds.core = ['tower', 'bridge', 'qc', 'tv'].map(key => viewBounds[key]);
-  // Fit the ends of the diagonal crossing. Its world-axis box also includes
-  // two large empty corners over the river, which make the actual steelwork appear too small.
-  const bridgeLocal = new THREE.Box3();
-  bridge.children.forEach(mesh => bridgeLocal.union(mesh.geometry.boundingBox));
-  const bridgeCorners = [];
-  for (const x of [bridgeLocal.min.x, bridgeLocal.max.x]) for (const y of [bridgeLocal.min.y, bridgeLocal.max.y])
-    for (const z of [bridgeLocal.min.z, bridgeLocal.max.z]) {
-      const point = new THREE.Vector3(x, y, z).applyMatrix4(bridge.matrixWorld);
-      bridgeCorners.push(new THREE.Box3(point, point));
+  // Follow the curve as well as the straight truss. A single box around both banks
+  // would fit a large empty rectangle beside the Hanyang approach.
+  const bridgeSlices = new Map(), bridgePoint = new THREE.Vector3();
+  for (const part of bridge.children) {
+    const vertices = part.geometry.attributes.position;
+    for (let i = 0; i < vertices.count; i++) {
+      bridgePoint.fromBufferAttribute(vertices,i);
+      const slice = Math.floor(bridgePoint.z / 12);
+      if (!bridgeSlices.has(slice)) bridgeSlices.set(slice,new THREE.Box3());
+      bridgeSlices.get(slice).expandByPoint(bridgePoint.applyMatrix4(part.matrixWorld));
     }
+  }
+  const bridgeBounds = [...bridgeSlices.values()];
+  viewBounds.core = [viewBounds.tower, viewBounds.qc, viewBounds.tv, ...bridgeBounds];
   const isFramed = key => layout.compact || (key !== 'home' && key !== 'lake');
   function viewFor(key) {
     // 竖屏沿龟蛇两山的轴线取景，让地标前后展开。
@@ -88,7 +91,7 @@
     if (W < H && key === 'core') base = orbit(geo(114.2855, 30.5528), 32, 440, 55, 30);
     if (W < H && key === 'bridge') base = orbit(AT.bridge, 6.2, 174, 84, 28);
     if (!isFramed(key)) return base;
-    const bounds = key === 'bridge' ? bridgeCorners : viewBounds[key];
+    const bounds = key === 'bridge' ? bridgeBounds : viewBounds[key];
     const fill = !layout.compact && (key === 'tower' || key === 'bridge') ? .97 : .8;
     return fittedView(base, bounds, safeRect, W, H, camera.fov, fill);
   }
@@ -256,6 +259,77 @@
     controls.dispose();
     stopFlight();
   });
+  // r128 culls ordinary meshes, but sends every instance of a city-wide batch to the GPU.
+  // Keep the authored transforms for native export and share one visible buffer across materials.
+  const instanceGroups = new Map(), viewVolume = new THREE.Frustum();
+  const clipMatrix = new THREE.Matrix4(), previousClip = new THREE.Matrix4();
+  for (const node of scene.children) {
+    if (!node.isInstancedMesh) continue;
+    const key = node.userData.vegetation?.species || (node.name.startsWith('City / ') && node.name);
+    if (!key) continue;
+    if (!instanceGroups.has(key)) instanceGroups.set(key, { meshes: [], bounds: new THREE.Box3() });
+    const group = instanceGroups.get(key);
+    group.meshes.push(node);
+    node.geometry.computeBoundingBox();
+    group.bounds.union(node.geometry.boundingBox);
+  }
+  for (const group of instanceGroups.values()) {
+    const first = group.meshes[0], localSphere = group.bounds.getBoundingSphere(new THREE.Sphere());
+    group.source = first.instanceMatrix.array.slice();
+    group.buffer = first.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    group.spheres = [];
+    const transform = new THREE.Matrix4();
+    for (let i = 0; i < first.count; i++) {
+      first.getMatrixAt(i, transform);
+      group.spheres.push(localSphere.clone().applyMatrix4(transform.premultiply(first.matrixWorld)));
+    }
+    group.batches = [{ meshes: group.meshes, buffer: group.buffer, count: 0 }];
+    if (first.userData.farGeometry) {
+      const distant = group.meshes.map(part => {
+        const mesh = new THREE.InstancedMesh(part.userData.farGeometry, part.material, first.count);
+        mesh.name = 'Distant ' + part.name;
+        mesh.matrixAutoUpdate = false;
+        mesh.matrix.copy(part.matrix);
+        scene.add(mesh);
+        return mesh;
+      });
+      const buffer = distant[0].instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+      for (const mesh of distant) mesh.instanceMatrix = buffer;
+      group.batches.push({ meshes: distant, buffer, count: 0 });
+    }
+    for (const part of group.meshes) {
+      part.userData.authoredMatrices = group.source;
+      part.instanceMatrix = group.buffer;
+    }
+  }
+  let previousHeight = 0;
+  function updateLandscapeVisibility() {
+    camera.updateMatrixWorld();
+    clipMatrix.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
+    if (previousClip.equals(clipMatrix) && previousHeight === H) return;
+    previousClip.copy(clipMatrix);
+    previousHeight = H;
+    viewVolume.setFromProjectionMatrix(clipMatrix);
+    const clip = clipMatrix.elements;
+    // Below an 18 CSS-pixel diameter the crown silhouette carries the detail.
+    const nearScale = H * camera.projectionMatrix.elements[5] / 18;
+    for (const { batches, spheres, source } of instanceGroups.values()) {
+      for (const batch of batches) batch.count = 0;
+      for (let i = 0; i < spheres.length; i++) {
+        const sphere = spheres[i];
+        if (!viewVolume.intersectsSphere(sphere)) continue;
+        const p = sphere.center, depth = clip[3]*p.x + clip[7]*p.y + clip[11]*p.z + clip[15];
+        const batch = batches.length > 1 && depth > sphere.radius * nearScale ? batches[1] : batches[0];
+        const offset = batch.count++ * 16;
+        for (let k = 0; k < 16; k++) batch.buffer.array[offset + k] = source[i * 16 + k];
+      }
+      for (const { meshes, buffer, count } of batches) {
+        buffer.updateRange.count = count * 16;
+        if (count) buffer.needsUpdate = true;
+        for (const part of meshes) { part.count = count; part.visible = count > 0; }
+      }
+    }
+  }
   function frame() {
     if (app.state === 'failed') return;
     try { renderFrame(); }
@@ -302,7 +376,7 @@
     });
 
     camU.uCam.value.copy(camera.position);
-    const floorY = terrainTop(camera.position.x, camera.position.z) + 7;   // 不钻山、不入地
+    const floorY = (plantingSurface(camera.position.x, camera.position.z) ?? 0) + 7;   // 不钻山、不入地
     if (camera.position.y < floorY) camera.position.y = floorY;
 
     const dist = camera.position.distanceTo(controls.target);
@@ -314,6 +388,7 @@
     // Reduced motion freezes the water, boats and birds. Repaint the geometry on a
     // camera or layout change; keyboard focus and labels still update independently.
     if (!reduce || sceneDirty) {
+      updateLandscapeVisibility();
       renderer.render(scene, camera);
       sceneDirty = false;
     }
@@ -325,5 +400,5 @@
   // ?debug 时把内部状态挂出来，供浏览器里核对；正常访问不暴露。就绪与否仍以 app.ready() 置的 window.__ready 为准
   if (/[?&]debug\b/.test(location.search)) window.__dbg = {
     GEO, LAKES, LAND_HOLES, HILLS, HILL, YZ, HAN, HANKOU, HANYANG, WUCHANG, AT, VIEWS, MARKS: overlays.marks, LABELS: overlays.labels,
-    LAND_Y, terrainTop, reliefAt, onLand, inPoly, geo, camera, controls, flyTo, scene
+    LAND_Y, terrainTop, plantingSurface, cityGround, BRIDGES, approachRoads, roadAt, approachHalfWidth, reliefAt, onLand, inPoly, geo, camera, controls, flyTo, scene
   };

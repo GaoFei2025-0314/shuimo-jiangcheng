@@ -28,7 +28,7 @@ const libraries = {
       await page.route(/https:\/\/fonts\.(googleapis|gstatic)\.com\//, route => route.fulfill({ body: '', contentType: 'text/css' }));
       await page.goto(pathToFileURL(path.resolve(html)).href);
       await page.waitForFunction(() => window.__ready === true);
-      for (const view of ['entry', 'tower', 'bridge', 'home']) {
+      for (const view of ['entry', 'tower', 'bridge', 'home', 'wuda', 'tv']) {
         if (view !== 'entry') await page.locator('#b-' + view).click();
         await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
         const file = `${name}-${viewport.width}x${viewport.height}-${view}.png`;

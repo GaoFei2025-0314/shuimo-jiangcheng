@@ -10,85 +10,121 @@
     return g;
   }
   // 大桥轴线：武昌蛇山头 → 汉阳龟山东麓
-  const bA = geo(114.28957, 30.54783), bB = geo(114.27607, 30.55633);   // 随桥心一并平移（桥心改取江心，沿桥轴、按水体掩膜量得），桥向与桥长不变
-  const bridge  = place(builtLandmark('bridge'), AT.bridge, .74, Math.atan2(bB.x - bA.x, bB.z - bA.z), '武汉长江大桥', 'bridge', 0);
-  bridge.scale.z = .74 * .81;   // 沿桥长再收缩，缩到江宽：正桥 ±72 → ±43，配合约 85 单位（≈1.1 公里）的江面（正桥原长 1156 米）；桥头堡随之落到 ±50，正好在两岸
+  const bridge  = place(builtLandmark('bridge'), AT.bridge, bridgeScale, bridgeAngle, '武汉长江大桥', 'bridge', 0);
+  bridge.scale.z = bridgeScale * bridgeLengthRatio;
+  {
+    const material = inkMat(.28, false, ['#75766d', '#b8b2a2']);
+    for (const [side, rows] of approachLinks.entries()) {
+      const vertices = [], indices = [];
+      for (let i = 0; i < rows.length; i++) {
+        const p = rows[i];
+        const a = i === 0 ? approachRoads[side][bridgeDeckEnd-73] : rows[i-1];
+        const b = i === 0 ? rows[0] : rows[Math.min(rows.length-1,i+1)];
+        const dx = b.x-a.x, dz = b.z-a.z, length = Math.hypot(dx,dz);
+        const half = THREE.MathUtils.lerp(approachHalfWidth, 1.23, i/(rows.length-1));
+        for (const direction of [-1,1])
+          vertices.push(p.x+direction*dz/length*half, p.y, p.z-direction*dx/length*half);
+        if (i) {
+          const k = i*2;
+          indices.push(k-2,k,k-1,k-1,k,k+1);
+        }
+      }
+      const geometry = new THREE.BufferGeometry();
+      geometry.setAttribute('position', new THREE.Float32BufferAttribute(vertices,3));
+      geometry.setIndex(indices); geometry.computeVertexNormals();
+      const road = new THREE.Mesh(geometry, material);
+      road.name = side === 0 ? '武昌引道 · 接地铺装' : '汉阳引道 · 接地铺装';
+      road.userData.landscapeSurface = { group: '武汉长江大桥', name: road.name, material: 'ApproachPaving' };
+      scene.add(road);
+    }
+  }
   const tower   = place(builtLandmark('tower'), AT.tower, .88, .18, '黄鹤楼', 'tower');
-  { // 蛇山坡面不平，石台按楼体局部坐标落地，两端石阶转向山肩。
+  summitGround(tower, 12.1, 17.4, 17.4, 13.5, -.78);
+  { // 两处楼梯在山肩上接短转折梯，薄石面随土坡降到原地面。
     tower.updateMatrixWorld(true);
     const ground = (x, z) => {
       const p = tower.localToWorld(V(x, 0, z));
-      return (terrainTop(p.x, p.z) - tower.position.y) / tower.scale.y;
+      return (plantingSurface(p.x, p.z) - tower.position.y) / tower.scale.y;
     };
     const stone = new Acc();
-    const corners = [[-10.48,-11.87],[10.48,-11.87],[11.87,-10.48],[11.87,10.48],
-      [10.48,11.87],[-10.48,11.87],[-11.87,10.48],[-11.87,-10.48]];
-    const bottom = Math.min(...corners.map(([x,z]) => ground(x,z))) - 1;
-    const shape = new THREE.Shape(corners.map(([x,z]) => new THREE.Vector2(x,-z)));
-    const footing = new THREE.ExtrudeGeometry(shape, { depth: -6.6 - bottom, bevelEnabled: false });
-    stone.geo(footing.rotateX(-Math.PI/2), 0, bottom, 0);
     function stoneCourse(x, z, width, depth, top) {
       const heights = [-1, 1].flatMap(i => [-1, 1].map(j => ground(x+i*width/2, z+j*depth/2)));
-      const foot = Math.min(top, ...heights) - .85;
-      stone.box(width, top-foot, depth, x, (top+foot)/2, z);
+      const tread = Math.max(top, ...heights.map(h => h+.09));
+      const foot = Math.min(tread-.20, ...heights) - .06;
+      stone.box(width, tread-foot, depth, x, (tread+foot)/2, z);
     }
     for (const side of [-1, 1]) {
-      stoneCourse(0, side*15.31, 6.66, 7.18, .04); // 承托既有八级石阶，外端留转折平台
-      const z = side*17.18, width = 3.34, run = 13.5, start = 3.33;
-      const toe = ground(side*(start+run), z);
-      const count = Math.max(1, Math.ceil((.04-toe)/.36));
+      stoneCourse(0, side*15.58, 6.54, 4.25, .06);
+      const z = side*16.2, width = 3.06, run = 13, start = 3.27;
+      const toe = ground(side*(start+run), z)+.08;
+      const count = Math.max(3, Math.ceil(Math.abs(.06-toe)/.27));
       for (let i = 0; i < count; i++) {
         const t = (i+1)/count, x = side*(start+(i+.5)*run/count);
-        stoneCourse(x, z, run/count+.015, width, .04 + (toe-.04)*t);
+        stoneCourse(x, z, run/count, width, .06 + (toe-.06)*t);
       }
     }
-    const terrace = stone.mesh(M.pale, false);
-    terrace.name = 'Tower hillside terrace';
+    const terrace = stone.mesh(M.bankPath, false);
+    terrace.name = '蛇山石阶与转折步道';
+    terrace.userData.keepTreesClear = true;
+    terrace.userData.landscapeSurface = { group: '蛇山', name: terrace.name, material: 'Path' };
     terrace.applyMatrix4(tower.matrixWorld);
     scene.add(terrace);
   }
   const tv      = place(builtLandmark('tv'), AT.tv, 1.5, 0, '龟山电视塔', 'tv');
   const qc      = place(builtLandmark('qc'), AT.qc, .92, Math.PI / 2, '晴川阁', 'qc');
   const customs = place(builtLandmark('customs'), AT.customs, .98, Math.PI / 2, '江汉关', 'customs');
-  const wuda    = place(builtLandmark('wuda'), AT.wuda, .74, .1, '武大 · 老斋舍', 'wuda');
+  // The three archways face downhill; their toe meets the graded campus apron.
+  const wuda    = place(builtLandmark('wuda'), AT.wuda, .74, Math.PI-.08, '武大 · 老斋舍', 'wuda');
+  summitGround(wuda, 25, 7.8, 8.5, 16.5, -.42);
   const xingyin = place(builtLandmark('lake'), AT.xingyin, .34, -.35, '东湖 · 行吟阁', 'xingyin', .45);
   xingyin.scale.y = .42; // 在狭小的湖岛上保留三层楼阁的宽高关系。
   const chutian = place(builtLandmark('chutian'), AT.chutian, .82, 0, '东湖 · 楚天台', 'chutian');
-  // Widen only the exposed shoulders of these two summit terraces. The perimeter
-  // meets the sampled hill or water, so the foundation and entrance stairs have ground beneath them.
-  function summitGround(site, halfWidth, back, front, margin) {
-    const divisions = 28, vertices = [], indices = [], raised = [];
-    const scale = site.scale.x, base = site.position.y - .22;
+  // Blend a grass shoulder under each footing without burying the entrance steps.
+  function summitGround(site, halfWidth, back, front, margin, baseLocal) {
+    const divisions = 32, vertices = [], points = [], indices = [], raised = [];
+    const base = site.position.y + site.scale.y*baseLocal;
     const bridgeAxis = new THREE.Vector2(bB.x-bA.x,bB.z-bA.z).normalize();
+    site.updateMatrixWorld(true);
     for (let row = 0; row <= divisions; row++) for (let col = 0; col <= divisions; col++) {
       const x = (2*col/divisions-1)*(halfWidth+margin);
       const z = -back-margin + row/divisions*(back+front+2*margin);
-      const wx = site.position.x+x*scale, wz = site.position.z+z*scale;
-      const ground = onLand(wx,wz) ? terrainTop(wx,wz)-.15 : -.45;
+      const { x: wx, z: wz } = site.localToWorld(V(x,0,z));
+      const ground = terrainTop(wx,wz)-.036;
       const distance = Math.hypot(Math.max(0,Math.abs(x)-halfWidth), Math.max(0,-z-back,z-front));
-      const toAxis = Math.abs((wx-AT.bridge.x)*bridgeAxis.y-(wz-AT.bridge.z)*bridgeAxis.x);
-      const bridgeClearance = THREE.MathUtils.smoothstep(toAxis, 8.2, 17);
-      const fill = Math.max(0,base-ground) * bridgeClearance * (1-THREE.MathUtils.smoothstep(distance,0,margin));
-      vertices.push(x*scale,ground + fill - .03,z*scale);
-      raised.push(fill > .03);
+      const dx = wx-AT.bridge.x, dz = wz-AT.bridge.z;
+      const along = dx*bridgeAxis.x+dz*bridgeAxis.y, across = dx*bridgeAxis.y-dz*bridgeAxis.x;
+      // Keep the bridgehead faces and both approach carriageways clear of added soil.
+      const bridgeClearance = Math.max(THREE.MathUtils.smoothstep(Math.abs(across), 6, 14),
+        THREE.MathUtils.smoothstep(Math.abs(along), 51, 55));
+      const fill = onLand(wx,wz) ? Math.max(0,base-ground) * bridgeClearance *
+        (1-THREE.MathUtils.smoothstep(distance,0,margin)) : 0;
+      const height = cutForApproach(wx,wz,ground+fill);
+      const point = [wx, height, wz];
+      points.push(point); vertices.push(...point);
+      raised.push(height-ground > .045);
     }
     for (let row = 0; row < divisions; row++) for (let col = 0; col < divisions; col++) {
       const a = row*(divisions+1)+col, b = a+1, c = a+divisions+1, d = c+1;
-      if (raised[a] || raised[b] || raised[c] || raised[d]) indices.push(a,c,b,b,c,d);
+      for (const tri of [[a,c,b], [b,c,d]])
+        if (tri.some(i => raised[i]) && triangleOnLand(...tri.map(i => points[i]))) indices.push(...tri);
     }
     const geometry = new THREE.BufferGeometry();
     geometry.setAttribute('position', new THREE.Float32BufferAttribute(vertices,3));
     geometry.setIndex(indices); geometry.computeVertexNormals();
     const bank = new THREE.Mesh(geometry,M.hill);
-    bank.position.set(site.position.x,0,site.position.z); bank.name = site.userData.name+' · 山顶台地';
-    bank.userData.hillTerrace = true; scene.add(bank);
+    bank.name = site.userData.name+' · 山肩';
+    bank.userData.landscapeSurface = { group: '山林', name: bank.name, material: 'Hills' };
+    bank.raycast = function () {};
+    registerPlantingSurface(geometry);
+    scene.add(bank);
   }
-  summitGround(tv, 10, 10, 10, 12);
-  summitGround(chutian, 14.4, 14.2, 26.5, 13);
+  summitGround(tv, 9.5, 10.8, 9.5, 15.5, -.34);
+  summitGround(chutian, 14.5, 26.7, 14.3, 16.2, -.38);
   const hongshan   = place(builtLandmark('hongshan'), AT.hongshan, .74, 0, '洪山宝塔 · 宝通禅寺', 'hongshan');
   const watertower = place(builtLandmark('watertower'), AT.watertower, .82, 0, '汉口水塔', 'watertower');
   const museum     = place(builtLandmark('museum'), AT.museum, .78, 0, '湖北省博物馆', 'museum');
   const honglou    = place(builtLandmark('honglou'), AT.honglou, .8, 0, '红楼', 'honglou');
+  summitGround(honglou, 23, 9.8, 12, 10.6, -.53);
   const guiyuan    = place(builtLandmark('guiyuan'), AT.guiyuan, .7, 0, '归元禅寺', 'guiyuan');
   const qintai     = place(builtLandmark('qintai'), AT.qintai, .7, -Math.PI / 2, '古琴台', 'qintai');   // 台面朝西，对着月湖
   // 鹦鹉洲大桥：沿 OSM 桥向（原两端点连线并非江岸），两端各在水体掩膜江面之外 150 米落岸，桥长随之
@@ -101,8 +137,9 @@
     const dx = b.x - a.x, dz = b.z - a.z, L = Math.hypot(dx, dz);
     return [{ x: c.x - dx / L * half, z: c.z - dz / L * half }, { x: c.x + dx / L * half, z: c.z + dz / L * half }];
   };
-  const BRIDGES = [bridgeSpan(AT.bridge, bA, bB, 154 * .74 * .81), [yA, yB]];
-  const offBridge = (x, z) => BRIDGES.every(([a, b]) => {
+  const BRIDGES = [bridgeSpan(AT.bridge, bA, bB, bridgeDeckEnd * bridgeScale * bridgeLengthRatio), [yA, yB]];
+  const offBridge = (x, z, reserveApproach = true) => (!reserveApproach || (roadAt(x,z)?.distance ?? Infinity) > 8)
+    && BRIDGES.every(([a, b]) => {
     const dx = b.x - a.x, dz = b.z - a.z, t = Math.max(0, Math.min(1, ((x - a.x) * dx + (z - a.z) * dz) / (dx * dx + dz * dz)));
     return Math.hypot(x - a.x - t * dx, z - a.z - t * dz) > 12;
   });
@@ -161,132 +198,156 @@
     road.raycast = function () {}; scene.add(road);
   }
 
-  /* ═════════ 八、草木：山上松柏，磨山与武大的樱 ═════════ */
-  const pines = new Acc(), sakBloom = new Acc(), sakTrunk = new Acc();
-  const ICO = new THREE.IcosahedronGeometry(1, 1);
-  function pine(x, y, z, s) {
-    for (let k = 0; k < 3; k++) pines.cone(s * (.78 - k * .22), s * 1.45, x, y + s * (.35 + k * .88), z, UP);
-    pines.cyl(.07 * s, .7 * s, x, y + s * .3, z);
-  }
-  function sakura(x, y, z, s) {
-    sakTrunk.cyl(.15 * s, 1.5 * s, x, y + .7 * s, z);
-    [[0, 2.1, 0, 1.15], [.75, 1.75, .4, .85], [-.7, 1.65, -.3, .8], [.1, 2.7, .25, .72], [-.2, 1.5, .8, .7]]
-      .forEach(b => sakBloom.place(ICO, x + b[0] * s, y + b[1] * s, z + b[2] * s, b[3] * s, b[3] * s * .82, b[3] * s, 0));
-  }
-  const KEEP = [AT.tower, AT.tv, AT.qc, AT.chutian, AT.wuda];
-  // 新景点各按自身占地避让，不随调用方的半径——汉口水塔若按市廛的 46 单位清场，汉口就被掏空了
-  const KEEP2 = [[AT.hongshan, 22], [AT.watertower, 12], [AT.museum, 34], [AT.honglou, 26], [AT.guiyuan, 36], [AT.qintai, 20]];
-  const clearOf = (x, z, r) => KEEP.every(k => (k.x - x) ** 2 + (k.z - z) ** 2 > r * r)
-    && KEEP2.every(([k, rr]) => (k.x - x) ** 2 + (k.z - z) ** 2 > rr * rr) && offBridge(x, z);
-  // 在山的格子里撒点，只留起伏超过 3 个单位的（真在山上，不在山脚水边）。密度按格子面积，
-  // 无名山只按约三分之一的密度种，免得抢了主山的戏
-  function dressHill(h, kind, s0, density, keep) {
-    if (!h) return;                                                          // 数据重生成后山名若变了，不至于整页出错
-    const n = Math.round((h.x1 - h.x0) * (h.z1 - h.z0) / 55 * (density || 1) * (h.name ? 1 : .35));
-    for (let i = 0; i < n; i++) {
-      const x = h.x0 + rnd() * (h.x1 - h.x0), z = h.z0 + rnd() * (h.z1 - h.z0);
-      if (sampleField(h.f, x, z) < 3 || !clearOf(x, z, 22) || (keep && !keep(x, z))) continue;   // 22：盖住电视塔 30×30 台座的四角
-      const y = terrainTop(x, z) - .3, s = s0 * (.55 + rnd() * 1.05);        // 网格线性、terrainTop 双三次，树根最多悬空 0.6，略沉入地面
-      if (kind === 'p') pine(x, y, z, s); else sakura(x, y, z, s);
-    }
-  }
-  const WUDA_AT = AT.wuda;
-  dressHill(HILL['蛇山'], 'p', 1.5);
-  dressHill(HILL['龟山'], 'p', 1.5);
-  dressHill(HILL['磨山'], 'p', 1.5);
-  dressHill(HILL['磨山'], 's', 1.4, .6);                                    // 磨山樱园
-  dressHill(HILL['珞珈山'], 'p', 1.4);
-  dressHill(HILL['珞珈山'], 's', 1.3, 1, (x, z) => (x - WUDA_AT.x) ** 2 + (z - WUDA_AT.z) ** 2 < 32 * 32);   // 武大樱顶
-  HILLS.filter(h => !['蛇山', '龟山', '磨山', '珞珈山'].includes(h.name)).forEach(h => dressHill(h, 'p', 1.4));
-  {                                           // 武大樱花大道
-    const a = geo(114.3585, 30.5392), b = geo(114.3672, 30.5408);
-    for (let i = 0; i <= 26; i++) {
-      const t = i / 26, x = a.x + (b.x - a.x) * t, z = a.z + (b.z - a.z) * t, s = (i % 2 ? 1 : -1) * 4.5;
-      sakura(x + s * .2, terrainTop(x + s * .2, z + s), z + s, 1.3 + rnd() * .5);
-    }
-  }
-  scene.add(pines.mesh(M.pine, false), sakTrunk.mesh(brushMat, false), sakBloom.mesh(M.sakura, false));
+  // The planting pass queries the completed street grid and building footprints.
+  const cityGround = { occupied: () => false, streets: [] };
 
   /* ═════════ 九、三镇市廛 ═════════ */
   // 以街坊为单位，里分顺巷成排、临江商埠与厂房成带，现代楼群在内街起伏。
   // 空间为画意概括，河湖、桥轴和地标仍使用实测位置。
   {
-    const lots = { lane: [], arcade: [], wharf: [], apartment: [], highrise: [] };
+    const lots = { lane: [], arcade: [], wharf: [], apartment: [], highrise: [], terrace_tower: [], slab_tower: [] };
     const landmarks = pickables.filter(g => !['bridge', 'yingwuzhou', 'lake'].includes(g.userData.focus))
       .map(g => { g.updateMatrixWorld(true); return new THREE.Box3().setFromObject(g).expandByScalar(2.2); });
     const cells = new Map(), cellSize = 14;
     const streetsMesh = new Acc(), streetSurface = new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2);
     const plannedStreets = [];
-    function overlapsLot(x, z, margin) {
+    let citySeed = 571;
+    const cityRandom = () => (citySeed = (citySeed * 16807) % 2147483647) / 2147483647;
+    const halfWidth = 5.25, halfDepth = 3.95;
+    const landmarkAt = (x, z) => landmarks.some(box => x > box.min.x && x < box.max.x && z > box.min.z && z < box.max.z);
+    function occupied(x, z, radius = 0) {
       const cx = Math.floor(x / cellSize), cz = Math.floor(z / cellSize);
-      for (let i = cx - 1; i <= cx + 1; i++) for (let j = cz - 1; j <= cz + 1; j++) {
+      const cellsToCheck = Math.ceil((radius + 9) / cellSize);
+      for (let i = cx - cellsToCheck; i <= cx + cellsToCheck; i++) for (let j = cz - cellsToCheck; j <= cz + cellsToCheck; j++) {
         const lotsInCell = cells.get(i + ',' + j);
         if (lotsInCell && lotsInCell.some(p => {
           const dx = x - p.x, dz = z - p.z;
-          return Math.abs(p.c * dx - p.s * dz) < 5 * p.scale + margin
-            && Math.abs(p.s * dx + p.c * dz) < 3.6 * p.scale + margin;
+          const u = Math.max(0, Math.abs(p.c * dx - p.s * dz) - halfWidth * p.scale);
+          const v = Math.max(0, Math.abs(p.s * dx + p.c * dz) - halfDepth * p.scale);
+          return u * u + v * v <= radius * radius;
         })) return true;
       }
       return false;
     }
     function pavedLine(a, b, width) {
       const dx = b.x - a.x, dz = b.z - a.z, length = Math.hypot(dx, dz);
-      const steps = Math.ceil(length / 2);
+      if (length < .15) return;
+      const steps = Math.ceil(length / 2), sideX = -dz / length, sideZ = dx / length;
       for (let i = 0; i <= steps; i++) {
         const t = i / steps, x = a.x + dx * t, z = a.z + dz * t;
-        if (overlapsLot(x, z, width / 2 + 1) || !onLand(x, z) || !offBridge(x, z) || terrainTop(x, z) > LAND_Y + .3
-          || landmarks.some(box => x > box.min.x && x < box.max.x && z > box.min.z && z < box.max.z)) return;
+        if (occupied(x, z, width / 2 + .63)) return;
+        for (const offset of [-width / 2, 0, width / 2]) {
+          const px = x + sideX * offset, pz = z + sideZ * offset;
+          if (!onLand(px, pz) || !offBridge(px, pz, false) || terrainTop(px, pz) > LAND_Y + .3 || landmarkAt(px, pz)) return;
+        }
       }
       streetsMesh.place(streetSurface, (a.x + b.x) / 2, LAND_Y + .045, (a.z + b.z) / 2, length, 1, width, Math.atan2(-dz, dx));
+      cityGround.streets.push({ a: { x: a.x, z: a.z }, b: { x: b.x, z: b.z }, width });
     }
-    function occupied(x, z, radius) {
-      const cx = Math.floor(x / cellSize), cz = Math.floor(z / cellSize);
-      for (let i = cx - 2; i <= cx + 2; i++) for (let j = cz - 2; j <= cz + 2; j++) {
-        const neighbors = cells.get(i + ',' + j);
-        if (neighbors && neighbors.some(p => Math.hypot(x - p.x, z - p.z) < p.radius + radius)) return true;
-      }
-      return false;
-    }
-    function fits(x, z, yaw, scale) {
+    function fits(x, z, yaw, scale, reserveApproach = true) {
       const c = Math.cos(yaw), s = Math.sin(yaw);
-      for (const [u, v] of [[0, 0], [-5, -3.6], [-5, 3.6], [5, -3.6], [5, 3.6]]) {
+      for (const [u, v] of [[0, 0], [-halfWidth, -halfDepth], [-halfWidth, halfDepth], [halfWidth, -halfDepth], [halfWidth, halfDepth]]) {
         const px = x + scale * (c * u + s * v), pz = z + scale * (-s * u + c * v);
-        if (!onLand(px, pz) || !offBridge(px, pz) || terrainTop(px, pz) > LAND_Y + .48) return false;
-        if (landmarks.some(b => px > b.min.x && px < b.max.x && pz > b.min.z && pz < b.max.z)) return false;
+        if (!onLand(px, pz) || !offBridge(px, pz, reserveApproach) || terrainTop(px, pz) > LAND_Y + .48 || landmarkAt(px, pz)) return false;
       }
       return true;
     }
-    function district(lon, lat, cols, rows, degrees, streets, skyline) {
+    function buildLot(kind, {x, z}, yaw, scale, height) {
+      if (occupied(x, z, Math.hypot(halfWidth, halfDepth) * scale + .24) || !fits(x, z, yaw, scale)) return false;
+      dummy.position.set(x, LAND_Y - .10, z);
+      dummy.rotation.set(0, yaw, 0);
+      dummy.scale.set(scale, height, scale);
+      dummy.updateMatrix();
+      lots[kind].push(dummy.matrix.clone());
+      const key = Math.floor(x / cellSize) + ',' + Math.floor(z / cellSize);
+      if (!cells.has(key)) cells.set(key, []);
+      cells.get(key).push({ x, z, c: Math.cos(yaw), s: Math.sin(yaw), scale });
+      return true;
+    }
+    const skylineClearance = [[AT.tower, 51], [AT.tv, 57], [AT.qc, 46], [AT.customs, 47], [AT.watertower, 29],
+      [AT.honglou, 43], [AT.guiyuan, 41], [AT.qintai, 39]];
+    const prototypeHeight = { lane: 4.4, apartment: 9.92, highrise: 18.83, terrace_tower: 25.69, slab_tower: 30.92 };
+    const inlandAt = (x, z, r) => onLand(x - r, z) && onLand(x + r, z) && onLand(x, z - r) && onLand(x, z + r);
+    function urbanCore(lon, lat, degrees, height, preferred) {
+      const center = geo(lon, lat), yaw = degrees * Math.PI / 180;
+      const c = Math.cos(yaw), s = Math.sin(yaw);
+      const point = (u, v) => ({ x: center.x + c * u + s * v, z: center.z - s * u + c * v });
+      const crossStreet = 7.85, pitch = 15.7, rowPitch = 25;
+      const rows = [-1, 0, 1], columns = [-2, -1, 0, 1, 2];
+      for (const row of rows) {
+        const street = row * rowPitch;
+        const developed = [];
+        for (const col of columns) {
+          let built = false;
+          for (const side of [-1, 1]) {
+            const u = col * pitch + (cityRandom() - .5) * 1.10;
+            const lot = point(u, street + side * (6.25 + cityRandom() * .86));
+            const inland = skylineClearance.every(([p, r]) => (lot.x - p.x) ** 2 + (lot.z - p.z) ** 2 > r * r)
+              && inlandAt(lot.x, lot.z, 23);
+            const radius = Math.hypot(col * .43, row * .62 + side * .11);
+            const mainTowers = row === 0 && Math.abs(col) <= 1;
+            let kind = radius > 1.02 ? 'lane' : 'apartment';
+            let top = (kind === 'lane' ? 5.4 : 10.2 + 3.5 * (1 - radius)) * (.83 + cityRandom() * .26);
+            const shoulder = row !== 0 && side === -row && (col === 0 || col === -row);
+            if (inland && (mainTowers || shoulder)) {
+              const leading = mainTowers && (col === 0 || (col === -1 && side === 1));
+              if (leading) {
+                const alternate = preferred === 'slab_tower' ? 'terrace_tower' : 'slab_tower';
+                kind = col === 0 && side === 1 ? alternate : preferred;
+              } else {
+                kind = mainTowers ? 'terrace_tower' : 'highrise';
+              }
+              top = height * ((leading ? 1.02 : .80) - .49 * radius) * (.87 + cityRandom() * .23);
+            }
+            const scale = .83 + cityRandom() * .30;
+            built = buildLot(kind, lot, yaw + (side > 0 ? Math.PI : 0), scale, top / prototypeHeight[kind]) || built;
+          }
+          if (built) developed.push(col);
+        }
+        for (let i = 0; i < developed.length; i++) {
+          const u = developed[i] * pitch;
+          if (i === 0) plannedStreets.push([point(u - 6, street), point(u, street), 2.2]);
+          const next = developed[i + 1];
+          plannedStreets.push([point(u, street), point(next === undefined ? u + 6 : next * pitch, street), 2.2]);
+        }
+      }
+      for (let i = 0; i < rows.length - 1; i++) {
+        plannedStreets.push([point(crossStreet, rows[i] * rowPitch), point(crossStreet, rows[i + 1] * rowPitch), 1.8]);
+      }
+    }
+    function district(lon, lat, cols, rows, degrees, streets, shoulders = []) {
       const center = geo(lon, lat), yaw = degrees * Math.PI / 180;
       const c = Math.cos(yaw), s = Math.sin(yaw);
       const blocks = new Map();
+      const crests = shoulders.map(([x, z, radius, height]) => [geo(x, z), radius, height]);
+      function apartmentRise(x, z) {
+        const rise = Math.max(0, ...crests.map(([at, r, h]) =>
+          h * (1 - THREE.MathUtils.smoothstep(Math.hypot(at.x - x, at.z - z), 8, r))));
+        if (!rise || !inlandAt(x, z, 29)) return 0;
+        const protection = Math.min(...skylineClearance.map(([at, r]) =>
+          THREE.MathUtils.smoothstep(Math.hypot(at.x - x, at.z - z), r + 3, r + 20)));
+        return rise * protection / prototypeHeight.apartment;
+      }
       for (let row = 0; row < rows; row++) for (let col = 0; col < cols; col++) {
         const u = col + .5 - cols / 2, v = row + .5 - rows / 2;
         const edge = (2 * u / cols) ** 2 + (2 * v / rows) ** 2;
-        if (edge > 1 || rnd() < .08 + edge * .16) continue;
-        // Each block faces one street and has a shared building type and building line.
-        const type = streets[Math.floor(rnd() * streets.length)];
-        const cluster = skyline * Math.exp(-((u - .10 * cols) ** 2 + (v + .12 * rows) ** 2) / 4.5);
-        const towerBlock = cluster > .40 && rnd() < cluster;
-        const blockHeight = .80 + rnd() * .38;
+        if (edge > 1 || cityRandom() < .10 + edge * .18) continue;
+        // Each block faces one street and has a shared building line and storey range.
+        const kind = streets[Math.floor(cityRandom() * streets.length)];
+        const blockHeight = (.80 + cityRandom() * .34) * (1 - .15 * edge);
         const u0 = 31 * u + 4 * Math.sin(v * .69), v0 = 25 * v + 3 * Math.sin(u * .65 + row * .18);
         const x0 = center.x + c * u0 + s * v0, z0 = center.z - s * u0 + c * v0;
         for (let side = -1; side <= 1; side += 2) for (let lot = -1; lot <= 1; lot += 2) {
-          if (rnd() < .09 || (towerBlock && side === 1)) continue;
+          if (cityRandom() < .09 + edge * .06) continue;
           const a = lot * 6.9, b = side * 5.8;
           const x = x0 + c * a + s * b, z = z0 - s * a + c * b;
-          const scale = .78 + rnd() * .30, radius = 5.9 * scale;
-          if (occupied(x, z, radius) || !fits(x, z, yaw, scale)) continue;
-          const kind = towerBlock ? (lot < 0 ? 'highrise' : 'apartment') : type;
-          dummy.position.set(x, LAND_Y - .10, z);
-          dummy.rotation.set(0, yaw + (side > 0 ? Math.PI : 0), 0);
-          dummy.scale.set(scale, scale * blockHeight * (towerBlock ? .95 + cluster * .50 : 1), scale);
-          dummy.updateMatrix();
-          lots[kind].push(dummy.matrix.clone());
-          blocks.set(row + ',' + col, {x: x0, z: z0, row, col});
-          const key = Math.floor(x / cellSize) + ',' + Math.floor(z / cellSize);
-          if (!cells.has(key)) cells.set(key, []);
-          cells.get(key).push({ x, z, radius, c, s, scale });
+          const scale = .78 + cityRandom() * .30;
+          const height = scale * blockHeight + (kind === 'apartment' && crests.length ? apartmentRise(x, z) : 0);
+          const built = buildLot(kind, { x, z }, yaw + (side > 0 ? Math.PI : 0), scale, height);
+          // A vacant lot next to the approaches still belongs to its street block.
+          if (built || ((roadAt(x,z)?.distance ?? Infinity) < 8 && fits(x,z,yaw,scale,false))) {
+            blocks.set(row + ',' + col, {x: x0, z: z0, row, col});
+          }
         }
       }
       for (const block of blocks.values()) {
@@ -304,16 +365,21 @@
     const oldTown = ['lane', 'lane', 'arcade', 'apartment'];
     const port = ['wharf', 'wharf', 'lane', 'arcade'];
     const suburbs = ['lane', 'apartment', 'apartment'];
-    district(114.292, 30.580, 11, 11, 36, oldTown, .3);   // 汉口沿江商埠
-    district(114.272, 30.587, 11, 12, 23, suburbs, 1);    // 汉口腹地
-    district(114.266, 30.554, 10, 10, -13, port, .4);     // 汉阳港区与龟山两侧
-    district(114.251, 30.543, 9, 9, 9, suburbs, .84);
-    district(114.295, 30.540, 8, 9, -20, oldTown, .24);   // 蛇山南麓
-    district(114.302, 30.557, 9, 10, -32, oldTown, .32);  // 武昌临江街坊
-    district(114.325, 30.538, 10, 9, -8, suburbs, .90);
-    district(114.358, 30.520, 8, 8, 14, suburbs, .70);
-    district(114.344, 30.598, 9, 8, 26, port, .45);
+    urbanCore(114.277, 30.583, 25, 42, 'slab_tower');          // 汉口商埠背后的内城
+    urbanCore(114.260, 30.544, 13, 45, 'terrace_tower');       // 汉阳内街，桥上远望
+    urbanCore(114.3074, 30.553, -26, 19.5, 'slab_tower');      // 武昌楼群东退，蛇山近侧保留中层街坊
+    district(114.292, 30.580, 11, 11, 36, oldTown);   // 汉口沿江商埠
+    district(114.272, 30.587, 11, 12, 23, suburbs, [[114.269, 30.586, 77, 8.9]]);   // 汉口腹地
+    district(114.266, 30.554, 10, 10, -13, port);     // 汉阳港区与龟山两侧
+    district(114.251, 30.543, 9, 9, 9, suburbs,
+      [[114.2534, 30.5402, 82, 10.4], [114.2637, 30.5395, 61, 9.8]]);  // 由汉阳楼群向内陆压低
+    district(114.295, 30.540, 8, 9, -20, oldTown);    // 蛇山南麓
+    district(114.302, 30.557, 9, 10, -32, oldTown);   // 武昌临江街坊
+    district(114.325, 30.538, 10, 9, -8, suburbs, [[114.320, 30.5460, 76, 6.1]]);
+    district(114.358, 30.520, 8, 8, 14, suburbs);
+    district(114.344, 30.598, 9, 8, 26, port);
     plannedStreets.forEach(([a, b, width]) => pavedLine(a, b, width));
+    cityGround.occupied = (x, z, radius) => occupied(x, z, radius);
     const streets = streetsMesh.mesh(inkMat(.42, false, ['#b3a895', '#dfd8c7']), false);
     streets.name = 'City streets';
     scene.add(streets);
