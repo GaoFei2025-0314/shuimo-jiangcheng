@@ -151,7 +151,7 @@ def plate(scene, name):
 def build():
     OUTPUT.mkdir(parents=True, exist_ok=True)
     models = dict(landmarks.BUILDERS)
-    for name in ("lane", "arcade", "wharf", "apartment", "highrise"):
+    for name in ("lane", "arcade", "wharf", "apartment", "highrise", "terrace_tower", "slab_tower"):
         models[name] = getattr(neighborhood, name)
     window = bpy.context.window
     previous_scene = window.scene
