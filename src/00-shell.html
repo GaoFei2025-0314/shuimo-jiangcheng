@@ -294,7 +294,10 @@
     #card p { margin-top: 8px; font-size: 12px; max-height: min(45dvh, max(64px, calc(100dvh - 320px)));
       overflow-y: auto; overscroll-behavior: contain; }
     #nav { max-width: 100%; min-width: 0; flex-wrap: nowrap; overflow-x: auto; overscroll-behavior-x: contain;
-      padding: 0 0 4px; scrollbar-width: thin; touch-action: pan-x; }
+      padding: 0 0 4px; scrollbar-width: thin; touch-action: pan-x;
+      mask-image: linear-gradient(to right, transparent, black var(--fade-left, 0px), black calc(100% - var(--fade-right, 0px)), transparent); }
+    #nav.more-left { --fade-left: 19px; }
+    #nav.more-right { --fade-right: 22px; }
     #nav button { flex: 0 0 auto; min-height: 44px; font-size: 17px; padding: 8px; }
     #nav .grp { flex: none; flex-wrap: nowrap; }
     #credit { flex-basis: auto; margin-top: 0; }

@@ -5,13 +5,20 @@
     const poemButton = document.getElementById('poem-toggle'), detailsButton = document.getElementById('details-toggle');
     const elements = ['title', 'poem', 'sound', 'poem-toggle', 'dock'].map(id => document.getElementById(id));
     let panel = null;
+    const nav = document.getElementById('nav');
+    function updateNavEdges() {
+      nav.classList.toggle('more-left', nav.scrollLeft > 1);
+      nav.classList.toggle('more-right', nav.scrollLeft + nav.clientWidth < nav.scrollWidth - 1);
+    }
+    nav.addEventListener('scroll', updateNavEdges, { passive: true });
+    app.cleanups.push(() => nav.removeEventListener('scroll', updateNavEdges));
     function updatePanels() {
       poem.hidden = media.matches && panel !== 'poem';
       text.hidden = media.matches && panel !== 'details';
       poemButton.setAttribute('aria-expanded', String(media.matches && panel === 'poem'));
       detailsButton.setAttribute('aria-expanded', String(media.matches && panel === 'details'));
       document.getElementById('hint').textContent = media.matches
-        ? '单指旋转　双指缩放或平移　点击景点'
+        ? '单指旋转　双指缩放　左右滑动选择景点'
         : '拖拽旋转　滚轮缩放　点击景点';
       invalidate();
     }
@@ -48,6 +55,7 @@
     return {
       get compact() { return media.matches; },
       measure(width, height) {
+        updateNavEdges();
         const blocks = elements.filter(el => !el.hidden)
           .map(el => {
             const r = el.getBoundingClientRect();

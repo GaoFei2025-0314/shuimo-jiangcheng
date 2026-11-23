@@ -10,11 +10,12 @@ async function subjectBounds(page, key) {
     scene.updateMatrixWorld(true); camera.updateMatrixWorld(true);
     const subjects = scene.children.filter(o => o.userData.focus && (key === 'home' ? o.userData.focus !== 'lake' : key === 'core' ? ['tower', 'bridge', 'qc', 'tv'].includes(o.userData.focus) : o.userData.focus === key));
     const points = [];
-    if (key === 'bridge') {
+    const crossing = subjects.find(o => o.userData.focus === 'bridge');
+    if (crossing) {
       // Its diagonal world-axis bounding box contains empty space on both sides of the river.
       // Project the actual deck, trusses and approach vertices to check the occupied pixels.
       const projected = new THREE.Box2(), v = new THREE.Vector3();
-      for (const part of subjects[0].children) {
+      for (const part of crossing.children) {
         const positions = part.geometry.attributes.position;
         for (let i = 0; i < positions.count; i++)
           projected.expandByPoint(v.fromBufferAttribute(positions, i).applyMatrix4(part.matrixWorld).project(camera));
@@ -23,7 +24,7 @@ async function subjectBounds(page, key) {
         points.push({ x: (p.x + 1) / 2 * innerWidth, y: (1 - p.y) / 2 * innerHeight });
       }
     }
-    const boxes = key === 'bridge' ? [] : subjects.map(o => new THREE.Box3().setFromObject(o));
+    const boxes = subjects.filter(o => o !== crossing).map(o => new THREE.Box3().setFromObject(o));
     for (const bounds of boxes) for (const x of [bounds.min.x, bounds.max.x]) for (const y of [bounds.min.y, bounds.max.y]) for (const z of [bounds.min.z, bounds.max.z]) {
       const p = new THREE.Vector3(x, y, z).project(camera);
       points.push({ x: (p.x + 1) / 2 * innerWidth, y: (1 - p.y) / 2 * innerHeight });
@@ -63,6 +64,19 @@ test('compact text panels are mutually exclusive, bounded and keyboard operable'
   await page.setViewportSize({ width: 390, height: 844 });
   await page.emulateMedia({ reducedMotion: 'reduce' });
   await ready(page);
+  const nav = page.locator('#nav');
+  await expect(nav).toHaveClass(/more-right/);
+  await nav.evaluate(el => { el.scrollLeft = el.scrollWidth; });
+  await expect(nav).not.toHaveClass(/more-right/);
+  await expect(nav).toHaveClass(/more-left/);
+  await nav.evaluate(el => { el.scrollLeft = 0; });
+  const towerBounds = await subjectBounds(page, 'tower');
+  const redHouseLabel = await page.locator('#marks button[aria-label="移至红楼"]').boundingBox();
+  if (redHouseLabel) {
+    const towerX = (towerBounds.left + towerBounds.right) / 2, towerY = (towerBounds.top + towerBounds.bottom) / 2;
+    expect(towerX < redHouseLabel.x || towerX > redHouseLabel.x + redHouseLabel.width ||
+      towerY < redHouseLabel.y || towerY > redHouseLabel.y + redHouseLabel.height).toBe(true);
+  }
   await page.locator('#poem-toggle').focus();
   await page.keyboard.press('Enter');
   await expect(page.locator('#poem')).toBeVisible();

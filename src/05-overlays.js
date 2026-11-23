@@ -74,8 +74,19 @@
         top: y - item.height * (centered ? .5 : 1), bottom: y + (centered ? item.height / 2 : 0),
         inDepth: projV.z >= -1 && projV.z <= 1 };
     }
+    const towerSilhouette = new THREE.Box3().setFromObject(tower);
+    const projectedTower = new THREE.Box3(), projection = new THREE.Matrix4();
     function drawMarks(w, h, activeView, blocks, farScale) {
       const placed = [];
+      let towerRect = null;
+      if (w < h && activeView === 'core') {
+        projection.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
+        projectedTower.copy(towerSilhouette).applyMatrix4(projection);
+        const { min, max } = projectedTower;
+        if (min.z > -1 && max.z < 1) towerRect = {
+          left: (1+min.x)*w/2, right: (1+max.x)*w/2, top: (1-max.y)*h/2, bottom: (1-min.y)*h/2
+        };
+      }
       const focused = MARKS.find(m => m.el === document.activeElement);
       const ordered = focused ? [focused, ...MARKS.filter(m => m !== focused)] : MARKS;
       ordered.forEach(m => {
@@ -83,6 +94,7 @@
         // 远端按层级淡出，再随紧凑取景拉远的全城距离等比放宽，两级之比不变：全城视角下二级牌仍隐去
         const o = THREE.MathUtils.smoothstep(d, 90, 170) * (1 - THREE.MathUtils.smoothstep(d, far[0] * farScale, far[1] * farScale));
         const visible = o > .35 && m.key !== activeView && r.inDepth && within(r, w, h)
+          && !(towerRect && m.tier > 1 && m !== focused && collides(r, towerRect))
           && ![...blocks, ...placed].some(block => collides(r, block));
         setMarkVisibility(m, visible, o);
         if (!visible) return;
