@@ -8,9 +8,22 @@ async function subjectBounds(page, key) {
   return page.evaluate(key => {
     const scene = window.__testScene, camera = window.__testCamera;
     scene.updateMatrixWorld(true); camera.updateMatrixWorld(true);
-    const boxes = scene.children.filter(o => o.userData.focus && (key === 'home' ? o.userData.focus !== 'lake' : key === 'core' ? ['tower', 'bridge', 'qc', 'tv'].includes(o.userData.focus) : o.userData.focus === key))
-      .map(o => new THREE.Box3().setFromObject(o));
+    const subjects = scene.children.filter(o => o.userData.focus && (key === 'home' ? o.userData.focus !== 'lake' : key === 'core' ? ['tower', 'bridge', 'qc', 'tv'].includes(o.userData.focus) : o.userData.focus === key));
     const points = [];
+    if (key === 'bridge') {
+      // Its diagonal world-axis bounding box contains empty space on both sides of the river.
+      // Project the actual deck, trusses and approach vertices to check the occupied pixels.
+      const projected = new THREE.Box2(), v = new THREE.Vector3();
+      for (const part of subjects[0].children) {
+        const positions = part.geometry.attributes.position;
+        for (let i = 0; i < positions.count; i++)
+          projected.expandByPoint(v.fromBufferAttribute(positions, i).applyMatrix4(part.matrixWorld).project(camera));
+      }
+      for (const p of [projected.min, projected.max]) {
+        points.push({ x: (p.x + 1) / 2 * innerWidth, y: (1 - p.y) / 2 * innerHeight });
+      }
+    }
+    const boxes = key === 'bridge' ? [] : subjects.map(o => new THREE.Box3().setFromObject(o));
     for (const bounds of boxes) for (const x of [bounds.min.x, bounds.max.x]) for (const y of [bounds.min.y, bounds.max.y]) for (const z of [bounds.min.z, bounds.max.z]) {
       const p = new THREE.Vector3(x, y, z).project(camera);
       points.push({ x: (p.x + 1) / 2 * innerWidth, y: (1 - p.y) / 2 * innerHeight });

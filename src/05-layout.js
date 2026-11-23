@@ -78,7 +78,7 @@
 
   // 在原观察方向上将各建筑八角放进画幅，四边各留 10%。
   // 多建筑分别计算，避免把远处高塔的高度套到近处建筑上，徒增留白。
-  function fittedView(base, bounds, rect, width, height, fov) {
+  function fittedView(base, bounds, rect, width, height, fov, fill = .8) {
     const back = new THREE.Vector3().copy(base.pos).sub(base.target).normalize();
     const right = new THREE.Vector3().crossVectors(new THREE.Vector3(0, 1, 0), back).normalize();
     const up = new THREE.Vector3().crossVectors(back, right);
@@ -86,8 +86,8 @@
     const union = new THREE.Box3(); boxes.forEach(box => union.union(box));
     const target = union.getCenter(new THREE.Vector3());
     const tanY = Math.tan(fov * Math.PI / 360);
-    const tanX = tanY * width / height * (rect.right - rect.left) / width * .8;
-    const tanSafeY = tanY * (rect.bottom - rect.top) / height * .8;
+    const tanX = tanY * width / height * (rect.right - rect.left) / width * fill;
+    const tanSafeY = tanY * (rect.bottom - rect.top) / height * fill;
     let distance = 22;
     for (const box of boxes) for (const x of [box.min.x, box.max.x]) for (const y of [box.min.y, box.max.y]) for (const z of [box.min.z, box.max.z]) {
       const v = new THREE.Vector3(x, y, z).sub(target);

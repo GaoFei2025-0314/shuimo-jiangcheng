@@ -11,8 +11,8 @@
   const VIEWS = {
     home:    { pos: { x: 440, y: 650, z: 1180 }, target: { x: 250, y: 0, z: -130 } },
     core:    orbit(geo(114.2855, 30.5528), 32, 440, 22, 30),
-    tower:   orbit(AT.tower, terrainTop(AT.tower.x, AT.tower.z) + 13, 100, -32, 24),
-    bridge:  orbit(AT.bridge, 12, 245, 58, 16),
+    tower:   orbit(AT.tower, terrainTop(AT.tower.x, AT.tower.z) + 13, 100, -22, 11),
+    bridge:  orbit(AT.bridge, 6.2, 174, 121, 18),
     qc:      orbit(AT.qc, terrainTop(AT.qc.x, AT.qc.z) + 7, 112, 82, 19),
     tv:      orbit(AT.tv, 82, 350, 104, 10),
     customs: orbit(AT.customs, 18, 115, 92, 17),
@@ -47,9 +47,10 @@
     qintai:     ['古琴台', '相传春秋时俞伯牙在此鼓琴，钟子期听出「高山流水」，二人结为知音。台在龟山西麓，临月湖。']
   };
   const motionPreference = window.matchMedia('(prefers-reduced-motion: reduce)');
-  let reduce = motionPreference.matches;
+  let reduce = motionPreference.matches, sceneDirty = true;
   camera.position.copy(VIEWS.core.pos);
   const controls = new THREE.OrbitControls(camera, renderer.domElement);
+  controls.addEventListener('change', () => { sceneDirty = true; });
   controls.enableDamping = !reduce; controls.dampingFactor = .06;
   controls.rotateSpeed = .6; controls.zoomSpeed = .8;
   controls.minDistance = 22; controls.maxDistance = 2600;
@@ -68,10 +69,26 @@
   viewBounds.home = new THREE.Box3();                  // 全城取景框住所有地标（东湖水面本身除外）
   pickables.forEach(object => { if (object.userData.focus !== 'lake') viewBounds.home.union(viewBounds[object.userData.focus]); });
   viewBounds.core = ['tower', 'bridge', 'qc', 'tv'].map(key => viewBounds[key]);
+  // Fit the ends of the diagonal crossing. Its world-axis box also includes
+  // two large empty corners over the river, which make the actual steelwork appear too small.
+  const bridgeLocal = new THREE.Box3();
+  bridge.children.forEach(mesh => bridgeLocal.union(mesh.geometry.boundingBox));
+  const bridgeCorners = [];
+  for (const x of [bridgeLocal.min.x, bridgeLocal.max.x]) for (const y of [bridgeLocal.min.y, bridgeLocal.max.y])
+    for (const z of [bridgeLocal.min.z, bridgeLocal.max.z]) {
+      const point = new THREE.Vector3(x, y, z).applyMatrix4(bridge.matrixWorld);
+      bridgeCorners.push(new THREE.Box3(point, point));
+    }
+  const isFramed = key => layout.compact || ['core', 'tower', 'bridge'].includes(key);
   function viewFor(key) {
     // 竖屏沿龟蛇两山的轴线取景，让地标前后展开。
-    const base = key === 'core' && W < H ? orbit(geo(114.2855, 30.5528), 32, 440, 55, 30) : VIEWS[key];
-    return layout.compact || key === 'core' || key === 'tower' ? fittedView(base, viewBounds[key], safeRect, W, H, camera.fov) : base;
+    let base = VIEWS[key];
+    if (W < H && key === 'core') base = orbit(geo(114.2855, 30.5528), 32, 440, 55, 30);
+    if (W < H && key === 'bridge') base = orbit(AT.bridge, 6.2, 174, 84, 28);
+    if (!isFramed(key)) return base;
+    const bounds = key === 'bridge' ? bridgeCorners : viewBounds[key];
+    const fill = !layout.compact && (key === 'tower' || key === 'bridge') ? .97 : .8;
+    return fittedView(base, bounds, safeRect, W, H, camera.fov, fill);
   }
   function stopFlight() {
     if (flight) { flight.kill(); flight = null; }
@@ -105,6 +122,7 @@
   controls.addEventListener('start', () => { stopFlight(); cameraMode = 'manual'; });
   motionPreference.addEventListener('change', event => {
     reduce = event.matches;
+    sceneDirty = true;
     overlays.invalidate();
     const wasFlying = !!flight;
     stopFlight();
@@ -163,10 +181,11 @@
     const measured = layout.measure(W, H);
     safeRect = measured.rect; uiBlocks = measured.blocks; layoutDirty = false;
     overlays.invalidate();
-    const framed = layout.compact || activeView === 'core' || activeView === 'tower';
+    const framed = isFramed(activeView);
     const signature = [framed, W, H, ...Object.values(safeRect)].join(',');
     if (signature === layoutSignature) return;
     layoutSignature = signature;
+    sceneDirty = true;
     if (framed) {
       const cx = (safeRect.left + safeRect.right) / 2, cy = (safeRect.top + safeRect.bottom) / 2;
       camera.setViewOffset(W, H, W / 2 - cx, H / 2 - cy, W, H);
@@ -256,7 +275,12 @@
     scene.fog.near = near; scene.fog.far = fogU.uFar.value;
 
     controls.update();
-    renderer.render(scene, camera);
+    // Reduced motion freezes the water, boats and birds. Repaint the geometry on a
+    // camera or layout change; keyboard focus and labels still update independently.
+    if (!reduce || sceneDirty) {
+      renderer.render(scene, camera);
+      sceneDirty = false;
+    }
     overlays.draw(W, H, activeView, uiBlocks, markFarScale);
     frameId = requestAnimationFrame(frame);
   }

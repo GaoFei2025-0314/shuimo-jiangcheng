@@ -57,15 +57,33 @@
   const sharedInk = { uInk: { value: new THREE.Color('#29332f') }, uPaper: { value: PAPER }, uLight: { value: new THREE.Vector3(-.45, .85, .5) } };
 
   const inkVert = `
+    #ifdef ARCHITECTURE_AO
+      attribute float skyVisibility; varying float vSky;
+    #endif
     varying vec3 vN; varying vec3 vW; varying float vD; varying vec3 vC;
     void main(){
-      vec4 w = modelMatrix * vec4(position, 1.0);
-      vW = w.xyz; vN = normalize(mat3(modelMatrix) * normal);
+      #ifdef ARCHITECTURE_AO
+        vSky = skyVisibility;
+      #endif
+      vec4 local = vec4(position, 1.0);
+      vec3 localNormal = normal;
+      #ifdef USE_INSTANCING
+        local = instanceMatrix * local;
+        mat3 basis = mat3(instanceMatrix);
+        localNormal = basis * (normal / vec3(dot(basis[0], basis[0]), dot(basis[1], basis[1]), dot(basis[2], basis[2])));
+      #endif
+      vec4 w = modelMatrix * local;
+      mat3 worldBasis = mat3(modelMatrix);
+      vec3 scaleSquared = vec3(dot(worldBasis[0], worldBasis[0]), dot(worldBasis[1], worldBasis[1]), dot(worldBasis[2], worldBasis[2]));
+      vW = w.xyz; vN = normalize(worldBasis * (localNormal / scaleSquared));
       vC = (modelMatrix * vec4(0., 0., 0., 1.)).xyz;          // 物体中心，皴笔以此放射
       vec4 mv = viewMatrix * w; vD = -mv.z;
       gl_Position = projectionMatrix * mv;
     }`;
   const inkFrag = NOISE + `
+    #ifdef ARCHITECTURE_AO
+      varying float vSky;
+    #endif
     uniform vec3 uFog, uInk, uPaper, uLight, uCam;
     uniform float uNear, uFar, uTone, uRim, uCun, uFoot; uniform vec2 uFade;
     varying vec3 vN; varying vec3 vW; varying float vD; varying vec3 vC;
@@ -104,6 +122,9 @@
       }
 
       vec3 col = mix(uInk, uPaper, tone);
+      #ifdef ARCHITECTURE_AO
+        col *= mix(.62, 1., vSky);
+      #endif
       col = mix(col, uFog, smoothstep(uNear, uFar, vD));
       gl_FragColor = vec4(col, 1.);
     }`;
@@ -121,7 +142,6 @@
     std:  inkMat(0),     land: inkMat(.60),   roof: inkMat(.06, true, ['#29332f', '#9ba49a']), pale: inkMat(.46),
     wall: inkMat(.32),   dbl:  inkMat(.08, true),
     hill: inkMat(.18, false, null, null, { rim: 1, cun: 1, foot: 1 }),
-    town: inkMat(.48, false, null, [20, 78]), townRoof: inkMat(.26, true, null, [20, 78]),
     pine: inkMat(-.08, false, null, [12, 46]),
     sakura: inkMat(.60, false, ['#7f5a55', '#f0dcd6'])
   };
@@ -129,7 +149,6 @@
   const lineMat2 = new THREE.LineBasicMaterial({ color: 0x5a5851, fog: true, transparent: true, opacity: .18 });
   const lineSoft = new THREE.LineBasicMaterial({ color: 0x6b6960, fog: true, transparent: true, opacity: .6 });
   const brushMat = new THREE.MeshBasicMaterial({ color: 0x2a2924, fog: true, side: THREE.DoubleSide });
-  const dashMat  = new THREE.MeshBasicMaterial({ color: 0xece9e0, fog: true });
 
   // 毛笔勾线：两层略错位的描边，模拟笔锋飞白
   function ink(mesh, thresh, ma, mb) {
@@ -222,7 +241,6 @@
     const p = perim(half, step || half * .5);
     p.forEach((a, i) => { const b = p[(i + 1) % p.length]; acc.beam(V((ox || 0) + a[0], y, (oz || 0) + a[1]), V((ox || 0) + b[0], y, (oz || 0) + b[1]), t); });
   }
-  const ring = (acc, half, y, t) => ringAt(acc, half, y, t, half * .5);
   const tips4 = [[1, 1], [-1, 1], [1, -1], [-1, -1]];
   const mkS = () => ({ pale: new Acc(), wall: new Acc(), roofs: new Acc(), dark: new Acc() });
   function finish(S, g) {

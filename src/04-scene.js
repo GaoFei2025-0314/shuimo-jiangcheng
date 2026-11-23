@@ -11,9 +11,42 @@
   }
   // 大桥轴线：武昌蛇山头 → 汉阳龟山东麓
   const bA = geo(114.28957, 30.54783), bB = geo(114.27607, 30.55633);   // 随桥心一并平移（桥心改取江心，沿桥轴、按水体掩膜量得），桥向与桥长不变
-  const bridge  = place(buildBridge(), AT.bridge, .74, Math.atan2(bB.x - bA.x, bB.z - bA.z), '武汉长江大桥', 'bridge', 0);
+  const bridge  = place(builtLandmark('bridge'), AT.bridge, .74, Math.atan2(bB.x - bA.x, bB.z - bA.z), '武汉长江大桥', 'bridge', 0);
   bridge.scale.z = .74 * .81;   // 沿桥长再收缩，缩到江宽：正桥 ±72 → ±43，配合约 85 单位（≈1.1 公里）的江面（正桥原长 1156 米）；桥头堡随之落到 ±50，正好在两岸
-  const tower   = place(buildTower(), AT.tower, .88, .18, '黄鹤楼', 'tower');
+  const tower   = place(builtLandmark('tower'), AT.tower, .88, .18, '黄鹤楼', 'tower');
+  { // 蛇山坡面不平，石台按楼体局部坐标落地，两端石阶转向山肩。
+    tower.updateMatrixWorld(true);
+    const ground = (x, z) => {
+      const p = tower.localToWorld(V(x, 0, z));
+      return (terrainTop(p.x, p.z) - tower.position.y) / tower.scale.y;
+    };
+    const stone = new Acc();
+    const corners = [[-10.48,-11.87],[10.48,-11.87],[11.87,-10.48],[11.87,10.48],
+      [10.48,11.87],[-10.48,11.87],[-11.87,10.48],[-11.87,-10.48]];
+    const bottom = Math.min(...corners.map(([x,z]) => ground(x,z))) - 1;
+    const shape = new THREE.Shape(corners.map(([x,z]) => new THREE.Vector2(x,-z)));
+    const footing = new THREE.ExtrudeGeometry(shape, { depth: -6.6 - bottom, bevelEnabled: false });
+    stone.geo(footing.rotateX(-Math.PI/2), 0, bottom, 0);
+    function stoneCourse(x, z, width, depth, top) {
+      const heights = [-1, 1].flatMap(i => [-1, 1].map(j => ground(x+i*width/2, z+j*depth/2)));
+      const foot = Math.min(top, ...heights) - .85;
+      stone.box(width, top-foot, depth, x, (top+foot)/2, z);
+    }
+    for (const side of [-1, 1]) {
+      stoneCourse(0, side*15.31, 6.66, 7.18, .04); // 承托既有八级石阶，外端留转折平台
+      const z = side*17.18, width = 3.34, run = 13.5, start = 3.33;
+      const toe = ground(side*(start+run), z);
+      const count = Math.max(1, Math.ceil((.04-toe)/.36));
+      for (let i = 0; i < count; i++) {
+        const t = (i+1)/count, x = side*(start+(i+.5)*run/count);
+        stoneCourse(x, z, run/count+.015, width, .04 + (toe-.04)*t);
+      }
+    }
+    const terrace = stone.mesh(M.pale, false);
+    terrace.name = 'Tower hillside terrace';
+    terrace.applyMatrix4(tower.matrixWorld);
+    scene.add(terrace);
+  }
   const tv      = place(buildTV(), AT.tv, 1.5, 0, '龟山电视塔', 'tv');
   const qc      = place(buildQingchuan(), AT.qc, .92, Math.PI / 2, '晴川阁', 'qc');
   const customs = place(buildCustoms(), AT.customs, .98, Math.PI / 2, '江汉关', 'customs');
@@ -111,7 +144,6 @@
   const KEEP2 = [[AT.hongshan, 22], [AT.watertower, 12], [AT.museum, 34], [AT.honglou, 26], [AT.guiyuan, 36], [AT.qintai, 20]];
   const clearOf = (x, z, r) => KEEP.every(k => (k.x - x) ** 2 + (k.z - z) ** 2 > r * r)
     && KEEP2.every(([k, rr]) => (k.x - x) ** 2 + (k.z - z) ** 2 > rr * rr) && offBridge(x, z);
-  const CORE = geo(114.2950, 30.5600);
   // 在山的格子里撒点，只留起伏超过 3 个单位的（真在山上，不在山脚水边）。密度按格子面积，
   // 无名山只按约三分之一的密度种，免得抢了主山的戏
   function dressHill(h, kind, s0, density, keep) {
@@ -142,28 +174,126 @@
   scene.add(pines.mesh(M.pine, false), sakTrunk.mesh(brushMat, false), sakBloom.mesh(M.sakura, false));
 
   /* ═════════ 九、三镇市廛 ═════════ */
-  const townW = new Acc(), townR = new Acc();
-  function town(lon0, lon1, lat0, lat1, count, tall) {
-    for (let i = 0; i < count; i++) {
-      const p = geo(lon0 + rnd() * (lon1 - lon0), lat0 + rnd() * (lat1 - lat0));
-      if (!onLand(p.x, p.z) || terrainTop(p.x, p.z) > LAND_Y + 1.2 || !clearOf(p.x, p.z, 46)) continue;
-      const far = Math.hypot(p.x - CORE.x, p.z - CORE.z);
-      if (rnd() > 1.15 - far / 900) continue;                       // 近江稠密，远郊疏落
-      const k = Math.max(.45, 1.15 - far / 700);
-      // 背景市廛概括为低矮屋面，减少散点高楼的针状轮廓；地标模型保持原状。
-      const w = (5 + rnd() * 7) * k, d = (4 + rnd() * 6) * k, h = (2 + Math.pow(rnd(), 2.5) * tall * .32) * k;
-      townW.box(w, h, d, p.x, LAND_Y + h / 2, p.z);
-      if (h < 5.5) townR.geo(roofGeo(Math.max(w, d) * .60, .18, .9, .12, 6, 2), p.x, LAND_Y + h, p.z);
-      else townW.box(w * 1.08, .3, d * 1.08, p.x, LAND_Y + h + .15, p.z);
+  // 以街坊为单位，里分顺巷成排、临江商埠与厂房成带，现代楼群在内街起伏。
+  // 空间为画意概括，河湖、桥轴和地标仍使用实测位置。
+  {
+    const lots = { lane: [], arcade: [], wharf: [], apartment: [], highrise: [] };
+    const landmarks = pickables.filter(g => !['bridge', 'yingwuzhou', 'lake'].includes(g.userData.focus))
+      .map(g => { g.updateMatrixWorld(true); return new THREE.Box3().setFromObject(g).expandByScalar(2.2); });
+    const cells = new Map(), cellSize = 14;
+    const streetsMesh = new Acc(), streetSurface = new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2);
+    const plannedStreets = [];
+    function overlapsLot(x, z, margin) {
+      const cx = Math.floor(x / cellSize), cz = Math.floor(z / cellSize);
+      for (let i = cx - 1; i <= cx + 1; i++) for (let j = cz - 1; j <= cz + 1; j++) {
+        const lotsInCell = cells.get(i + ',' + j);
+        if (lotsInCell && lotsInCell.some(p => {
+          const dx = x - p.x, dz = z - p.z;
+          return Math.abs(p.c * dx - p.s * dz) < 5 * p.scale + margin
+            && Math.abs(p.s * dx + p.c * dz) < 3.6 * p.scale + margin;
+        })) return true;
+      }
+      return false;
+    }
+    function pavedLine(a, b, width) {
+      const dx = b.x - a.x, dz = b.z - a.z, length = Math.hypot(dx, dz);
+      const steps = Math.ceil(length / 2);
+      for (let i = 0; i <= steps; i++) {
+        const t = i / steps, x = a.x + dx * t, z = a.z + dz * t;
+        if (overlapsLot(x, z, width / 2 + 1) || !onLand(x, z) || !offBridge(x, z) || terrainTop(x, z) > LAND_Y + .3
+          || landmarks.some(box => x > box.min.x && x < box.max.x && z > box.min.z && z < box.max.z)) return;
+      }
+      streetsMesh.place(streetSurface, (a.x + b.x) / 2, LAND_Y + .045, (a.z + b.z) / 2, length, 1, width, Math.atan2(-dz, dx));
+    }
+    function occupied(x, z, radius) {
+      const cx = Math.floor(x / cellSize), cz = Math.floor(z / cellSize);
+      for (let i = cx - 2; i <= cx + 2; i++) for (let j = cz - 2; j <= cz + 2; j++) {
+        const neighbors = cells.get(i + ',' + j);
+        if (neighbors && neighbors.some(p => Math.hypot(x - p.x, z - p.z) < p.radius + radius)) return true;
+      }
+      return false;
+    }
+    function fits(x, z, yaw, scale) {
+      const c = Math.cos(yaw), s = Math.sin(yaw);
+      for (const [u, v] of [[0, 0], [-5, -3.6], [-5, 3.6], [5, -3.6], [5, 3.6]]) {
+        const px = x + scale * (c * u + s * v), pz = z + scale * (-s * u + c * v);
+        if (!onLand(px, pz) || !offBridge(px, pz) || terrainTop(px, pz) > LAND_Y + .48) return false;
+        if (landmarks.some(b => px > b.min.x && px < b.max.x && pz > b.min.z && pz < b.max.z)) return false;
+      }
+      return true;
+    }
+    function district(lon, lat, cols, rows, degrees, streets, skyline) {
+      const center = geo(lon, lat), yaw = degrees * Math.PI / 180;
+      const c = Math.cos(yaw), s = Math.sin(yaw);
+      const blocks = new Map();
+      for (let row = 0; row < rows; row++) for (let col = 0; col < cols; col++) {
+        const u = col + .5 - cols / 2, v = row + .5 - rows / 2;
+        const edge = (2 * u / cols) ** 2 + (2 * v / rows) ** 2;
+        if (edge > 1 || rnd() < .08 + edge * .16) continue;
+        // Each block faces one street and has a shared building type and building line.
+        const type = streets[Math.floor(rnd() * streets.length)];
+        const cluster = skyline * Math.exp(-((u - .10 * cols) ** 2 + (v + .12 * rows) ** 2) / 4.5);
+        const towerBlock = cluster > .40 && rnd() < cluster;
+        const blockHeight = .80 + rnd() * .38;
+        const u0 = 31 * u + 4 * Math.sin(v * .69), v0 = 25 * v + 3 * Math.sin(u * .65 + row * .18);
+        const x0 = center.x + c * u0 + s * v0, z0 = center.z - s * u0 + c * v0;
+        for (let side = -1; side <= 1; side += 2) for (let lot = -1; lot <= 1; lot += 2) {
+          if (rnd() < .09 || (towerBlock && side === 1)) continue;
+          const a = lot * 6.9, b = side * 5.8;
+          const x = x0 + c * a + s * b, z = z0 - s * a + c * b;
+          const scale = .78 + rnd() * .30, radius = 5.9 * scale;
+          if (occupied(x, z, radius) || !fits(x, z, yaw, scale)) continue;
+          const kind = towerBlock ? (lot < 0 ? 'highrise' : 'apartment') : type;
+          dummy.position.set(x, LAND_Y - .10, z);
+          dummy.rotation.set(0, yaw + (side > 0 ? Math.PI : 0), 0);
+          dummy.scale.set(scale, scale * blockHeight * (towerBlock ? .95 + cluster * .50 : 1), scale);
+          dummy.updateMatrix();
+          lots[kind].push(dummy.matrix.clone());
+          blocks.set(row + ',' + col, {x: x0, z: z0, row, col});
+          const key = Math.floor(x / cellSize) + ',' + Math.floor(z / cellSize);
+          if (!cells.has(key)) cells.set(key, []);
+          cells.get(key).push({ x, z, radius, c, s, scale });
+        }
+      }
+      for (const block of blocks.values()) {
+        const previous = blocks.get(block.row + ',' + (block.col - 1));
+        const next = blocks.get(block.row + ',' + (block.col + 1));
+        const end = next || {x: block.x + c * 12, z: block.z - s * 12};
+        plannedStreets.push([previous ? block : {x: block.x - c * 12, z: block.z + s * 12}, end, 1.48]);
+        const across = blocks.get((block.row + 1) + ',' + block.col);
+        if (across && block.col % 3 === 1) {
+          // Cross streets sit in the gap between the two pairs of lots.
+          plannedStreets.push([block, across, 1.08]);
+        }
+      }
+    }
+    const oldTown = ['lane', 'lane', 'arcade', 'apartment'];
+    const port = ['wharf', 'wharf', 'lane', 'arcade'];
+    const suburbs = ['lane', 'apartment', 'apartment'];
+    district(114.292, 30.580, 11, 11, 36, oldTown, .3);   // 汉口沿江商埠
+    district(114.272, 30.587, 11, 12, 23, suburbs, 1);    // 汉口腹地
+    district(114.266, 30.554, 10, 10, -13, port, .4);     // 汉阳港区与龟山两侧
+    district(114.251, 30.543, 9, 9, 9, suburbs, .84);
+    district(114.295, 30.540, 8, 9, -20, oldTown, .24);   // 蛇山南麓
+    district(114.302, 30.557, 9, 10, -32, oldTown, .32);  // 武昌临江街坊
+    district(114.325, 30.538, 10, 9, -8, suburbs, .90);
+    district(114.358, 30.520, 8, 8, 14, suburbs, .70);
+    district(114.344, 30.598, 9, 8, 26, port, .45);
+    plannedStreets.forEach(([a, b, width]) => pavedLine(a, b, width));
+    const streets = streetsMesh.mesh(inkMat(.42, false, ['#b3a895', '#dfd8c7']), false);
+    streets.name = 'City streets';
+    scene.add(streets);
+    for (const [kind, matrices] of Object.entries(lots)) {
+      if (!matrices.length) continue;
+      for (const { geometry, material } of architectureParts(kind)) {
+        const block = new THREE.InstancedMesh(geometry, material, matrices.length);
+        block.name = 'City / ' + kind;
+        matrices.forEach((matrix, i) => block.setMatrixAt(i, matrix));
+        block.instanceMatrix.needsUpdate = true;
+        scene.add(block);
+      }
     }
   }
-  town(114.2520, 114.3300, 30.5730, 30.6300, 520, 30);   // 汉口
-  town(114.2420, 114.2880, 30.5250, 30.5670, 320, 20);   // 汉阳
-  town(114.2970, 114.3560, 30.5180, 30.5780, 420, 26);   // 武昌
-  town(114.3520, 114.4200, 30.4900, 30.5240, 180, 20);   // 南湖 · 光谷
-  town(114.3400, 114.4050, 30.5950, 30.6280, 160, 18);   // 青山
-  town(114.2100, 114.2520, 30.5650, 30.6150, 130, 14);   // 汉口西
-  scene.add(townW.mesh(M.town, false), townR.mesh(M.townRoof, false));
 
   {   // 汉口江滩：汉水口以下的长江西岸，护岸与路灯，江汉关就立在岸上
     const B = new Acc(), L = new Acc(), latOf = z => O[1] - z * MPU / M_LAT;

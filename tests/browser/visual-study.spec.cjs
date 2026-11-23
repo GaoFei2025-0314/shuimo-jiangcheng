@@ -25,3 +25,37 @@ for (const viewport of [{ width: 1440, height: 900 }, { width: 390, height: 844 
     await expect(page.locator('#nav [aria-pressed="true"]')).toHaveCount(1);
   });
 }
+
+test('Blender buildings sit on the land and both bridge approaches fit a narrow desktop', async ({ page }) => {
+  await page.setViewportSize({ width: 768, height: 1024 });
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await ready(page);
+  await page.locator('#b-bridge').click();
+  const details = await page.evaluate(() => {
+    const scene = window.__testScene, camera = window.__testCamera, v = new THREE.Vector3();
+    scene.updateMatrixWorld(true);
+    camera.updateMatrixWorld(true);
+    const houses = scene.children.filter(node => node.isInstancedMesh && node.name.startsWith('City / '));
+    const land = scene.children.find(node => node.geometry?.type === 'ExtrudeGeometry');
+    const ground = new THREE.Box3().setFromObject(land).max.y;
+    const matrix = new THREE.Matrix4();
+    const bases = houses.map(node => { node.getMatrixAt(0, matrix); return matrix.elements[13]; });
+    const bridge = scene.children.find(node => node.userData.focus === 'bridge');
+    const bounds = new THREE.Box2();
+    for (const part of bridge.children) {
+      const vertices = part.geometry.attributes.position;
+      for (let i = 0; i < vertices.count; i++) {
+        v.fromBufferAttribute(vertices, i).applyMatrix4(part.matrixWorld).project(camera);
+        bounds.expandByPoint(v);
+      }
+    }
+    return {
+      types: [...new Set(houses.map(node => node.name.slice(7)))].sort(),
+      groundErrors: bases.map(y => Math.abs(y - ground)),
+      outside: Math.max(-bounds.min.x, bounds.max.x, -bounds.min.y, bounds.max.y)
+    };
+  });
+  expect(details.types).toEqual(['apartment', 'arcade', 'highrise', 'lane', 'wharf']);
+  expect(Math.max(...details.groundErrors)).toBeLessThan(.15);
+  expect(details.outside).toBeLessThan(1);
+});

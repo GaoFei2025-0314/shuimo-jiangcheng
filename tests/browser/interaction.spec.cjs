@@ -6,7 +6,7 @@ async function motion(page) {
     window.__testScene.traverse(o => {
       if (o.material && o.material.uniforms && o.material.uniforms.uTime) times.push(o.material.uniforms.uTime.value);
     });
-    return { times, camera: window.__testCamera.position.toArray(), target: window.__testControls.target.toArray(),
+    return { times, frames: window.__testRenderer.info.render.frame, camera: window.__testCamera.position.toArray(), target: window.__testControls.target.toArray(),
       tweens: gsap.getTweensOf([window.__testCamera.position, window.__testControls.target]).length };
   });
 }
@@ -14,14 +14,17 @@ async function motion(page) {
 test('reduced motion switches instantly and freezes automatic scenery', async ({ page }) => {
   await page.emulateMedia({ reducedMotion: 'reduce' });
   await ready(page);
+  const entryFrames = await page.evaluate(() => window.__testRenderer.info.render.frame);
   await page.getByRole('button', { name: '黄鹤楼', exact: true }).click();
   await expect(page.locator('#cardTitle')).toHaveText('黄鹤楼');
+  await expect.poll(() => page.evaluate(() => window.__testRenderer.info.render.frame)).toBeGreaterThan(entryFrames);
   const first = await motion(page);
   expect(first.tweens).toBe(0);
   await page.waitForTimeout(150);
   const next = await motion(page);
   next.camera.forEach((value, i) => expect(value).toBeCloseTo(first.camera[i], 8));
   expect(next.times).toEqual(first.times);
+  expect(next.frames).toBe(first.frames);
 });
 
 test('changing the system motion preference stops a running flight', async ({ page }) => {

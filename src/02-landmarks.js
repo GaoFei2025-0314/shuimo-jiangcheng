@@ -1,161 +1,42 @@
 
   /* ═════════ 四、景点模型（各自以原点为基准建造，再按坐标落位） ═════════ */
 
-  // ── 黄鹤楼：三重台基 · 五层攒尖 · 斗拱重檐 · 葫芦宝顶（1985 年重建，通高 51.4 米）
-  function buildTower() {
-    const g = new THREE.Group(), pale = new Acc(), wall = new Acc(), roofs = new Acc(), dark = new Acc();
-    pale.box(25, 9, 25, 0, -4.5, 0);
-    let y = 0;
-    [[23, 1.0], [20.5, 1.0], [18, 1.2]].forEach(([s, h]) => { pale.box(s, h, s, 0, y + h / 2, 0); y += h; });
-    const PT = y;
-    for (let i = 0; i < 8; i++) pale.box(5.4, .4 * (i + 1), .6, 0, .2 * (i + 1), 13.6 - i * .6);
-    ring(dark, 9.0, PT + .95, .16); ring(dark, 9.0, PT + .55, .1);
-    perim(9.0, .9).forEach(p => dark.box(.16, .9, .16, p[0], PT + .45, p[1]));
-
-    const hws = [6.6, 5.9, 5.2, 4.5, 3.8], FH = 3.5, STRIDE = 5.3;
-    let yb = PT;
-    hws.forEach((hw, i) => {
-      pale.box(2 * hw + .9, .4, 2 * hw + .9, 0, yb + .2, 0);
-      wall.box(hw * 1.5, FH - .4, hw * 1.5, 0, yb + .4 + (FH - .4) / 2, 0);
-      for (let s = 0; s < 4; s++) {
-        const a = s * Math.PI / 2, cs = Math.cos(a), sn = Math.sin(a), dist = hw * .75 + .06;
-        [-1.7, 0, 1.7].forEach(t => {
-          dark.box(1.0, 1.7, .1, t * cs + dist * sn, yb + 1.75, -t * sn + dist * cs, a);
-          dark.box(1.25, .12, .14, t * cs + (dist + .04) * sn, yb + 2.7, -t * sn + (dist + .04) * cs, a);
-        });
-      }
-      perim(hw, hw * 2 / 5).forEach(p => {
-        dark.cyl(.17, FH - .5, p[0], yb + .4 + (FH - .5) / 2, p[1]);
-        dark.box(.56, .26, .56, p[0], yb + FH - .2, p[1]);
-        dark.box(1.6, .2, .3, p[0], yb + FH - .02, p[1], p[2]);
-        dark.box(.9, .18, .26, p[0], yb + FH + .16, p[1], p[2]);
-      });
-      ring(dark, hw, yb + FH - .55, .26);
-      ringAt(dark, hw, yb + .95, .1, .5);
-      perim(hw + .02, .55).forEach(p => dark.box(.09, .6, .09, p[0], yb + .7, p[1]));
-
-      const top = i === hws.length - 1;
-      const R = hw + 2.7, r = top ? .3 : hws[i + 1] * .95 + .3, H = top ? 3.6 : 1.8, lift = top ? 1.3 : 1.15;
-      const ry = yb + FH - .1;
-      roofs.geo(roofGeo(R, r, H, lift, 18, 7), 0, ry, 0);
-      tips4.forEach(([sx, sz]) => {
-        dark.cone(.3, 1.6, sx * (R + .05), ry + lift + .5, sz * (R + .05), V(sx * .8, .9, sz * .8));
-        if (!top) dark.cone(.14, .7, sx * (R * .55), ry + H * .35 + lift * .12, sz * (R * .55), V(sx * .3, 1, sz * .3));
-        dark.beam(V(sx * r, ry + H, sz * r), V(sx * R, ry + lift * .5, sz * R), .16);
-      });
-      if (i === 0) {   // 底层副檐 → 重檐
-        const R2 = hw + 4.6, sy = yb + 2.35;
-        roofs.geo(roofGeo(R2, hw + .7, 1.2, .9, 18, 5), 0, sy, 0);
-        perim(hw + 3.9, (hw + 3.9) * 2 / 6).forEach(p => {
-          dark.cyl(.16, 2.0, p[0], yb + .4 + 1.0, p[1]); dark.box(.5, .2, .5, p[0], sy - .1, p[1]);
-        });
-        ring(dark, hw + 3.9, yb + 1.0, .1);
-        tips4.forEach(([sx, sz]) => dark.cone(.26, 1.3, sx * (R2 + .05), sy + 1.25, sz * (R2 + .05), V(sx * .8, .9, sz * .8)));
-      }
-      yb += STRIDE;
-    });
-    const yTop = yb - STRIDE + FH - .1 + 3.6;
-    const prof = [[0, 0], [.55, .05], [.85, .5], [.6, .95], [.34, 1.15], [.5, 1.45], [.8, 2.0], [.72, 2.55], [.3, 3.05], [0, 3.3]].map(p => new THREE.Vector2(p[0], p[1]));
-    const fin = new THREE.Mesh(new THREE.LatheGeometry(prof, 14), M.pale); fin.position.y = yTop - .1; ink(fin, 20);
-    g.add(pale.mesh(M.pale, true, 30), wall.mesh(M.wall, true, 30), roofs.mesh(M.roof, true, 24), dark.mesh(brushMat, false), fin);
-    return g;
+  // Blender meshes are embedded in the HTML so file:// and offline model loading share one path.
+  const architectureTints = {
+    stone: ['#766e63', '#ded5c4'], plaster: ['#9a8466', '#f1e4c8'],
+    timber: ['#55372e', '#a96e52'], vermilion: ['#683d32', '#af7058'],
+    roofGold: ['#795632', '#ceaf73'], bronze: ['#685336', '#d0ae6e'],
+    ink: ['#28312c', '#50564b'], shadow: ['#373b34', '#666452'],
+    steel: ['#344b49', '#798d82'], deck: ['#646961', '#ada99b'],
+    glaze: ['#42574e', '#8c9a87'],
+    cityWall: ['#a19788', '#ddd6c6'], cityRoof: ['#65736c', '#aaafa0'],
+    cityBrick: ['#978275', '#c9b6a0'], cityShade: ['#7f8075', '#b0ac9c']
+  };
+  const architectureMaterials = Object.fromEntries(Object.entries(architectureTints).map(([key, tint]) => {
+    const material = inkMat(.04, true, tint, key.startsWith('city') ? [16, 42] : null);
+    material.defines = { ARCHITECTURE_AO: 1 };
+    return [key, material];
+  }));
+  function decodeWords(data, Type) {
+    const bytes = Uint8Array.from(atob(data), char => char.charCodeAt(0));
+    return new Type(bytes.buffer);
   }
-
-  // ── 武汉长江大桥：九孔八墩 · 三联连续钢桁梁 · 上路下轨 · 七层桥头堡（1957 年）
-  function buildBridge() {
-    const g = new THREE.Group();
-    const pale = new Acc(), solid = new Acc(), dark = new Acc(), dash = new Acc(), roofs = new Acc(), wall = new Acc();
-    const ROAD = 10.6, RAIL = 5.2, BOT = 4.4, PX = 5.6, END = 72;
-    const piersZ = [-56, -40, -24, -8, 8, 24, 40, 56];
-    const hTop = z => {
-      const c = .5 + .5 * Math.cos(2 * Math.PI * (z + 56) / 16);
-      return BOT + (8.0 + 3.0 * c) * (1 - .45 * THREE.MathUtils.smoothstep(Math.abs(z), 58, 72));
-    };
-    const zs = []; for (let z = -END; z <= END + .01; z += 4) zs.push(z);
-    [-PX, PX].forEach(x => {
-      zs.forEach((z, i) => {
-        const t = V(x, hTop(z), z), b = V(x, BOT, z);
-        dark.beam(b, t, .38);
-        if (i < zs.length - 1) {
-          const z2 = zs[i + 1], t2 = V(x, hTop(z2), z2), b2 = V(x, BOT, z2);
-          dark.beam(t, t2, .5); dark.beam(b, b2, .5);
-          dark.beam(b, t2, .26); dark.beam(t, b2, .26);       // 菱形腹杆
-        }
-      });
+  function architectureParts(name) {
+    return Object.entries(ARCHITECTURE[name]).map(([key, [vertices, faces, light]]) => {
+      const coordinates = Float32Array.from(decodeWords(vertices, Int16Array), n => n / 128);
+      const indexed = new THREE.BufferGeometry();
+      indexed.setAttribute('position', new THREE.BufferAttribute(coordinates, 3));
+      indexed.setAttribute('skyVisibility', new THREE.BufferAttribute(decodeWords(light, Uint8Array), 1, true));
+      indexed.setIndex(new THREE.BufferAttribute(decodeWords(faces, Uint16Array), 1));
+      const geometry = indexed.toNonIndexed();
+      geometry.computeVertexNormals();
+      return { geometry, material: architectureMaterials[key] };
     });
-    zs.forEach((z, i) => {
-      dark.beam(V(-PX, hTop(z), z), V(PX, hTop(z), z), .3);
-      dark.beam(V(-PX, BOT, z), V(PX, BOT, z), .3);
-      if (i % 2 === 0 && i < zs.length - 2) {
-        const z2 = zs[i + 2];
-        dark.beam(V(-PX, hTop(z), z), V(PX, hTop(z2), z2), .18);
-        dark.beam(V(PX, hTop(z), z), V(-PX, hTop(z2), z2), .18);
-      }
-      if (i % 4 === 0) {
-        dark.beam(V(-PX, hTop(z) - 1.6, z), V(0, hTop(z) - .3, z), .16);
-        dark.beam(V(PX, hTop(z) - 1.6, z), V(0, hTop(z) - .3, z), .16);
-      }
-    });
-    pale.box(10.6, .5, END * 2, 0, ROAD, 0);
-    pale.box(10.6, .6, END * 2, 0, RAIL, 0);
-    pale.box(.8, .3, END * 2, -4.9, ROAD + .3, 0); pale.box(.8, .3, END * 2, 4.9, ROAD + .3, 0);
-    for (let z = -END + 2; z < END; z += 4) dash.box(.16, .04, 1.9, 0, ROAD + .27, z);
-    [-1.6, 1.6].forEach(x => dark.beam(V(x, RAIL + .4, -END), V(x, RAIL + .4, END), .16));
-    for (let z = -END; z < END; z += 1.2) dark.box(4.4, .1, .35, 0, RAIL + .35, z);
-    [-5.15, 5.15].forEach(x => {
-      dark.beam(V(x, ROAD + 1.5, -END), V(x, ROAD + 1.5, END), .1);
-      dark.beam(V(x, ROAD + .9, -END), V(x, ROAD + .9, END), .08);
-      for (let z = -END; z <= END; z += 1.8) dark.box(.09, 1.3, .09, x, ROAD + .95, z);
-    });
-    for (let z = -END + 8; z < END; z += 16) [-4.9, 4.9].forEach(x => {
-      dark.cyl(.07, 4.2, x, ROAD + 2.4, z); dark.box(.5, .18, .5, x, ROAD + 4.5, z);
-    });
-    const sh = new THREE.Shape();
-    sh.moveTo(-7.2, 0); sh.quadraticCurveTo(-4.8, 1.9, -2, 1.9); sh.lineTo(2, 1.9); sh.quadraticCurveTo(4.8, 1.9, 7.2, 0);
-    sh.quadraticCurveTo(4.8, -1.9, 2, -1.9); sh.lineTo(-2, -1.9); sh.quadraticCurveTo(-4.8, -1.9, -7.2, 0);
-    const pg = new THREE.ExtrudeGeometry(sh, { depth: BOT + 3.6, bevelEnabled: false, curveSegments: 10 });
-    pg.rotateX(-Math.PI / 2);
-    piersZ.concat([-END, END]).forEach(z => {
-      const p = new THREE.Mesh(pg, M.pale); p.position.set(0, -3, z); ink(p, 30); g.add(p);
-      pale.box(11.6, .9, 3.6, 0, BOT - .5, z);
-    });
-    const slope = .11, th = Math.atan(slope), yDeck = az => ROAD - slope * (az - END);
-    [-1, 1].forEach(s => {
-      const len = 82, mid = END + len / 2;
-      const slab = new THREE.Mesh(new THREE.BoxGeometry(10.6, .6, len / Math.cos(th)), M.pale);
-      slab.position.set(0, yDeck(mid), s * mid); slab.rotation.x = s * th; ink(slab); g.add(slab);
-      for (let k = 1; k <= 6; k++) {
-        const az = END + 12 * k, top = yDeck(az) - .3;
-        solid.box(2.2, top - .6, 3.2, -3.6, (top + .6) / 2, s * az); solid.box(2.2, top - .6, 3.2, 3.6, (top + .6) / 2, s * az);
-        solid.box(9.4, .7, 3.4, 0, top - .35, s * az);
-        const amid = az - 6, ytop = yDeck(amid) - .3;
-        const arc = new THREE.TorusGeometry(5.0, .42, 6, 16, Math.PI); arc.rotateY(Math.PI / 2); arc.scale(1, .82, 1);
-        [-3.6, 3.6].forEach(x => solid.geo(arc, x, ytop - 5.0 * .82 - .1, s * amid));
-      }
-    });
-    [-1, 1].forEach(sz => [-1, 1].forEach(sx => {          // 桥头堡：七层，重檐四坡攒尖
-      const cx = sx * 12.2, cz = sz * 84, hh = 13.2, y0 = .6;
-      wall.box(6, hh, 6, cx, y0 + hh / 2, cz); pale.box(7.2, .8, 7.2, cx, y0 + .4, cz);
-      for (let f = 0; f < 7; f++) {
-        const fy = y0 + 1.2 + f * 1.7;
-        pale.box(6.5, .22, 6.5, cx, fy + 1.55, cz);
-        for (let s = 0; s < 4; s++) {
-          const a = s * Math.PI / 2, cs = Math.cos(a), sn = Math.sin(a);
-          [-1.7, 0, 1.7].forEach(t => dark.box(.9, .95, .1, cx + t * cs + 3.03 * sn, fy + .75, cz - t * sn + 3.03 * cs, a));
-        }
-      }
-      roofs.geo(roofGeo(5.2, 2.7, 1.5, .7, 14, 5), cx, y0 + hh, cz);
-      wall.box(3.6, 1.7, 3.6, cx, y0 + hh + 1.35, cz);
-      roofs.geo(roofGeo(3.5, .25, 2.6, .8, 14, 5), cx, y0 + hh + 2.1, cz);
-      tips4.forEach(([a, b]) => {
-        dark.cone(.22, 1.2, cx + a * 5.25, y0 + hh + .9, cz + b * 5.25, V(a * .8, .9, b * .8));
-        dark.cone(.2, 1.0, cx + a * 3.55, y0 + hh + 2.95, cz + b * 3.55, V(a * .8, .9, b * .8));
-      });
-      dark.cyl(.08, 1.6, cx, y0 + hh + 5.6, cz); dark.cone(.3, .6, cx, y0 + hh + 6.6, cz, UP);
-    }));
-    g.add(pale.mesh(M.pale, true, 30), solid.mesh(M.std, true, 30), wall.mesh(M.wall, true, 30),
-          roofs.mesh(M.roof, true, 24), dark.mesh(brushMat, false), dash.mesh(dashMat, false));
-    return g;
+  }
+  function builtLandmark(name) {
+    const group = new THREE.Group();
+    architectureParts(name).forEach(({ geometry, material }) => group.add(new THREE.Mesh(geometry, material)));
+    return group;
   }
 
   // ── 龟山电视塔：塔座 · 锥筒塔身 · 旋转餐厅塔楼 · 天线桅杆（塔身 221.2 米）

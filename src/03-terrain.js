@@ -181,7 +181,7 @@
     (holes || []).forEach(h => sh.holes.push(new THREE.Path(h.map(p => new THREE.Vector2(p[0], -p[1])))));
     const g = new THREE.ExtrudeGeometry(sh, { depth: 1.3, bevelEnabled: false });
     g.rotateX(-Math.PI / 2);
-    const m = new THREE.Mesh(g, M.land); m.position.y = LAND_Y; ink(m, 35);
+    const m = new THREE.Mesh(g, M.land); m.position.y = LAND_Y - 1.3; ink(m, 35);  // 挤出体的顶面与地形、街巷共用 LAND_Y
     m.raycast = function () {};
     return m;
   }

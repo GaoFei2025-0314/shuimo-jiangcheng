@@ -6,7 +6,7 @@
 图上方位依实测经纬度排布，水平一比一，山与楼塔竖向约放大五倍，使其在全城视角下仍可辨认。
 
 默认从「两江 · 龟蛇锁大江」进入，以龟蛇两山、大桥和黄鹤楼为构图中心；「全城」仍可查看所有地标。
-核心城区与黄鹤楼的视觉样板、同尺寸对照及验证记录见 [视觉样板](docs/visual-study.md)。
+黄鹤楼与武汉长江大桥采用 Blender 网格。点「黄鹤楼」可看五层金瓦、朱柱回廊与金字匾；点「大桥」可沿侧前方看九跨钢桁梁和桥头堡。两江沿岸铺有里分、洋行、仓房、住宅与塔楼，街坊布局采用画意概括。前一版构图的同尺寸对照见[历史视觉样板](docs/visual-study.md)。
 
 ## 构建
 
@@ -51,17 +51,36 @@ src/
   00-boot.js         依赖加载、15 秒超时、就绪状态与失败恢复
   geodata.gen.js     由 tools/geodata/extract.py 生成的河道、湖、山数据（勿手改；拼在 01-core.js 之前）
   01-core.js         经纬度投影、水墨 Shader、几何累加器、通用构件
-  02-landmarks.js    十四处地标的程序化建模
+  architecture.gen.js  Blender 导出的顶点、索引和天空可见度，供 build.sh 内嵌
+  02-landmarks.js    读取地标模型，构建其余景点
   03-terrain.js      两江河道、湖、山体（读 geodata.gen.js）与由此推出的三镇陆块、水纹图与江面 Shader
   04-scene.js        景点落位、草木、市廛、舟船、飞鸟、烟波
   05-layout.js       紧凑面板、可用画幅与包围盒取景
   05-overlays.js     地名与牌签投影、碰撞避让、尺寸和排版缓存
   05-runtime.js      镜头状态、点选、渲染循环
   06-audio.js        背景音乐：Web Audio 合成的古琴、水声与江风
+assets/              网站图标的原始图与 ICO
+tools/blender/       独立地标与街屋几何、Blender 场景导出和渲染
+tests/               单文件构建、浏览器交互回归与取景截图
+docs/                设计资料、视觉对照与验收记录
+output/              本地模型工程、渲染、地形工作数据与测试证据
 tools/geodata/       离线管线：download.py 下载瓦片，prepare.py 拼接裁剪，extract.py 提取，check_geodata.py 校验
 build.sh             拼接脚本（<script> 与 IIFE 的包裹在此，不在源码里）
 dist/index.html      构建产物（不入库）
 ```
+
+## Blender 建模与渲染
+
+日常构建直接使用已提交的模型数据。修改建筑时，在 Blender 5.2 的独立会话里，通过 Blender MCP 的 `execute_blender_code` 执行建模脚本。将下面的路径替换为项目的绝对路径。
+
+```python
+import runpy
+runpy.run_path("/path/to/shuimo-jiangcheng/tools/blender/build.py", run_name="__main__")
+```
+
+脚本在临时场景里创建楼层、屋面、栏杆、钢桁架和桥墩等可编辑网格，输出 `output/architecture/tower.blend`、`bridge.blend` 及独立相机渲染（`tower.png`、`bridge.png`、`bridge-detail.png`）。工程按构件保留对象。网页以 `tower.py`、`bridge.py`、`neighborhood.py` 为几何源，材质按用途合并；导出时把檐下及廊内的遮蔽烘成顶点属性。运行 `npm run build` 可把模型数据编入单文件地图。
+
+黄鹤楼的四面凸廊、五层金瓦和六十翘角参考[武昌区主楼介绍](https://www.wuchang.gov.cn/sghjjrfwz/bjww/202307/t20230704_2226374.html)。桥头堡的通高拱窗、低重檐与红珠顶饰参考[武汉市修缮实景](https://www.wuhan.gov.cn/sy/whyw/202212/t20221212_2114209.shtml)。建筑沿用地图用的夸张比例，街坊由五种原型组合，市区并非逐栋测绘。
 
 ## 坐标系统
 
@@ -105,7 +124,7 @@ Shader 据此让笔触顺河道走、近岸留白、江心笔浓，湖面则改�
    笔法仍是皴（顺坡放射的短笔，只在陡处见笔）、廓（法线与视线垂直处落墨）、
    山脚云气（下缘虚入纸中）。
 
-**镜头穿过时的消隐** —— 背景屋舍用低矮淡墨面概括，省去逐栋描边；靠近镜头时按世界坐标抖动溶解。
+**街区** —— 以街坊为单位选择屋型和朝向，从沿江低层转到内街退台住宅与塔楼。相同屋型共享几何，按材质批量绘制；靠近镜头时按世界坐标抖动消隐。
 镜头高度另有地形兜底，不钻山不入地。
 
 **背景音乐** —— 不带音频文件，全由 Web Audio 现场合成：D 调五声，疏落的拨弦
