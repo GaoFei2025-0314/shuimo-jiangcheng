@@ -2,6 +2,8 @@
 
 from math import cos, hypot, pi, sin, tau
 
+import bpy
+
 from mesh import Part
 
 
@@ -10,10 +12,32 @@ ROAD = 11.9
 LOWER_CHORD = 5.15
 UPPER_CHORD = 11.15
 ROAD_STATIONS = (-154, -MAIN_END, MAIN_END, 154)
+HANYANG_BEND_START = 83
+HANYANG_BEND_RUN = 12
+HANYANG_BEND_SLOPE = 1.24
+MAP_LENGTH_RATIO = .81
 
 
 def road_height(y):
     return ROAD - max(0, abs(y) - MAIN_END) * .127
+
+
+def bend_hanyang(parts):
+    """Ease the landward alignment around Guishan, outside the bridgehead pavilions."""
+    for obj in parts:
+        for v in obj.data.vertices:
+            x, y, z = v.co
+            d = -y - HANYANG_BEND_START
+            if d <= 0:
+                continue
+            t = min(1, d / HANYANG_BEND_RUN)
+            offset = HANYANG_BEND_SLOPE * (HANYANG_BEND_RUN * t**3 * (1 - .5*t)
+                                           + max(0, d - HANYANG_BEND_RUN))
+            slope = HANYANG_BEND_SLOPE * t*t * (3 - 2*t)
+            length = hypot(MAP_LENGTH_RATIO, slope)
+            v.co = (offset + x * MAP_LENGTH_RATIO / length,
+                    y + x * slope / (MAP_LENGTH_RATIO * length), z)
+        obj.data.update()
 
 
 def loft(part, rings):
@@ -64,10 +88,10 @@ def build_trusses_and_rail():
     plates = Part("Gussets and chord flanges", "shadow")
     railbed = Part("Lower railway bed and stringers", "deck")
     rails = Part("Two tracks and cross ties", "ink")
-    railbed.box((0, 0, 5.10), (8.56, 214, .49))
+    deck_ribbon(railbed, 0, 8.56, (-107, 107), 0, .49, height=lambda _: 5.345)
     for track in (-2.02, 2.02):
         for offset in (-.72, .72):
-            rails.box((track + offset, 0, 5.54), (.15, 214, .19))
+            deck_ribbon(rails, track + offset, .15, (-107, 107), 0, .19, height=lambda _: 5.635)
         for y in range(-106, 107, 2):
             rails.box((track, y, 5.39), (2.24, .33, .14))
     # Each continuous unit covers three spans. Tiny joints separate the flanges.
@@ -115,6 +139,11 @@ def build_trusses_and_rail():
 
 def deck_ribbon(part, x, width, stations, offset, thickness, height=road_height):
     """A closed strip with one cross-section at each change of slope."""
+    lo, hi = min(stations), max(stations)
+    # The long slabs need cross-sections in the curved interval before their vertices turn.
+    bend = [-s for s in range(HANYANG_BEND_START, HANYANG_BEND_START + HANYANG_BEND_RUN + 1)
+            if lo < -s < hi]
+    stations = sorted({*stations, *bend})
     vertices = [(x + u*width/2, y, height(y) + offset + h)
                 for y in stations for u, h in ((-1, -thickness), (1, -thickness), (1, 0), (-1, 0))]
     end = len(vertices) - 4
@@ -243,7 +272,7 @@ def build_approaches():
                 walls.box((x, y, (h - 1.8) / 2), (1.48, 1.55, h + 1.8))
                 moulding.box((x, y, h * .62), (1.64, 1.75, .25))
         # The lower railway continues over stone on each shore before it reaches grade.
-        walls.box((0, sign*89.5, 4.38), (9.55, 35, 1.04))
+        deck_ribbon(walls, 0, 9.55, sorted((sign*72, sign*107)), 0, 1.04, height=lambda _: 4.90)
         walls.box((0, sign*106.6, 2.19), (11.4, 1.58, 5.35))
         for x in (-4.8, 4.8):
             deck_ribbon(moulding, x, .39, sorted((sign*72, sign*144)), -.45, .42)
@@ -362,8 +391,10 @@ def build_towers():
 
 
 def build():
+    original = set(bpy.context.scene.objects)
     build_piers()
     build_trusses_and_rail()
     build_road()
     build_approaches()
+    bend_hanyang(set(bpy.context.scene.objects) - original)
     build_towers()
