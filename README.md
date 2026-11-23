@@ -82,6 +82,17 @@ runpy.run_path("/path/to/shuimo-jiangcheng/tools/blender/build.py", run_name="__
 
 黄鹤楼的四面凸廊、五层金瓦和六十翘角参考[武昌区主楼介绍](https://www.wuchang.gov.cn/sghjjrfwz/bjww/202307/t20230704_2226374.html)。桥头堡的通高拱窗、低重檐与红珠顶饰参考[武汉市修缮实景](https://www.wuhan.gov.cn/sy/whyw/202212/t20221212_2114209.shtml)。建筑沿用地图用的夸张比例，街坊由五种原型组合，市区并非逐栋测绘。
 
+### 编辑整座核心城区
+
+先构建地图，再用已安装的 Playwright WebKit 从实际网页采集地形、岸线、街道与建筑变换。
+
+```bash
+npm run build
+node tools/blender/capture-city.cjs
+```
+
+使用同一 Blender MCP 调用运行 `tools/blender/city.py`，生成 `output/architecture/city.blend` 与 1800 × 1080 的 `city.png`。从工程的「武汉街坊」集合选择一栋屋舍即可独立移动或旋转，同屋型的实例共享几何。黄鹤楼、长江大桥各有独立构件，两江沿岸的山林、船只、其他地标和灯光也可以分别编辑。浏览器继续使用实时水墨渲染；Blender 工程自带鸟瞰相机和 Cycles 灯光。
+
 ## 坐标系统
 
 以黄鹤楼为原点的等距圆柱投影，`+x` 正东、`−z` 正北，1 单位 = 13 米。
