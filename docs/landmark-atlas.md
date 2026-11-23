@@ -1,0 +1,35 @@
+# 水墨武汉建筑图录
+
+地图中十五个景点各有一份可编辑的 Blender 工程、一个实时网格和一张相机渲染。「建筑图录」可切换景点、查看细部并返回对应地图位置。源文件在 `tools/blender/`，工程和原尺寸 PNG 在 `output/architecture/`，文件名使用下表的景点键。
+
+模型根据实景照片概括外观。地图保持原有的水平地理投影，并放大竖向尺度。园林庭院和附属设备为阅读取舍了间距，钟面、窗格、甲板和陈设表达的是可识别的构造特征。
+
+| 景点 | 景点键 | 建模依据与可看的构件 |
+| --- | --- | --- |
+| 黄鹤楼 | tower | 五层主体、凸廊、飞檐和西面顶层蓝地金字「黃鶴樓」匾。镜头面对西立面时由右向左读。字形用霞鹜文楷 TC 转为有厚度的网格，按实景处理排布与边框。[武昌区主楼介绍](https://www.wuchang.gov.cn/sghjjrfwz/bjww/202307/t20230704_2226374.html)、[黄鹤楼设计者访谈](https://www.thepaper.cn/newsDetail_forward_15258519)、[匾额实景照片](https://p5.itc.cn/q_70/images03/20220519/e7990fd583d543d0af516484e2458d81.jpeg)、[字形许可](wenkai-license.txt) |
+| 武汉长江大桥 | bridge | 九孔八墩、双层公铁通道、双片钢桁架、支座、桥头堡铜窗和花饰栏杆。[武汉市修缮实景](https://www.wuhan.gov.cn/sy/whyw/202212/t20221212_2114209.shtml)、[中国中铁桥梁史料](https://www.crecg.com/web/qywh90/10196760/2025032717322687127/index.html)、[栏杆资料](https://www.wuhan.gov.cn/sy/whyw/202410/t20241015_2468836.shtml) |
+| 鹦鹉洲长江大桥 | yingwuzhou | 三塔四跨悬索桥，橙色主塔、纵向人字中塔、两片主缆和竖向吊索。[设计资料](https://www.cbridge.com.cn/newsinfo/6069721.html)、[湖北日报实景](https://hbrbapp.hubeidaily.net/rmtShare/appPhoto/2021-11/33e415ee-4d4f-46fb-9154-b5e471e5f5f3.jpg) |
+| 龟山电视塔 | tv | 混凝土塔筒、环状塔楼、天线与发射设备。[武汉生态环境局实景](https://hbj.wuhan.gov.cn/hjsj/ztzl/mryt/2025mryt/202503/t20250328_2558830.html) |
+| 江汉关 | customs | 临江石柱廊、四向钟面、敞开的钟亭和浅顶。[武汉市政府建筑实景与博物馆访谈](https://3g.wuhan.gov.cn/sy/kwh/202401/t20240122_2347703.shtml) |
+| 武汉大学老斋舍 | wuda | 坡地上的四栋宿舍、三处拱门阶道和可通行的屋顶平台。[武汉大学建筑史料](https://news.whu.edu.cn/info/1002/46686.htm)、[长江日报实景](https://news.cjn.cn/whpd/ttxw_19945/202408/t4968226.htm) |
+| 汉口水塔 | watertower | 八角砖体、雉堞、偏置的高出屋面的楼梯塔。[武汉市水务局史料](https://swj.wuhan.gov.cn/tzdt/gzdt/202609/t20260902_2842003.html)、[湖北日报实景](https://m.cnhubei.com/content/2021-12/03/content_14295613.html) |
+| 湖北省博物馆 | museum | 北区一主两翼的馆舍，分别处理高台、台阶、深檐和相接的院落。[武汉文明网航拍](https://hbwh.wenming.cn/zt2025/wcnrxwhdcs/sxdd/202509/t20250924_9034770.html)、[湖北省住建厅建筑档案](https://zjt.hubei.gov.cn/bmdt/ztzl/hbcjda/gzdt_7471/201910/t20191028_80086.shtml) |
+| 红楼 | honglou | 湖北谘议局旧址的红砖双层拱廊、三角山花和后方方形顶亭。[辛亥革命博物院](https://www.1911museum.cn/view_2910.html) |
+| 东湖行吟阁 | lake | 听涛湖畔的三重攒尖顶楼阁、屈原像、荷风桥与临水码头。地图保留东湖全景，并可定位到行吟阁。[东湖风景区管委会](https://www.whdonghu.gov.cn/xwzx_6309/dhyw/202006/t20200629_1386587.shtml)、[OSM 建筑轮廓](https://www.openstreetmap.org/way/126869184) |
+| 晴川阁 | qc | 江岸石台、双重灰瓦飞檐和铁门关拱券、关楼。[汉阳区政府实景](https://www.hanyang.gov.cn/xwdt_38/hyyw/202309/t20230914_2263603.shtml) |
+| 磨山楚天台 | chutian | 层台、橙色山花和屋顶铜凤，另建山下双凤标。[湖北日报实拍](https://news.hubeidaily.net/pc/707930.html)、[武汉市政府](https://www.wuhan.gov.cn/sy/whyw/202308/t20230814_2246453.shtml) |
+| 洪山宝塔与宝通禅寺 | hongshan | 七级八角塔身、逐层收分的砖檐与塔刹；寺院用黄墙朱柱。[武汉市文旅局实景](https://m.thepaper.cn/newsDetail_forward_25571447)、[历史照片](https://www.hpcbristol.sjtu.edu.cn/visual/GJ01-056) |
+| 归元禅寺 | guiyuan | 翠微古池、藏经阁、大雄宝殿、钟鼓楼、田字平面的罗汉堂。[湖北省佛教协会](https://www.hbsfjxh.cn/article.html?id=6964742653959213056)、[武汉政协文史资料](https://www.whzx.gov.cn/zxzl/wsl/whwszl/202508/P020250801384624511936.pdf) |
+| 古琴台 | qintai | 汉白玉方台、带抱厦的歇山主殿、单孔院门与碑廊。碑刻按石面轮廓表现。[汉阳区政府建筑介绍](https://www.hanyang.gov.cn/mlhy/fjms/202509/t20250923_2651436.shtml)、[汉阳区政府实景](https://www.hanyang.gov.cn/xwdt_38/hyyw/202304/t20230423_2190289.shtml) |
+
+## 桥身与匾额检查
+
+旧版武汉长江大桥工程里有八对沿桥向重合的分段端盖，桥头窗框留下 240 条开放边，70 段车道线脱离路面，两端桥台与下部钢件之间也有可量出的间隙。重建了连续的坡道、带厚度的窗框和端部支承。最终模型中的首桥有 69,772 个三角形，鹦鹉洲桥有 26,880 个。两座桥均检查了构件边界、壳体方向，以及网页 1/128 单位坐标网格上的重合三角形和零面积三角形。回归测试直接读取交付给网页的索引与坐标。
+
+黄鹤楼的匾框、蓝色漆板和三枚金色浮雕均可在 Blender 中选取。西向近景避开栏杆和屋檐遮挡。图录里的「看西面匾额」打开同一块匾的独立相机画面。顶层位置与传统读序按实景处理，笔画采用开源字形重绘。
+
+## 画面审查
+
+GPT-6.2 Astra 核对了游览入口、资产边界和验收视角。GPT-6.2 Sol 依据实景分组制作单体，并在 Blender 中检查构件。Gemini 4 Neon High 先看了旧版截图，再实际查看十五景总览、两张建筑特写、桌面入口与黄鹤楼视角，以及手机匾额图录。它从右向左读出了「黃鶴樓」，在所审画面中未提出必须修复的视觉问题。
+
+根据审查意见，手机的横幅特写随原图比例收紧，桌面导航与题诗增加了局部宣纸底衬。Neon 复看了修改后的手机与桌面截图，确认匾额上下留白已经解决，主导航与正文对比度足够。分区小字与题诗末行遇到深色背景时仍偏淡。

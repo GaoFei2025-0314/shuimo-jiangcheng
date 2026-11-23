@@ -59,3 +59,38 @@ test('Blender buildings sit on the land and both bridge approaches fit a narrow 
   expect(Math.max(...details.groundErrors)).toBeLessThan(.15);
   expect(details.outside).toBeLessThan(1);
 });
+
+test('each atlas plate opens for its own model, with two architectural detail views', async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await ready(page);
+  await page.locator('#b-tower').click();
+  await page.getByRole('button', { name: '建筑图录', exact: true }).click();
+  const dialog = page.getByRole('dialog', { name: '建筑图录' });
+  const select = dialog.getByRole('combobox'), image = dialog.getByRole('img');
+  const keys = await select.locator('option').evaluateAll(opts => opts.map(o => o.value));
+  const sceneKeys = await page.evaluate(() => window.__testScene.children.map(o => o.userData.modelKey).filter(Boolean));
+  expect(keys.sort()).toEqual(sceneKeys.sort());
+  expect(keys).toHaveLength(15);
+  for (const key of keys) {
+    await select.selectOption(key);
+    await image.evaluate(image => image.decode());
+    expect(await image.evaluate(image => image.naturalWidth)).toBeGreaterThanOrEqual(1000);
+    if (key === 'tower' || key === 'bridge') {
+      const before = await image.getAttribute('alt');
+      await dialog.locator('#atlas-detail').click();
+      await image.evaluate(image => image.decode());
+      await expect(image).not.toHaveAttribute('alt', before);
+      await expect(dialog.locator('#atlas-detail')).toHaveAttribute('aria-pressed', 'true');
+    }
+  }
+  await select.selectOption('lake');
+  await dialog.getByRole('button', { name: '在地图中查看' }).click();
+  await expect(dialog).toBeHidden();
+  await expect(page.locator('#cardTitle')).toHaveText('东湖 · 行吟阁');
+  await expect(page.locator('#b-lake')).toHaveAttribute('aria-pressed', 'true');
+  await page.locator('#atlas-open').click();
+  await expect(select).toHaveValue('lake');
+  await page.keyboard.press('Escape');
+  await expect(dialog).toBeHidden();
+  await expect(page.locator('#atlas-open')).toBeFocused();
+});

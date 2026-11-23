@@ -3,6 +3,7 @@ import base64
 import importlib
 import json
 import struct
+import tempfile
 import sys
 from pathlib import Path
 
@@ -16,18 +17,18 @@ OUTPUT = ROOT / "output" / "architecture"
 sys.dont_write_bytecode = True
 sys.path.insert(0, str(HERE))
 import mesh
-import tower
-import bridge
+import landmarks
 import neighborhood
 
 # Rebuilding in the same Blender MCP session should pick up edited model sources.
-for module in (mesh, tower, bridge, neighborhood):
+for module in (mesh, landmarks, neighborhood):
     importlib.reload(module)
 
 
 def encode_scene(scene):
     """Indexed signed 1/128-unit coordinates, with Blender Z-up rotated into Three.js Y-up."""
     batches = {}
+    unique = {}
     for obj in scene.objects:
         if obj.type != "MESH" or "ink_material" not in obj:
             continue
@@ -40,8 +41,16 @@ def encode_scene(scene):
             verts.append(tuple(round(v * 128) for v in (x, z, -y)))
         for tri in geo.loop_triangles:
             points = [verts[i] for i in tri.vertices]
-            if len(set(points)) == 3:
+            a, b, c = points
+            ab = tuple(y - x for x, y in zip(a, b))
+            ac = tuple(y - x for x, y in zip(a, c))
+            if all(ab[i] * ac[(i+1)%3] == ab[(i+1)%3] * ac[i] for i in range(3)):
+                continue
+            face = tuple(sorted(points))
+            seen = unique.setdefault(obj["ink_material"], set())
+            if face not in seen:
                 indices.extend(positions.setdefault(p, len(positions)) for p in points)
+                seen.add(face)
 
     # Bake sky visibility once. It preserves deep eaves, open trusses and arcades in the ink shader.
     world_points, triangles = [], []
@@ -71,17 +80,22 @@ def encode_scene(scene):
 
 def studio(scene, name):
     """Soft daylight and a paper-coloured ground, kept editable with the subject."""
-    is_tower = name == "tower"
-    camera_data = bpy.data.cameras.new("Architecture lens")
-    cam = bpy.data.objects.new("Study camera", camera_data)
-    scene.collection.objects.link(cam)
-    target = Vector((0, 0, 15 if is_tower else 7.8))
-    direction = Vector((.75, -1.55, .73) if is_tower else (2.8, -1.35, 1.0)).normalized()
-    cam.location = target + direction * (130 if is_tower else 330)
-    cam.rotation_euler = (-direction).to_track_quat("-Z", "Y").to_euler()
-    camera_data.type = "ORTHO"
-    camera_data.ortho_scale = 56 if is_tower else 299
-    camera_data.clip_end = 1800
+    wide = name in ("bridge", "yingwuzhou")
+    scene.render.resolution_x, scene.render.resolution_y = (1680, 700) if wide else (1120, 960)
+    directions = {"tower": (-1.55, -.60, .45), "bridge": (2.8, -1.35, .91),
+                  "yingwuzhou": (2.9, -1.03, .89), "guiyuan": (.54, -1, .78),
+                  "lake": (.65, -1, .50), "wuda": (.42, -1, .47)}
+    direction = Vector(directions.get(name, (.54, -1.28, .53))).normalized()
+    rotation = (-direction).to_track_quat("-Z", "Y")
+    side, up = rotation @ Vector((1,0,0)), rotation @ Vector((0,1,0))
+    points = [obj.matrix_world @ vert.co for obj in scene.objects if obj.type == "MESH"
+              for vert in obj.data.vertices if (obj.matrix_world @ vert.co).z >= -.06]
+    ranges = [(min(p.dot(axis) for p in points), max(p.dot(axis) for p in points))
+              for axis in (side, up, direction)]
+    target = sum((axis * ((a+b)/2) for axis, (a,b) in zip((side, up, direction), ranges)), Vector())
+    aspect = scene.render.resolution_x / scene.render.resolution_y
+    width = max(ranges[0][1]-ranges[0][0], (ranges[1][1]-ranges[1][0])*aspect) * 1.13
+    cam = viewpoint(scene, "建筑全貌", target, direction, width)
     scene.camera = cam
     world = bpy.data.worlds.new("Warm sky")
     scene.world = world
@@ -105,49 +119,71 @@ def studio(scene, name):
     scene.render.engine = "CYCLES"
     scene.cycles.samples = 12
     scene.cycles.use_denoising = True
-    scene.render.resolution_x = 1040 if is_tower else 1800
-    scene.render.resolution_y = 1080 if is_tower else 700
     scene.render.resolution_percentage = 100
     scene.render.image_settings.file_format = "PNG"
     scene.render.filepath = str(OUTPUT / (name + ".png"))
 
 
+def viewpoint(scene, name, target, direction, width):
+    lens = bpy.data.cameras.new(name)
+    lens.type, lens.ortho_scale, lens.clip_end = "ORTHO", width, 3600
+    camera = bpy.data.objects.new(name, lens)
+    scene.collection.objects.link(camera)
+    direction = Vector(direction).normalized()
+    camera.location = Vector(target) + direction * max(75, width * 1.8)
+    camera.rotation_euler = (-direction).to_track_quat("-Z", "Y").to_euler()
+    return camera
+
+
+def plate(scene, name):
+    scene.render.image_settings.file_format = "PNG"
+    scene.render.filepath = str(OUTPUT / (name + ".png"))
+    bpy.ops.render.render(write_still=True, scene=scene.name)
+    # Reuse the same linear render for the single-file viewer; apply its view transform once.
+    with tempfile.TemporaryDirectory() as folder:
+        jpeg = Path(folder) / "plate.jpg"
+        scene.render.image_settings.file_format = "JPEG"
+        scene.render.image_settings.quality = 82
+        bpy.data.images["Render Result"].save_render(str(jpeg), scene=scene)
+        return base64.b64encode(jpeg.read_bytes()).decode("ascii")
+
+
 def build():
     OUTPUT.mkdir(parents=True, exist_ok=True)
-    models = {"tower": tower.build, "bridge": bridge.build}
+    models = dict(landmarks.BUILDERS)
     for name in ("lane", "arcade", "wharf", "apartment", "highrise"):
         models[name] = getattr(neighborhood, name)
     window = bpy.context.window
     previous_scene = window.scene
-    web = {}
+    web, plates = {}, {}
     for name, create in models.items():
-        # Model authors always work in a fresh scene, even if a personal file is open.
         scene = bpy.data.scenes.new("Wuhan / " + name)
         window.scene = scene
         try:
             create()
             bpy.context.view_layer.update()
             web[name] = encode_scene(scene)
-            if name in ("tower", "bridge"):
+            if name in landmarks.BUILDERS:
                 studio(scene, name)
+                detail = None
+                if name == "tower":
+                    detail = ("tower-plaque", viewpoint(scene, "西面五层匾额", (-5.15,0,26.56), (-1,-.07,.015), 7.3))
+                elif name == "bridge":
+                    detail = ("bridge-detail", viewpoint(scene, "桥头堡与钢梁", (0,-57,9), (1.65,-1.2,.56), 75))
                 mesh.save_project(scene, OUTPUT / (name + ".blend"))
-                bpy.ops.render.render(write_still=True, scene=scene.name)
-                if name == "bridge":
-                    # The complete crossing and the gateway detail need different viewing distances.
-                    cam = scene.camera
-                    target = Vector((0, -57, 9))
-                    direction = Vector((1.65, -1.2, .56)).normalized()
-                    cam.location = target + direction * 120
-                    cam.rotation_euler = (-direction).to_track_quat("-Z", "Y").to_euler()
-                    cam.data.ortho_scale = 75
-                    scene.render.resolution_x, scene.render.resolution_y = 1080, 680
-                    scene.render.filepath = str(OUTPUT / "bridge-detail.png")
-                    bpy.ops.render.render(write_still=True, scene=scene.name)
+                plates[name] = plate(scene, name)
+                if detail:
+                    key, scene.camera = detail
+                    scene.render.resolution_x, scene.render.resolution_y = 1120, 680
+                    plates[key] = plate(scene, key)
         finally:
             window.scene = previous_scene
             for obj in list(scene.objects):
                 bpy.data.objects.remove(obj, do_unlink=True)
             bpy.data.scenes.remove(scene)
+    (ROOT / "src" / "architecture-plates.gen.js").write_text(
+        "// Cycles studio views, encoded as JPEG for the offline atlas.\nconst LANDMARK_PLATES = "
+        + json.dumps(plates, indent=2) + ";\n", encoding="utf-8")
     target = ROOT / "src" / "architecture.gen.js"
     # One material per line keeps the generated file inspectable without a binary dependency.
     lines = ["// Generated by tools/blender/build.py (signed XYZ / 128, uint16 triangles, uint8 sky visibility).",

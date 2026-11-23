@@ -23,6 +23,7 @@
     yingwuzhou: [114.27612, 30.53310],   // 鹦鹉洲长江大桥 桥心：沿 OSM 桥向，取江面两岸之间的中点（水体掩膜）
     guiyuan:    [114.25369, 30.54784],   // 归元禅寺（Nominatim）
     qintai:     [114.26073, 30.55940],   // 古琴台：近似，取鹦鹉大道「古琴台」公交站位
+    xingyin: [114.37112, 30.56733],   // 听涛景区行吟阁，OSM 建筑轮廓中心
     chutian: [114.40500, 30.55450]    // 东湖磨山·楚天台（原纬度 30.5445 为笔误；DEM 磨山峰顶在 30.5543）
   };
   const AT = {}; Object.keys(SITE).forEach(k => AT[k] = geo(SITE[k][0], SITE[k][1]));
@@ -206,67 +207,6 @@
 
   let seed = 7; const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
 
-  // 中式屋顶：四坡攒尖，坡面内凹（举折），四角起翘
-  function roofGeo(R, r, H, lift, nu, nv) {
-    nu = nu || 16; nv = nv || 6;
-    const pos = [], idx = [];
-    for (let k = 0; k < 4; k++) {
-      const cs = Math.cos(k * Math.PI / 2), sn = Math.sin(k * Math.PI / 2), base = pos.length / 3;
-      for (let j = 0; j <= nv; j++) {
-        const v = j / nv, w = R + (r - R) * v;
-        for (let i = 0; i <= nu; i++) {
-          const u = -1 + 2 * i / nu, x = u * w, z = w;
-          const y = H * Math.pow(v, 1.7) + lift * Math.pow(Math.abs(u), 3) * Math.pow(1 - v, 2);
-          pos.push(x * cs + z * sn, y, -x * sn + z * cs);
-        }
-      }
-      for (let j = 0; j < nv; j++) for (let i = 0; i < nu; i++) {
-        const a = base + j * (nu + 1) + i, b = a + 1, c = a + nu + 1, d = c + 1;
-        idx.push(a, b, c, b, d, c);
-      }
-    }
-    const g = new THREE.BufferGeometry();
-    g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setIndex(idx); g.computeVertexNormals();
-    return g;
-  }
-  function perim(half, step) {
-    const pts = [], n = Math.max(2, Math.round(2 * half / step));
-    for (let s = 0; s < 4; s++) {
-      const a = s * Math.PI / 2, cs = Math.cos(a), sn = Math.sin(a);
-      for (let i = 0; i < n; i++) { const t = -half + 2 * half * i / n; pts.push([t * cs + half * sn, -t * sn + half * cs, a]); }
-    }
-    return pts;
-  }
-  function ringAt(acc, half, y, t, step, ox, oz) {
-    const p = perim(half, step || half * .5);
-    p.forEach((a, i) => { const b = p[(i + 1) % p.length]; acc.beam(V((ox || 0) + a[0], y, (oz || 0) + a[1]), V((ox || 0) + b[0], y, (oz || 0) + b[1]), t); });
-  }
-  const tips4 = [[1, 1], [-1, 1], [1, -1], [-1, -1]];
-  const mkS = () => ({ pale: new Acc(), wall: new Acc(), roofs: new Acc(), dark: new Acc() });
-  function finish(S, g) {
-    g.add(S.pale.mesh(M.pale, true, 30), S.wall.mesh(M.wall, true, 30), S.roofs.mesh(M.roof, true, 24), S.dark.mesh(brushMat, false));
-    return g;
-  }
-  // 一层殿阁：楼板、墙身、窗、檐柱、斗拱、栏杆、四坡屋顶与翘角
-  function hall(S, hw, yb, FH, o) {
-    o = o || {};
-    const R = o.R || hw + 2.7, r = o.r != null ? o.r : .3, H = o.H || 1.8, lift = o.lift || 1.1, ox = o.x || 0, oz = o.z || 0;
-    S.pale.box(2 * hw + .9, .4, 2 * hw + .9, ox, yb + .2, oz);
-    S.wall.box(hw * 1.5, FH - .4, hw * 1.5, ox, yb + .4 + (FH - .4) / 2, oz);
-    if (o.win !== false) for (let s = 0; s < 4; s++) {
-      const a = s * Math.PI / 2, cs = Math.cos(a), sn = Math.sin(a), d = hw * .75 + .06;
-      [-hw * .32, hw * .32].forEach(t => S.dark.box(.9, FH - 1.7, .1, ox + t * cs + d * sn, yb + FH * .5 + .1, oz - t * sn + d * cs, a));
-    }
-    perim(hw, hw * 2 / (o.cols || 4)).forEach(p => {
-      S.dark.cyl(.17, FH - .5, ox + p[0], yb + .4 + (FH - .5) / 2, oz + p[1]);
-      S.dark.box(.56, .26, .56, ox + p[0], yb + FH - .2, oz + p[1]);
-      S.dark.box(1.5, .2, .3, ox + p[0], yb + FH - .02, oz + p[1], p[2]);
-    });
-    ringAt(S.dark, hw, yb + FH - .55, .26, hw * .5, ox, oz);
-    if (o.rail !== false) ringAt(S.dark, hw, yb + .95, .1, hw * .5, ox, oz);
-    S.roofs.geo(roofGeo(R, r, H, lift, 16, 6), ox, yb + FH - .1, oz);
-    tips4.forEach(([sx, sz]) => S.dark.cone(.28, 1.5, ox + sx * (R + .05), yb + FH - .1 + lift + .45, oz + sz * (R + .05), V(sx * .8, .9, sz * .8)));
-  }
   function ellipsoid(rx, ry, rz, x, y, z, mat, seg) {
     const g = new THREE.SphereGeometry(1, seg || 28, 18); g.scale(rx, ry, rz);
     const m = new THREE.Mesh(g, mat); m.position.set(x, y, z); return m;

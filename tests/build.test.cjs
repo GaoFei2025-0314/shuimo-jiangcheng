@@ -76,3 +76,28 @@ test('a failing minifier falls back to checked uncompressed output', t => {
   assert.match(result.stdout, /未压缩/);
   assert.match(fs.readFileSync(path.join(dir, 'dist/index.html'), 'utf8'), /水墨江城/);
 });
+
+test('both exported bridges retain valid triangles on the web coordinate grid', () => {
+  const source = fs.readFileSync(path.join(root, 'src/architecture.gen.js'), 'utf8');
+  const models = require('node:vm').runInNewContext(source + '\nARCHITECTURE');
+  for (const name of ['bridge', 'yingwuzhou']) {
+    const batches = Object.entries(models[name]);
+    assert.ok(batches.length >= 5);
+    for (const [material, [coordinates, triangles, visibility]] of batches) {
+      const points = Buffer.from(coordinates, 'base64'), index = Buffer.from(triangles, 'base64');
+      const count = points.length / 6, seen = new Set();
+      assert.equal(Buffer.from(visibility, 'base64').length, count);
+      assert.equal(index.length % 6, 0);
+      for (let k = 0; k < index.length; k += 6) {
+        const ids = [0, 2, 4].map(delta => index.readUInt16LE(k + delta));
+        assert.ok(ids.every(i => i < count), name + '/' + material);
+        const [a, b, c] = ids.map(i => [0, 2, 4].map(j => points.readInt16LE(i * 6 + j)));
+        const u = b.map((n, i) => n - a[i]), v = c.map((n, i) => n - a[i]);
+        assert.ok(u.some((n, i) => n * v[(i + 1) % 3] !== u[(i + 1) % 3] * v[i]), 'zero-area face');
+        const key = ids.sort((x, y) => x - y).join(',');
+        assert.ok(!seen.has(key), 'coincident triangle');
+        seen.add(key);
+      }
+    }
+  }
+});

@@ -47,21 +47,55 @@
     terrace.applyMatrix4(tower.matrixWorld);
     scene.add(terrace);
   }
-  const tv      = place(buildTV(), AT.tv, 1.5, 0, '龟山电视塔', 'tv');
-  const qc      = place(buildQingchuan(), AT.qc, .92, Math.PI / 2, '晴川阁', 'qc');
-  const customs = place(buildCustoms(), AT.customs, .98, Math.PI / 2, '江汉关', 'customs');
-  const wuda    = place(buildWuda(), AT.wuda, .74, .1, '武大 · 老斋舍', 'wuda');
-  const chutian = place(buildChutian(), AT.chutian, .82, 0, '东湖 · 楚天台', 'chutian');
-  const hongshan   = place(buildPagoda(), AT.hongshan, .74, 0, '洪山宝塔 · 宝通禅寺', 'hongshan');
-  const watertower = place(buildWaterTower(), AT.watertower, .82, 0, '汉口水塔', 'watertower');
-  const museum     = place(buildMuseum(), AT.museum, .78, 0, '湖北省博物馆', 'museum');
-  const honglou    = place(buildHonglou(), AT.honglou, .8, 0, '红楼', 'honglou');
-  const guiyuan    = place(buildGuiyuan(), AT.guiyuan, .7, 0, '归元禅寺', 'guiyuan');
-  const qintai     = place(buildQintai(), AT.qintai, .7, -Math.PI / 2, '古琴台', 'qintai');   // 台面朝西，对着月湖
+  const tv      = place(builtLandmark('tv'), AT.tv, 1.5, 0, '龟山电视塔', 'tv');
+  const qc      = place(builtLandmark('qc'), AT.qc, .92, Math.PI / 2, '晴川阁', 'qc');
+  const customs = place(builtLandmark('customs'), AT.customs, .98, Math.PI / 2, '江汉关', 'customs');
+  const wuda    = place(builtLandmark('wuda'), AT.wuda, .74, .1, '武大 · 老斋舍', 'wuda');
+  const xingyin = place(builtLandmark('lake'), AT.xingyin, .34, -.35, '东湖 · 行吟阁', 'xingyin', .45);
+  xingyin.scale.y = .42; // 在狭小的湖岛上保留三层楼阁的宽高关系。
+  const chutian = place(builtLandmark('chutian'), AT.chutian, .82, 0, '东湖 · 楚天台', 'chutian');
+  // Widen only the exposed shoulders of these two summit terraces. The perimeter
+  // meets the sampled hill or water, so the foundation and entrance stairs have ground beneath them.
+  function summitGround(site, halfWidth, back, front, margin) {
+    const divisions = 28, vertices = [], indices = [], raised = [];
+    const scale = site.scale.x, base = site.position.y - .22;
+    const bridgeAxis = new THREE.Vector2(bB.x-bA.x,bB.z-bA.z).normalize();
+    for (let row = 0; row <= divisions; row++) for (let col = 0; col <= divisions; col++) {
+      const x = (2*col/divisions-1)*(halfWidth+margin);
+      const z = -back-margin + row/divisions*(back+front+2*margin);
+      const wx = site.position.x+x*scale, wz = site.position.z+z*scale;
+      const ground = onLand(wx,wz) ? terrainTop(wx,wz)-.15 : -.45;
+      const distance = Math.hypot(Math.max(0,Math.abs(x)-halfWidth), Math.max(0,-z-back,z-front));
+      const toAxis = Math.abs((wx-AT.bridge.x)*bridgeAxis.y-(wz-AT.bridge.z)*bridgeAxis.x);
+      const bridgeClearance = THREE.MathUtils.smoothstep(toAxis, 8.2, 17);
+      const fill = Math.max(0,base-ground) * bridgeClearance * (1-THREE.MathUtils.smoothstep(distance,0,margin));
+      vertices.push(x*scale,ground + fill - .03,z*scale);
+      raised.push(fill > .03);
+    }
+    for (let row = 0; row < divisions; row++) for (let col = 0; col < divisions; col++) {
+      const a = row*(divisions+1)+col, b = a+1, c = a+divisions+1, d = c+1;
+      if (raised[a] || raised[b] || raised[c] || raised[d]) indices.push(a,c,b,b,c,d);
+    }
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute('position', new THREE.Float32BufferAttribute(vertices,3));
+    geometry.setIndex(indices); geometry.computeVertexNormals();
+    const bank = new THREE.Mesh(geometry,M.hill);
+    bank.position.set(site.position.x,0,site.position.z); bank.name = site.userData.name+' · 山顶台地';
+    bank.userData.hillTerrace = true; scene.add(bank);
+  }
+  summitGround(tv, 10, 10, 10, 12);
+  summitGround(chutian, 14.4, 14.2, 26.5, 13);
+  const hongshan   = place(builtLandmark('hongshan'), AT.hongshan, .74, 0, '洪山宝塔 · 宝通禅寺', 'hongshan');
+  const watertower = place(builtLandmark('watertower'), AT.watertower, .82, 0, '汉口水塔', 'watertower');
+  const museum     = place(builtLandmark('museum'), AT.museum, .78, 0, '湖北省博物馆', 'museum');
+  const honglou    = place(builtLandmark('honglou'), AT.honglou, .8, 0, '红楼', 'honglou');
+  const guiyuan    = place(builtLandmark('guiyuan'), AT.guiyuan, .7, 0, '归元禅寺', 'guiyuan');
+  const qintai     = place(builtLandmark('qintai'), AT.qintai, .7, -Math.PI / 2, '古琴台', 'qintai');   // 台面朝西，对着月湖
   // 鹦鹉洲大桥：沿 OSM 桥向（原两端点连线并非江岸），两端各在水体掩膜江面之外 150 米落岸，桥长随之
   const yA = geo(114.26637, 30.53657), yB = geo(114.28587, 30.52963);
-  const yingwuzhou = place(buildSuspension(Math.hypot(yB.x - yA.x, yB.z - yA.z) / 2), AT.yingwuzhou, 1,
+  const yingwuzhou = place(builtLandmark('yingwuzhou'), AT.yingwuzhou, 1,
     Math.atan2(yB.x - yA.x, yB.z - yA.z), '鹦鹉洲长江大桥', 'yingwuzhou', 0);
+  yingwuzhou.scale.z = Math.hypot(yB.x - yA.x, yB.z - yA.z) / 200;
   // 两座大桥桥面之下不起楼、不种树：离桥轴 12 个单位内一概让开（长江大桥连引桥共 ±154 模型单位 × .74 × .81）
   const bridgeSpan = (c, a, b, half) => {
     const dx = b.x - a.x, dz = b.z - a.z, L = Math.hypot(dx, dz);

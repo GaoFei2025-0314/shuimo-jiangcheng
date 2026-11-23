@@ -22,7 +22,7 @@
     poemButton.addEventListener('click', () => toggle('poem'));
     detailsButton.addEventListener('click', () => toggle('details'));
     document.addEventListener('keydown', event => {
-      if (event.key !== 'Escape' || !media.matches || !panel) return;
+      if (event.key !== 'Escape' || document.getElementById('atlas').open || !media.matches || !panel) return;
       const button = panel === 'poem' ? poemButton : detailsButton;
       panel = null; updatePanels(); button.focus({ preventScroll: true });
     });

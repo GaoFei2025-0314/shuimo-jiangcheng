@@ -122,6 +122,10 @@
     font-family: var(--song); font-size: clamp(11px, 1.15vw, 14px); line-height: 2.05;
     color: var(--ink-soft); text-shadow: 0 0 8px var(--paper);
   }
+  #poem::before {
+    content: ""; position: absolute; z-index: -1; pointer-events: none; inset: -16px -17px;
+    background: radial-gradient(ellipse at center, rgba(242,239,230,.86) 34%, rgba(242,239,230,.70) 59%, transparent 78%);
+  }
   #poem .seal { align-self: flex-end; margin-bottom: .15em; margin-right: .45em; }
   .seal {
     display: grid; grid-template-rows: 1fr 1fr; place-items: center;
@@ -151,9 +155,40 @@
     display: flex; flex-wrap: wrap; align-items: flex-end; gap: 14px 28px;
     pointer-events: none;
   }
+  #dock::before {
+    content: ""; position: absolute; z-index: -1; pointer-events: none;
+    inset: -42px -5vw -5vh;
+    background: linear-gradient(to bottom, transparent, rgba(242,239,230,.93) 27%, var(--paper) 84%);
+  }
   #card { max-width: 360px; pointer-events: auto; padding: 12px 16px 12px 0; min-height: 80px; }
   .card-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
   .panel-toggle { display: none; }
+  #atlas-open, #atlas button, #atlas select {
+    font: 500 13px/1.3 var(--song); letter-spacing: .04em; cursor: pointer;
+    background: var(--paper); color: var(--ink); border: 1px solid #a79f8d;
+    border-radius: 3px; padding: 7px 10px; white-space: nowrap;
+  }
+  #atlas-open { margin-left: auto; color: #854837; }
+  #atlas { width: min(780px, 93vw); max-height: 92vh; max-height: 92dvh; padding: 0;
+    color: var(--ink); background: var(--paper); border: 1px solid #a79f8d; border-radius: 4px;
+    box-sizing: border-box; box-shadow: 0 12px 48px #24252144; }
+  #atlas::backdrop { background: rgba(40,46,41,.52); }
+  #atlas header, #atlas footer { display: flex; align-items: center; gap: 10px; padding: 12px 16px; }
+  #atlas header { justify-content: space-between; }
+  #atlas h2 { margin: 0; font: 400 25px/1.2 var(--brush); letter-spacing: .12em; }
+  #atlas img { display: block; width: 100%; height: min(56vh, 600px); height: min(56dvh, 600px);
+    object-fit: contain; background: #ddd8cb; }
+  #atlas footer { flex-wrap: wrap; }
+  #atlas select { max-width: 100%; }
+  #atlas-locate { margin-left: auto; }
+  #atlas-detail[aria-pressed="true"] { color: var(--paper); background: #824931; }
+  @media(max-width: 550px) {
+    .card-heading { column-gap: 6px; }
+    #atlas-open, #atlas button, #atlas select { min-height: 44px; }
+    #atlas img { height: auto; max-height: 56vh; max-height: 56dvh; }
+    #atlas header, #atlas footer { padding: 10px; gap: 6px; }
+    #atlas footer button, #atlas select { padding: 8px 5px; }
+  }
   #card h2 {
     margin: 0 0 6px; font: 400 clamp(25px, 2.8vw, 33px)/1.1 var(--brush); letter-spacing: .12em;
     text-shadow: 0 0 12px var(--paper);
@@ -168,7 +203,7 @@
   }
   #nav .grp { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px; }
   #nav .gl {
-    font-size: 11px; letter-spacing: .3em; color: var(--ink-faint); padding: 0 2px 0 4px;
+    font-size: 11px; letter-spacing: .3em; color: var(--ink-soft); padding: 0 2px 0 4px;
     text-shadow: 0 0 8px var(--paper);
   }
   #nav button {
@@ -179,7 +214,7 @@
   }
   #nav button::after {
     content: ""; position: absolute; left: 10px; right: 10px; bottom: 2px; height: 5px;
-    background: var(--ink); opacity: 0; transform: scaleX(.2) skewX(-24deg); transform-origin: left;
+    background: var(--cinnabar); opacity: 0; transform: scaleX(.2) skewX(-24deg); transform-origin: left;
     border-radius: 60% 40% 70% 30% / 50%;
     transition: opacity .35s, transform .5s cubic-bezier(.2,.8,.2,1);
   }
@@ -293,9 +328,19 @@
 <button type="button" id="poem-toggle" class="ui panel-toggle" disabled aria-controls="poem" aria-expanded="false">题跋</button>
 <button type="button" id="sound" disabled class="ui" aria-pressed="false" aria-label="背景音乐" title="背景音乐">乐</button>
 
+<dialog id="atlas" aria-labelledby="atlas-title">
+  <header><h2 id="atlas-title">建筑图录</h2><button id="atlas-close" type="button" aria-label="关闭建筑图录" autofocus>关闭</button></header>
+  <img id="atlas-plate" alt="">
+  <footer>
+    <select id="atlas-site" aria-label="选择景点"></select>
+    <button id="atlas-detail" type="button" aria-pressed="false" hidden>细部</button>
+    <button id="atlas-locate" type="button">在地图中查看</button>
+  </footer>
+</dialog>
+
 <div id="dock" class="ui">
   <div id="card" aria-live="polite">
-    <div class="card-heading"><h2 id="cardTitle">龟蛇锁大江</h2><button type="button" id="details-toggle" class="panel-toggle" disabled aria-controls="cardText" aria-expanded="false">详情</button></div>
+    <div class="card-heading"><h2 id="cardTitle">龟蛇锁大江</h2><button type="button" id="atlas-open" aria-haspopup="dialog" disabled>建筑图录</button><button type="button" id="details-toggle" class="panel-toggle" disabled aria-controls="cardText" aria-expanded="false">详情</button></div>
     <p id="cardText">龟蛇隔江对峙：蛇山踞武昌，上有黄鹤楼；龟山在汉阳，顶立电视塔。大桥自蛇山头跨向龟山东麓。</p>
   </div>
   <nav id="nav" aria-label="视角">

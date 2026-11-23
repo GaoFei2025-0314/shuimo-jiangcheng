@@ -11,12 +11,13 @@
   const VIEWS = {
     home:    { pos: { x: 440, y: 650, z: 1180 }, target: { x: 250, y: 0, z: -130 } },
     core:    orbit(geo(114.2855, 30.5528), 32, 440, 22, 30),
-    tower:   orbit(AT.tower, terrainTop(AT.tower.x, AT.tower.z) + 13, 100, -22, 11),
+    tower:   orbit(AT.tower, terrainTop(AT.tower.x, AT.tower.z) + 13, 100, -68, 11),
     bridge:  orbit(AT.bridge, 6.2, 174, 121, 18),
     qc:      orbit(AT.qc, terrainTop(AT.qc.x, AT.qc.z) + 7, 112, 82, 19),
     tv:      orbit(AT.tv, 82, 350, 104, 10),
     customs: orbit(AT.customs, 18, 115, 92, 17),
     wuda:    orbit(wudaAt, terrainTop(wudaAt.x, wudaAt.z) + 6, 112, 8, 19),
+    xingyin:  orbit(AT.xingyin, terrainTop(AT.xingyin.x, AT.xingyin.z) + 5, 68, 22, 17),
     lake:    orbit(lakeC, 3, 560, 14, 25),
     chutian: orbit(AT.chutian, terrainTop(AT.chutian.x, AT.chutian.z) + 14, 155, 22, 19),
     hongshan:   orbit(AT.hongshan, terrainTop(AT.hongshan.x, AT.hongshan.z) + 11, 125, 18, 18),
@@ -36,6 +37,7 @@
     tv:      ['龟山电视塔', '塔身二百二十一点二米，海拔三百一十一点四米，一九八五年建成，中国第一座自行设计施工的电视塔，人称「亚洲桅杆」。'],
     customs: ['江汉关', '一九二四年落成，主楼四层、钟楼五层，通高四十五点八五米，文艺复兴式样，钟面直径四米。正门朝东，面对长江。'],
     wuda:    ['武大 · 老斋舍', '一九三一年落成，依狮子山南坡而建，三座罗马券拱门连起四栋斋舍，门上是歇山亭楼，绿琉璃瓦掩在樱花里。'],
+    xingyin:  ['东湖 · 行吟阁', '行吟阁立于听涛景区湖畔。三重攒尖顶下，屈原像面湖而立，荷风桥连接岸边游径。'],
     lake:    ['东湖', '中国最大的城中湖，水域约三十三平方公里，绿道一百零五公里。磨山三面环水，自南岸伸入湖中。'],
     chutian: ['东湖 · 楚天台', '立于磨山之巅，按楚国「章华台」形制而建，外五层内六层，高三十六米，台前三百四十五级石阶，顶置青铜凤标。'],
     hongshan:   ['洪山宝塔 · 宝通禅寺', '宝通禅寺依洪山南坡层层而上，为武汉四大丛林之一。寺后洪山宝塔始建于元代，八面七级，砖石仿木。'],
@@ -79,7 +81,7 @@
       const point = new THREE.Vector3(x, y, z).applyMatrix4(bridge.matrixWorld);
       bridgeCorners.push(new THREE.Box3(point, point));
     }
-  const isFramed = key => layout.compact || ['core', 'tower', 'bridge'].includes(key);
+  const isFramed = key => layout.compact || (key !== 'home' && key !== 'lake');
   function viewFor(key) {
     // 竖屏沿龟蛇两山的轴线取景，让地标前后展开。
     let base = VIEWS[key];
@@ -111,7 +113,7 @@
     // 消除上一次手势的惯性，防止它与新镜头竞争。
     controls.enableDamping = false; controls.update(); controls.enableDamping = !reduce;
     activeView = key; cameraMode = 'preset';
-    const navKey = key === 'chutian' ? 'lake' : key;
+    const navKey = ['chutian','xingyin'].includes(key) ? 'lake' : key;
     buttons.forEach(b => b.setAttribute('aria-pressed', String(b.dataset.view === navKey)));
     cardTitle.textContent = COPY[key][0]; cardText.textContent = COPY[key][1];
     refreshLayout(false);
@@ -119,6 +121,40 @@
     if (layout.compact) buttons.find(b => b.dataset.view === navKey).scrollIntoView({ block: 'nearest', inline: 'nearest' });
   }
   buttons.forEach(b => b.addEventListener('click', () => flyTo(b.dataset.view)));
+  const atlas = document.getElementById('atlas'), atlasSite = document.getElementById('atlas-site');
+  const atlasPlate = document.getElementById('atlas-plate'), detailButton = document.getElementById('atlas-detail');
+  const atlasTrigger = document.getElementById('atlas-open');
+  const details = { tower: ['tower-plaque','看西面匾额'], bridge: ['bridge-detail','看桥头与桁架'] };
+  function atlasView(key) { return key === 'lake' ? 'xingyin' : key; }
+  for (const key of Object.keys(LANDMARK_PLATES)) {
+    if (COPY[atlasView(key)]) atlasSite.add(new Option(COPY[atlasView(key)][0], key));
+  }
+  function showPlate(detail = false) {
+    const key = atlasSite.value, entry = details[key];
+    const selected = detail && entry;
+    atlasPlate.alt = COPY[atlasView(key)][0] + (selected ? ' · ' + entry[1].slice(1) : ' · 建筑全貌');
+    atlasPlate.src = 'data:image/jpeg;base64,' + LANDMARK_PLATES[selected ? entry[0] : key];
+    detailButton.hidden = !entry;
+    detailButton.textContent = selected ? '看全貌' : entry ? entry[1] : '';
+    detailButton.setAttribute('aria-pressed', String(Boolean(selected)));
+  }
+  atlasTrigger.addEventListener('click', () => {
+    atlasSite.value = activeView === 'xingyin' ? 'lake' : LANDMARK_PLATES[activeView] ? activeView : 'tower';
+    showPlate();
+    atlas.showModal();
+  });
+  atlasSite.addEventListener('change', () => showPlate());
+  detailButton.addEventListener('click', () => showPlate(detailButton.getAttribute('aria-pressed') !== 'true'));
+  document.getElementById('atlas-close').addEventListener('click', () => atlas.close());
+  document.getElementById('atlas-locate').addEventListener('click', () => { atlas.close(); flyTo(atlasView(atlasSite.value)); });
+  atlas.addEventListener('close', () => {
+    if (!atlas.open && app.state === 'ready') atlasTrigger.focus({ preventScroll: true });
+  });
+  atlas.addEventListener('click', event => { if (event.target === atlas) {
+    const rect = atlas.getBoundingClientRect();
+    if (event.clientX < rect.left || event.clientX > rect.right || event.clientY < rect.top || event.clientY > rect.bottom) atlas.close();
+  } });
+  app.cleanups.push(() => { if (atlas.open) atlas.close(); });
   controls.addEventListener('start', () => { stopFlight(); cameraMode = 'manual'; });
   motionPreference.addEventListener('change', event => {
     reduce = event.matches;

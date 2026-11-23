@@ -26,11 +26,11 @@
     /* 地标竖牌 */
     const markBox = document.getElementById('marks');
     // 竖牌挂在模型包围盒顶上 5 个单位——山高改自实测后，写死的高度会插进楼里。
-    // 一级七处全城可见；二级七处只在推近后浮现，免得全城视角挤成一片
+    // 一级地标全城可见；二级地标只在推近后浮现，免得全城视角挤成一片
     const FAR = { 1: [1500, 2100], 2: [650, 950] };
     const MARKS = [
       ['黄鹤楼', 'tower', tower, 1], ['长江大桥', 'bridge', bridge, 1], ['晴川阁', 'qc', qc, 1], ['龟山电视塔', 'tv', tv, 1],
-      ['江汉关', 'customs', customs, 1], ['武大樱园', 'wuda', wuda, 1], ['楚天台', 'chutian', chutian, 1],
+      ['江汉关', 'customs', customs, 1], ['武大樱园', 'wuda', wuda, 1], ['楚天台', 'chutian', chutian, 1], ['行吟阁', 'xingyin', xingyin, 2],
       ['洪山宝塔', 'hongshan', hongshan, 2], ['汉口水塔', 'watertower', watertower, 2], ['省博物馆', 'museum', museum, 2],
       ['红楼', 'honglou', honglou, 2], ['鹦鹉洲大桥', 'yingwuzhou', yingwuzhou, 2], ['归元寺', 'guiyuan', guiyuan, 2], ['古琴台', 'qintai', qintai, 2]
     ].map(m => {
@@ -47,7 +47,7 @@
     function setMarkVisibility(mark, visible, opacity) {
       const interactive = visible && !entering;
       if (!interactive && document.activeElement === mark.el) {
-        const key = mark.key === 'chutian' ? 'lake' : mark.key;
+        const key = ['chutian','xingyin'].includes(mark.key) ? 'lake' : mark.key;
         const button = buttons.find(b => b.dataset.view === key);
         if (button) {
           button.focus({ preventScroll: true });
