@@ -6,7 +6,7 @@
 图上方位依实测经纬度排布，水平一比一，山与楼塔竖向约放大五倍，使其在全城视角下仍可辨认。
 
 默认从「两江 · 龟蛇锁大江」进入，以龟蛇两山、大桥和黄鹤楼为构图中心；「全城」仍可查看所有地标。
-黄鹤楼与武汉长江大桥采用 Blender 网格。点「黄鹤楼」可看五层金瓦、朱柱回廊与金字匾；点「大桥」可沿侧前方看九跨钢桁梁和桥头堡。两江沿岸铺有里分、洋行、仓房、住宅与塔楼，街坊布局采用画意概括。前一版构图的同尺寸对照见[历史视觉样板](docs/visual-study.md)。
+图上的 15 处景点各有一套 Blender 模型。点「建筑图录」可看各自的相机渲染，再从图录定位到地图。黄鹤楼另有西面匾额特写，武汉长江大桥另有桥头堡与桁架特写。两江沿岸铺有里分、洋行、仓房、住宅与塔楼。前一版构图的同尺寸对照见[历史视觉样板](docs/visual-study.md)。
 
 ## 构建
 
@@ -52,7 +52,8 @@ src/
   geodata.gen.js     由 tools/geodata/extract.py 生成的河道、湖、山数据（勿手改；拼在 01-core.js 之前）
   01-core.js         经纬度投影、水墨 Shader、几何累加器、通用构件
   architecture.gen.js  Blender 导出的顶点、索引和天空可见度，供 build.sh 内嵌
-  02-landmarks.js    读取地标模型，构建其余景点
+  architecture-plates.gen.js  由同次渲染生成，包含建筑图录和两个细部镜头的 JPEG
+  02-landmarks.js    加载景点网格与材质，构建江上舟船
   03-terrain.js      两江河道、湖、山体（读 geodata.gen.js）与由此推出的三镇陆块、水纹图与江面 Shader
   04-scene.js        景点落位、草木、市廛、舟船、飞鸟、烟波
   05-layout.js       紧凑面板、可用画幅与包围盒取景
@@ -78,11 +79,11 @@ import runpy
 runpy.run_path("/path/to/shuimo-jiangcheng/tools/blender/build.py", run_name="__main__")
 ```
 
-脚本在临时场景里创建楼层、屋面、栏杆、钢桁架和桥墩等可编辑网格，输出 `output/architecture/tower.blend`、`bridge.blend` 及独立相机渲染（`tower.png`、`bridge.png`、`bridge-detail.png`）。工程按构件保留对象。网页以 `tower.py`、`bridge.py`、`neighborhood.py` 为几何源，材质按用途合并；导出时把檐下及廊内的遮蔽烘成顶点属性。运行 `npm run build` 可把模型数据编入单文件地图。
+脚本在临时场景里分别创建 15 个景点，按构件保留可编辑对象，输出到 `output/architecture/<景点键>.blend` 和同名 PNG。黄鹤楼与武汉长江大桥还带有独立的细部相机，以及 `tower-plaque.png` 和 `bridge-detail.png`。景点与建模参考见[建筑图录](docs/landmark-atlas.md)。网页的几何与图录来自同一批模型，导出时按材质合并图元并烘焙天空遮蔽。运行 `npm run build` 重新生成单文件地图。
 
 黄鹤楼的四面凸廊、五层金瓦和六十翘角参考[武昌区主楼介绍](https://www.wuchang.gov.cn/sghjjrfwz/bjww/202307/t20230704_2226374.html)。桥头堡的通高拱窗、低重檐与红珠顶饰参考[武汉市修缮实景](https://www.wuhan.gov.cn/sy/whyw/202212/t20221212_2114209.shtml)。建筑沿用地图用的夸张比例，街坊由五种原型组合，市区并非逐栋测绘。
 
-### 编辑整座核心城区
+### 编辑全城场景
 
 先构建地图，再用已安装的 Playwright WebKit 从实际网页采集地形、岸线、街道与建筑变换。
 
@@ -91,7 +92,7 @@ npm run build
 node tools/blender/capture-city.cjs
 ```
 
-使用同一 Blender MCP 调用运行 `tools/blender/city.py`，生成 `output/architecture/city.blend` 与 1800 × 1080 的 `city.png`。从工程的「武汉街坊」集合选择一栋屋舍即可独立移动或旋转，同屋型的实例共享几何。黄鹤楼、长江大桥各有独立构件，两江沿岸的山林、船只、其他地标和灯光也可以分别编辑。浏览器继续使用实时水墨渲染；Blender 工程自带鸟瞰相机和 Cycles 灯光。
+使用同一 Blender MCP 调用运行 `tools/blender/city.py`，生成 `output/architecture/city.blend`、两江近景 `city.png` 和覆盖十五处景点的 `city-wide.png`。从工程的「武汉街坊」集合选择一栋屋舍即可独立移动或旋转，同屋型的实例共享几何。十五处建筑均按景点分集合，山林、船只和灯光也可分别编辑。浏览器继续使用实时水墨渲染；Blender 工程自带鸟瞰相机和 Cycles 灯光。
 
 ## 坐标系统
 
@@ -112,6 +113,7 @@ node tools/blender/capture-city.cjs
 | 宝通禅寺 · 洪山宝塔 | 114.33497 | 30.53454 | Nominatim |
 | 武大老斋舍 | 114.36250 | 30.53950 | 维基百科 |
 | 湖北省博物馆 | 114.35973 | 30.56374 | OSM |
+| 东湖听涛 · 行吟阁 | 114.37112 | 30.56733 | OSM 建筑轮廓中心 |
 | 东湖磨山 · 楚天台 | 114.40500 | 30.55450 | 原纬度 30.5445 为笔误；与 DEM 实测磨山峰顶相距约 45 米 |
 
 长江与汉水的中泓线、半宽，以及各湖岸线，均由 Copernicus GLO-30 的水体掩膜提取：

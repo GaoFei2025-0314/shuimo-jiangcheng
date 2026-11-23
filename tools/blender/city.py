@@ -16,12 +16,11 @@ HERE = Path(__file__).resolve().parent
 OUT = HERE.parents[1] / "output" / "architecture"
 sys.dont_write_bytecode = True
 sys.path.insert(0, str(HERE))
-import bridge
+import landmarks
 import mesh
 import neighborhood
-import tower
 
-for module in (mesh, bridge, tower, neighborhood):
+for module in (mesh, landmarks, neighborhood):
     importlib.reload(module)
 
 AXES = Matrix.Rotation(math.pi / 2, 4, 'X')  # Three Y-up to Blender Z-up.
@@ -117,7 +116,7 @@ def city_blocks(scene, captured, streets):
 
 def main_landmark(scene, key, data, dest):
     before = set(scene.objects)
-    (tower if key == "tower" else bridge).build()
+    landmarks.BUILDERS[key]()
     parts = set(scene.objects) - before
     root = bpy.data.objects.new(data["name"], None)
     dest.objects.link(root)
@@ -192,6 +191,21 @@ def lighting(scene, camera_group):
     scene.render.resolution_percentage = 100
     scene.render.image_settings.file_format = 'PNG'
     scene.render.filepath = "//city.png"
+    # Preserve the intimate two-river opening and add a lens spanning all visitable sites.
+    overview = cam.copy()
+    overview.data = lens.copy()
+    overview.name = overview.data.name = "全城十五景"
+    camera_group.objects.link(overview)
+    rotation = (-Vector((.15, -1, .92)).normalized()).to_track_quat('-Z', 'Y')
+    right, up, back = (rotation @ Vector(v) for v in ((1,0,0), (0,1,0), (0,0,1)))
+    points = [obj.matrix_world @ Vector(corner) for obj in scene.objects if obj.type == "MESH"
+              and obj.parent and obj.parent.type == "EMPTY" for corner in obj.bound_box]
+    ranges = [(min(p.dot(axis) for p in points), max(p.dot(axis) for p in points)) for axis in (right, up, back)]
+    centre = sum((axis*((a+b)/2) for axis,(a,b) in zip((right,up,back),ranges)), Vector())
+    overview.location = centre + back * 1700
+    overview.rotation_euler = rotation.to_euler()
+    overview.data.ortho_scale = max(ranges[0][1]-ranges[0][0], (ranges[1][1]-ranges[1][0])*5/3)*1.16
+    return overview
 
 
 def build():
@@ -216,13 +230,16 @@ def build():
             imported_mesh(item, mats[item["material"]], group(item["group"]))
         water(capture["rivers"], mats, group("两江水墨"))
         city_blocks(scene, capture["lots"], group("武汉街坊"))
-        for key in ("tower", "bridge"):
-            record = capture["landmarks"][key]
+        for key, record in capture["landmarks"].items():
             main_landmark(scene, key, record, group(record["name"]))
-        lighting(scene, group("镜头与光"))
+        bpy.context.view_layer.update()
+        overview = lighting(scene, group("镜头与光"))
         bpy.context.view_layer.update()
         mesh.save_project(scene, OUT / "city.blend")
         scene.render.filepath = str(OUT / "city.png")
+        bpy.ops.render.render(write_still=True, scene=scene.name)
+        scene.camera = overview
+        scene.render.filepath = str(OUT / "city-wide.png")
         bpy.ops.render.render(write_still=True, scene=scene.name)
         print(f"Rendered city with {len(scene.objects)} objects and {sum(map(len, capture['lots'].values()))} buildings.")
     finally:

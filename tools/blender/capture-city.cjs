@@ -11,7 +11,6 @@ const out = path.join(root, 'output/architecture');
 function capture() {
   const { scene, HILLS, YZ, HAN } = window.__dbg;
   scene.updateMatrixWorld(true);
-  const within = (x, z) => x > -540 && x < 410 && z > -545 && z < 325;
   const lots = {}, landmarks = {}, meshes = [];
   const boats = scene.children.find(o => o.material?.uniforms?.uBoats).material.uniforms.uBoats.value;
   const pack = array => {
@@ -36,24 +35,17 @@ function capture() {
       for (let i = 0; i < node.count; i++) {
         node.getMatrixAt(i, m);
         m.premultiply(node.matrixWorld);
-        if (within(m.elements[12], m.elements[14])) lots[kind].push(m.toArray());
+        lots[kind].push(m.toArray());
       }
-    } else if (node.userData.focus && node.userData.focus !== 'lake' && within(node.position.x, node.position.z)) {
-      const key = node.userData.focus;
-      landmarks[key] = { name: node.userData.name, matrix: node.matrixWorld.toArray() };
-      if (key === 'tower' || key === 'bridge') continue;
-      node.traverse(child => {
-        if (!child.isMesh || !child.visible || !child.material.visible) return;
-        const m = child.material, tint = m.uniforms?.uPaper?.value;
-        const material = !m.uniforms ? (m.color?.getHex() === 0xece9e0 ? 'Paper' : 'Ink') :
-          (tint?.getHex() === 0x9ba49a ? 'Slate' : 'Masonry');
-        copy(child, node.userData.name, key, material);
-      });
-    } else if (node.isGroup && within(node.position.x, node.position.z) &&
+    } else if (node.userData.modelKey) {
+      landmarks[node.userData.modelKey] = { name: node.userData.name, matrix: node.matrixWorld.toArray() };
+    } else if (node.isGroup &&
                boats.some(p => p.x === node.position.x && p.y === node.position.z)) {
       node.traverse(child => {
         if (child.isMesh) copy(child, '江上舟船', 'River boat', child.material.isShaderMaterial ? 'Boat' : 'Ink');
       });
+    } else if (node.userData.hillTerrace) {
+      copy(node, '山林', node.name, 'Hills');
     } else if (node.name === 'Tower hillside terrace') {
       copy(node, '蛇山', 'Tower hillside terrace', 'Masonry');
     } else if (node.name === 'City streets') {
@@ -65,10 +57,9 @@ function capture() {
     }
   }
   for (const hill of HILLS) {
-    if (within(hill.peak.x, hill.peak.z))
-      copy(hill.mesh, '山林', hill.name || 'River hills', 'Hills');
+    copy(hill.mesh, '山林', hill.name || 'River hills', 'Hills');
   }
-  const rivers = [YZ, HAN].map(river => river.s.filter(s => within(s.p.x, s.p.z))
+  const rivers = [YZ, HAN].map(river => river.s
     .map(s => [s.p.x, -s.p.z, s.d.z, s.d.x, s.w]));
   return { lots, landmarks, meshes, rivers };
 }
@@ -86,7 +77,7 @@ function capture() {
     await page.goto(pathToFileURL(path.join(root, 'dist/index.html')).href + '?debug');
     await page.waitForFunction(() => window.__ready && window.__dbg);
     const city = await page.evaluate(capture);
-    if (Object.keys(city.lots).length !== 5 || !city.landmarks.bridge || !city.landmarks.tower ||
+    if (Object.keys(city.lots).length !== 5 || Object.keys(city.landmarks).length !== 15 || !city.landmarks.lake ||
         city.meshes.filter(m => m.material === 'Land').length !== 3)
       throw new Error('Missing landmarks, districts or banks. Rebuild dist/index.html before capture.');
     fs.mkdirSync(out, { recursive: true });
