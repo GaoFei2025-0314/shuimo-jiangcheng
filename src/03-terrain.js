@@ -86,20 +86,23 @@
   }
   // Continue the bridge surface into the adjacent street grid at their landward ends.
   const bridgeStreetEntries = [
-    { width: 2.55, next: { x: -31.7, z: 27.88 } },
-    { width: 2.30, next: { x: -252.7, z: -20.3 } }
+    { width: 5.12, next: { x: 8, z: 38 } },
+    { width: 4.85, next: { x: -265, z: -22 } }
   ];
   const approachLinks = [
-    [...[[0,-154],[.8,-159],[3.9,-163],[9,-164]].map(([u,s]) => bridgeLocal(u,0,s)),
-      V(-32.22,0,21.34),V(-35.5,0,22.29),V(-37,0,24.10),V(-36.15,0,26.29),V(-33.7,0,27.15)],
-    [[hanyangOffset(154),154],[87.3,159.4],[94.5,163.9],[102.1,167.3],
-      [110,170],[119,172.5],[128,174.7],[136,176]].map(([u,s]) => bridgeLocal(u,0,s))
-  ].map(link => {
-    const controls = link.map(({x,z},i) => {
-      const t = i/(link.length-1), y = THREE.MathUtils.lerp(deckGrade(bridgeDeckEnd),LAND_Y+.058,t);
-      return V(x,y,z);
+    [bridgeLocal(0,0,-154),bridgeLocal(0,0,-158),V(-24.45,0,14.41),V(-22.85,0,17.95),V(-21.38,0,22.60),
+      V(-19.57,0,27.13),V(-18.31,0,30.29),V(-17.16,0,32.42),V(-15.57,0,34.24),
+      V(-13.61,0,35.65),V(-11.38,0,36.59),V(-10.20,0,36.86),V(-9,0,37)],
+    [...[[hanyangOffset(154),154],[87.3,159.4],[94.5,163.9],[102.1,167.3],
+      [110,170],[119,172.5],[128,174.7],[136,176]].map(([u,s]) => bridgeLocal(u,0,s)),
+      V(-252.45,0,-21.19),V(-256.32,0,-20.92),V(-259,0,-21.23)]
+  ].map((controls,side) => {
+    const curve=new THREE.CatmullRomCurve3(controls), count=Math.ceil(curve.getLength()/.66);
+    return curve.getSpacedPoints(count).map((p,i)=>{
+      const t=i/count;
+      return p.setY(THREE.MathUtils.lerp(deckGrade(bridgeDeckEnd),LAND_Y+.068,t)+
+        (side===0?.22:.16)*Math.sin(Math.PI*t)**2);
     });
-    return new THREE.CatmullRomCurve3(controls).getPoints((controls.length-1)*3);
   });
   const approachRoads = [-1,1].map((sign,index) => [
     ...Array.from({length: 83}, (_,i) => {
@@ -112,24 +115,31 @@
     const a = points[i], dx = b.x-a.x, dz = b.z-a.z;
     return { a,b,dx,dz,squared: dx*dx+dz*dz };
   }));
+  for (const [side,{width,next}] of bridgeStreetEntries.entries()) {
+    // Only a narrow strip along the continuing sidewalks needs the urban verge cut.
+    const a=approachLinks[side].at(-1),b=V(next.x,a.y,next.z),dx=b.x-a.x,dz=b.z-a.z;
+    approachSegments.push({a,b,dx,dz,squared:dx*dx+dz*dz,urbanVerge:width/2+1.35});
+  }
   const bridgeRoadBounds = new THREE.Box3().setFromPoints(approachRoads.flat()).expandByScalar(19);
   function roadAt(x,z) {
     if (x < bridgeRoadBounds.min.x || x > bridgeRoadBounds.max.x ||
         z < bridgeRoadBounds.min.z || z > bridgeRoadBounds.max.z) return null;
-    let distanceSquared = 19*19, height;
-    for (const {a,b,dx,dz,squared} of approachSegments) {
+    let distanceSquared = 19*19, height, verge;
+    for (const {a,b,dx,dz,squared,urbanVerge} of approachSegments) {
       const u = THREE.MathUtils.clamp(((x-a.x)*dx+(z-a.z)*dz)/squared,0,1);
       const d = (x-a.x-u*dx)**2 + (z-a.z-u*dz)**2;
       if (d >= distanceSquared) continue;
       distanceSquared = d;
       height = THREE.MathUtils.lerp(a.y,b.y,u);
+      verge = urbanVerge;
     }
-    return height === undefined ? null : { distance: Math.sqrt(distanceSquared), height };
+    return height === undefined ? null : { distance: Math.sqrt(distanceSquared), height, verge };
   }
   function cutForApproach(x,z,y) {
     const road = roadAt(x,z);
     if (!road) return y;
-    const cut = 1-THREE.MathUtils.smoothstep(road.distance, approachHalfWidth+1.5, 15.5);
+    const cut = 1-THREE.MathUtils.smoothstep(road.distance, road.verge ?? approachHalfWidth+1.5,
+      road.verge === undefined ? 15.5 : road.verge+2.25);
     const top = Math.max(LAND_Y-.12, road.height-.36);
     return y-Math.max(0,y-top)*cut;
   }

@@ -178,7 +178,7 @@ test('both approach carriageways stay above the terrain through the bridgeheads 
   const failures = await page.evaluate(() => {
     const { scene, approachRoads, plantingSurface } = window.__dbg;
     const bridge = scene.children.find(node => node.userData.modelKey === 'bridge');
-    const connectors = scene.children.filter(node => node.userData.landscapeSurface?.group === '武汉长江大桥');
+    const connectors = ['武昌','汉阳'].map(bank => scene.getObjectByName(bank+'引道 · 接地铺装'));
     const roads = [...bridge.children, ...connectors];
     const ray = new THREE.Raycaster(), down = new THREE.Vector3(0, -1, 0);
     ray.far = .85;
@@ -188,9 +188,10 @@ test('both approach carriageways stay above the terrain through the bridgeheads 
         const before = approach[i-1], at = approach[i], after = approach[i+1];
         const dx = after.x - before.x, dz = after.z - before.z, length = Math.hypot(dx,dz);
         let edge = 3.85;
-        if (i >= 82) {
-          const positions = connectors[bank].geometry.attributes.position;
-          const j = (i - 82) * 2;
+        const positions = connectors[bank].geometry.attributes.position;
+        const first = approach.length - positions.count/2;
+        if (i >= first) {
+          const j = (i - first) * 2;
           // The approach tapers into the narrower city street. Check its actual edges.
           edge = .46 * Math.hypot(positions.getX(j) - positions.getX(j+1), positions.getZ(j) - positions.getZ(j+1));
         }
@@ -207,6 +208,83 @@ test('both approach carriageways stay above the terrain through the bridgeheads 
     return bad;
   });
   expect(failures).toEqual([]);
+});
+
+test('both riverbanks have continuous paved streets between the two bridge junctions', async ({ page }) => {
+  await page.goto('/?debug');
+  await page.waitForFunction(() => window.__ready && window.__dbg);
+  const failures = await page.evaluate(() => {
+    const { scene, cityGround, plantingSurface, onLand } = window.__dbg;
+    const ray = new THREE.Raycaster(), down = new THREE.Vector3(0,-1,0);
+    const material = new THREE.MeshBasicMaterial({side:THREE.DoubleSide});
+    const failures = [];
+    for (const [bank, street] of [['汉阳','汉阳桥头至翠微巷'],['武昌','蛇山脚坡街与首义街口']]) {
+      const name = bank+'桥间街道';
+      const path = cityGround.streets.filter(segment => segment.name === name);
+      const pavement = new THREE.Mesh(scene.getObjectByName(name).geometry, material);
+      const touches = (a,b) => Math.hypot(a.x-b.x,a.z-b.z) < .015;
+      const branch = cityGround.streets.filter(segment => segment.name === bank+'桥头横街');
+      const main = cityGround.streets.filter(segment => segment.name === street);
+      if (!path.length || !branch.some(s=>touches(s.b,path[0].a)) ||
+          !main.some(s=>touches(s.a,path.at(-1).b) || touches(s.b,path.at(-1).b))) {
+        failures.push({bank, reason:'bridge junction disconnected'});
+        continue;
+      }
+      for (const [i,{a,b,width}] of path.entries()) {
+        if (i && !touches(a,path[i-1].b)) failures.push({bank,i,reason:'missing segment'});
+        const length = Math.hypot(b.x-a.x,b.z-a.z);
+        for (const offset of [-.42,0,.42]) {
+          const x = (a.x+b.x)/2+offset*width*(b.z-a.z)/length;
+          const z = (a.z+b.z)/2-offset*width*(b.x-a.x)/length;
+          ray.set(new THREE.Vector3(x,65,z), down);
+          const hit = ray.intersectObject(pavement)[0];
+          if (!onLand(x,z) || !hit || hit.point.y <= plantingSurface(x,z) ||
+              cityGround.occupied(x,z,0)) failures.push({bank,i,offset,reason:'unusable carriageway'});
+        }
+      }
+      // Check the two sides of the deck joint against the actual rendered asphalt.
+      const group = scene.children.find(o => o.userData.modelKey === 'yingwuzhou');
+      const approach = scene.getObjectByName('鹦鹉洲'+bank+'引道 · 车行面');
+      const sign = bank === '汉阳' ? -1 : 1;
+      for (const lane of [-4,4]) {
+        const heights = [.04,-.04].map(inset => {
+          const origin = group.localToWorld(new THREE.Vector3(lane,25,sign*(100-inset)));
+          ray.set(origin,down);
+          return ray.intersectObjects(inset>0 ? group.children : [approach],true)[0]?.point.y;
+        });
+        if (!heights.every(Number.isFinite) || Math.abs(heights[0]-heights[1])>.025)
+          failures.push({bank,lane,heights,reason:'open bridge seam'});
+      }
+    }
+    material.dispose();
+    return failures;
+  });
+  expect(failures).toEqual([]);
+});
+
+test('the Wuhan bridge sidewalks clear the hillside all the way into the receiving streets', async ({ page }) => {
+  await page.goto('/?debug');
+  await page.waitForFunction(() => window.__ready && window.__dbg);
+  const buried = await page.evaluate(() => {
+    const { scene, plantingSurface } = window.__dbg;
+    const missing = [];
+    for (const bank of ['武昌','汉阳']) for (const side of ['左','右']) {
+      const name = bank+'引道 · '+side+'侧连续步道';
+      const mesh = scene.getObjectByName(name);
+      const {position} = mesh.geometry.attributes, index = mesh.geometry.index;
+      const [a,b,c] = Array.from({length:3}, () => new THREE.Vector3());
+      const face = new THREE.Triangle(a,b,c), normal = new THREE.Vector3(), center = new THREE.Vector3();
+      for (let i=0; i<index.count; i+=3) {
+        for (const [j,point] of [a,b,c].entries()) point.fromBufferAttribute(position,index.getX(i+j));
+        if (Math.abs(face.getNormal(normal).y)<.85) continue;
+        face.getMidpoint(center);
+        const grade = plantingSurface(center.x,center.z);
+        if (grade == null || center.y < grade-.015) missing.push({name,i,grade,y:center.y});
+      }
+    }
+    return missing;
+  });
+  expect(buried).toEqual([]);
 });
 
 test('the East Lake greenway follows land around the full lake', async ({ page }) => {

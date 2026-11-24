@@ -55,7 +55,8 @@ src/
   architecture-plates.gen.js  由同次渲染生成，包含建筑图录和两个细部镜头的 JPEG
   02-landmarks.js    加载景点网格与材质，构建江上舟船
   03-terrain.js      两江河道、湖、山体（读 geodata.gen.js）与由此推出的三镇陆块、水纹图与江面 Shader
-  04-districts.js    三镇街廊、街旁房舍与景点连接线
+  04-bridge-roads.js 两桥共用的桥面设色、鹦鹉洲大桥两岸引道与桥头街坊
+  04-districts.js    三镇街廊、连接两桥的岸上道路、街旁房舍与景点连接线
   04-landmark-grounds.js  听涛两桥、北馆前庭与蛇山登楼石阶
   04-scene.js        景点落位、山顶台地、街区与道路、舟船、飞鸟、烟波
   04-tower-park.js   黄鹤楼公园西区的台地、池院、建筑与山脚园路

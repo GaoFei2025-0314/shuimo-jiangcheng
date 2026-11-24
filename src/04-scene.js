@@ -12,45 +12,133 @@
   // 大桥轴线：武昌蛇山头 → 汉阳龟山东麓
   const bridge  = place(builtLandmark('bridge'), AT.bridge, bridgeScale, bridgeAngle, '武汉长江大桥', 'bridge', 0);
   bridge.scale.z = bridgeScale * bridgeLengthRatio;
+  const wuhanApproachFeatures = [];
   {
-    const material = inkMat(.36, false, ['#827d70', '#d6cfb8']);
-    material.uniforms.deckInk = { value: new THREE.Color('#646961') };
-    material.uniforms.deckPaper = { value: new THREE.Color('#ada99b') };
-    material.vertexShader = 'attribute float deckPigment; varying float vDeckPigment;\n'+material.vertexShader
-      .replace('vW = w.xyz;', 'vDeckPigment = deckPigment; vW = w.xyz;');
-    material.fragmentShader = 'varying float vDeckPigment; uniform vec3 deckInk, deckPaper;\n'+material.fragmentShader
-      .replace('1., uTone),', '1., mix(uTone, .04, vDeckPigment)),')
-      .replace('vec3 col = mix(uInk, uPaper, tone);',
-        'vec3 col = mix(mix(uInk, uPaper, tone), mix(deckInk, deckPaper, tone), vDeckPigment);');
+    const carriageMaterial=approachPaving.clone();
+    carriageMaterial.uniforms=approachPaving.uniforms;
+    // Begin with the baked deck's slope lighting, then ease into the city pavement wash.
+    const deckLightVaryings='varying float vJointSky; varying vec3 vJointNormal;\n';
+    carriageMaterial.vertexShader='attribute float jointSky; attribute vec3 jointNormal;\n'+deckLightVaryings+
+      carriageMaterial.vertexShader.replace('vDeckPigment = deckPigment;',
+        'vJointSky = jointSky; vJointNormal = jointNormal; vDeckPigment = deckPigment;');
+    carriageMaterial.fragmentShader=deckLightVaryings+carriageMaterial.fragmentShader
+      .replace('vec3 n = normalize(vN);','vec3 n = normalize(mix(vN, vJointNormal, smoothstep(.83,1.,vDeckPigment)));')
+      .replace('mix(deckInk, deckPaper, tone),','mix(deckInk, deckPaper, tone) * mix(.62,1.,vJointSky),');
+    const sidewalkMaterial=inkMat(.35,false,['#7d796a','#cfc5af']);
+    const paintedMaterial=inkMat(.62,false,['#b6a891','#e9dcbf']);
+    const carriageHalf=(5.47-1.14/2)*bridgeScale, sidewalkWidth=1.14*bridgeScale;
+    const details=[];
+    function addPaving(name, key, mat, positions, indices, detail=false, pigment) {
+      const geometry=new THREE.BufferGeometry();
+      geometry.setAttribute('position',new THREE.Float32BufferAttribute(positions.flatMap(p=>p.toArray()),3));
+      if (pigment) geometry.setAttribute('deckPigment',new THREE.Float32BufferAttribute(pigment,1));
+      geometry.setIndex(indices);
+      geometry.computeVertexNormals();
+      const mesh=new THREE.Mesh(geometry,mat);
+      mesh.name=name;
+      mesh.userData.landscapeSurface={group:detail?'武汉长江大桥 · 步行与标线':'武汉长江大桥',name,material:key};
+      if (detail) details.push(mesh); else scene.add(mesh);
+      return mesh;
+    }
+    const offset=(point,normal,dx,y=0)=>point.clone().addScaledVector(normal,dx).setY(point.y+y);
+    function section(p,a,b,half,walk,curb) {
+      const normal=V(b.z-a.z,0,a.x-b.x).normalize();
+      const edges=[-1,1].map(s=>{
+        const road=offset(p,normal,s*half), inner=road.clone().setY(road.y+curb);
+        const outer=offset(p,normal,s*(half+walk),curb);
+        return {road,inner,outer};
+      });
+      return {center:p,normal,half,edges};
+    }
+    bridge.updateMatrixWorld(true);
+    const bakedDeck=bridge.children.find(node=>node.material===architectureMaterials.deck);
+    const deckPositions=bakedDeck.geometry.getAttribute('position'), deckNormals=bakedDeck.geometry.getAttribute('normal');
+    const deckSky=bakedDeck.geometry.getAttribute('skyVisibility'), deckBasis=new THREE.Matrix3().getNormalMatrix(bakedDeck.matrixWorld);
+    function deckLight(row) {
+      const crosses=[];
+      const forward=V(-row.normal.z,0,row.normal.x);
+      for (let i=0;i<deckPositions.count;i++) {
+        const point=V(0,0,0).fromBufferAttribute(deckPositions,i).applyMatrix4(bakedDeck.matrixWorld).sub(row.center);
+        if (Math.abs(point.y)>.014 || Math.abs(point.dot(forward))>.025) continue;
+        const normal=V(0,0,0).fromBufferAttribute(deckNormals,i).applyNormalMatrix(deckBasis);
+        if (normal.y<.80) continue;
+        crosses.push({offset:point.dot(row.normal),normal,sky:deckSky.getX(i)/255});
+      }
+      crosses.sort((a,b)=>a.offset-b.offset);
+      const a=crosses[0], b=crosses.at(-1);
+      if (!a || b.offset-a.offset<1) return row.edges.map(()=>({normal:V(0,1,0),sky:.52}));
+      return row.edges.map((_,i)=>{
+        const fraction=THREE.MathUtils.clamp(((i===0?-row.half:row.half)-a.offset)/(b.offset-a.offset),0,1);
+        return {normal:a.normal.clone().lerp(b.normal,fraction).normalize(),sky:THREE.MathUtils.lerp(a.sky,b.sky,fraction)};
+      });
+    }
     for (const [side, rows] of approachLinks.entries()) {
       const { width, next } = bridgeStreetEntries[side];
-      const vertices = [], indices = [], pigment = [];
-      for (let i = 0; i < rows.length; i++) {
-        const p = rows[i];
+      const label=side===0?'武昌引道':'汉阳引道';
+      const stations=rows.map((p,i)=>{
         const a = i === 0 ? approachRoads[side][bridgeDeckEnd-73] : (i === rows.length-1 ? p : rows[i-1]);
         const b = i === 0 ? rows[0] : rows[i+1] || next;
-        const dx = b.x-a.x, dz = b.z-a.z, length = Math.hypot(dx,dz);
         const t = i/(rows.length-1);
-        const narrowing = THREE.MathUtils.smoothstep(t,0,side === 0 ? .57 : .76);
-        const half = THREE.MathUtils.lerp(approachHalfWidth, width/2, narrowing);
-        for (const direction of [-1,1]) {
-          vertices.push(p.x+direction*dz/length*half, p.y, p.z-direction*dx/length*half);
-          pigment.push(1-THREE.MathUtils.smoothstep(t,.04,.77));
-        }
+        const narrowing = THREE.MathUtils.smoothstep(t,.08,.92);
+        return section(p,a,b,THREE.MathUtils.lerp(carriageHalf,width/2,narrowing),
+          THREE.MathUtils.lerp(sidewalkWidth,1.03,narrowing),THREE.MathUtils.lerp(.18*bridgeScale,.073,narrowing));
+      });
+      const roadPoints=[], roadFaces=[], pigment=[];
+      for (const [i,row] of stations.entries()) {
+        const t=i/(stations.length-1), ink=1-THREE.MathUtils.smoothstep(t,.03,.94);
+        roadPoints.push(...row.edges.map(edge=>edge.road));
+        pigment.push(ink,ink);
         if (i) {
           const k = i*2;
-          indices.push(k-2,k,k-1,k-1,k,k+1);
+          roadFaces.push(k-2,k,k-1,k-1,k,k+1);
         }
       }
-      const geometry = new THREE.BufferGeometry();
-      geometry.setAttribute('position', new THREE.Float32BufferAttribute(vertices,3));
-      geometry.setAttribute('deckPigment', new THREE.Float32BufferAttribute(pigment,1));
-      geometry.setIndex(indices); geometry.computeVertexNormals();
-      const road = new THREE.Mesh(geometry, material);
-      road.name = side === 0 ? '武昌引道 · 接地铺装' : '汉阳引道 · 接地铺装';
-      road.userData.landscapeSurface = { group: '武汉长江大桥', name: road.name, material: 'ApproachPaving' };
-      scene.add(road);
+      const road=addPaving(label+' · 接地铺装','ApproachPaving',carriageMaterial,roadPoints,roadFaces,false,pigment);
+      const joint=deckLight(stations[0]), sky=[], normal=[];
+      for (const station of stations) for (const light of joint) {
+        sky.push(light.sky);
+        normal.push(...light.normal.toArray());
+      }
+      road.geometry.setAttribute('jointSky',new THREE.Float32BufferAttribute(sky,1));
+      road.geometry.setAttribute('jointNormal',new THREE.Float32BufferAttribute(normal,3));
+      const end=stations.at(-1).center;
+      const streetLength=Math.hypot(next.x-end.x,next.z-end.z), links=Math.ceil(streetLength/.64);
+      const walks=stations.concat(Array.from({length:links},(_,i)=>{
+        const t=(i+1)/links, p=V(THREE.MathUtils.lerp(end.x,next.x,t),0,THREE.MathUtils.lerp(end.z,next.z,t));
+        p.y=THREE.MathUtils.lerp(end.y,(plantingSurface(p.x,p.z) ?? LAND_Y)+.068,t);
+        return section(p,end,next,width/2,THREE.MathUtils.lerp(1.03,.74,THREE.MathUtils.smoothstep(t,.58,1)),
+          THREE.MathUtils.lerp(.073,.026,THREE.MathUtils.smoothstep(t,.33,1)));
+      }));
+      const sidewalks=walks[0].edges.map((_,bank)=>{
+        const points=[], indices=[];
+        for (const [i,row] of walks.entries()) {
+          const {road,inner,outer}=row.edges[bank];
+          const bottom=Math.min(outer.y-.12,(plantingSurface(outer.x,outer.z) ?? LAND_Y)-.035);
+          points.push(road,inner,outer,outer.clone().setY(bottom));
+          if (!i) continue;
+          for (let j=0;j<3;j++) {
+            const a=(i-1)*4+j,b=i*4+j;
+            indices.push(...(bank ? [a,b,a+1,a+1,b,b+1] : [a,a+1,b,a+1,b+1,b]));
+          }
+        }
+        return addPaving(label+' · '+(bank===0?'左':'右')+'侧连续步道','BankStone',sidewalkMaterial,points,indices,true);
+      });
+      const marks=[], markFaces=[];
+      for (const [i,b] of stations.slice(1).entries()) {
+        const a=stations[i],t=i/(stations.length-1),fade=1-THREE.MathUtils.smoothstep(t,.20,.68);
+        if (fade<.07) continue;
+        const stripes=t<.33 && i%6<2 ? [-.50,0,.50] : t<.43 || i%6<3 ? [0] : [];
+        for (const f of stripes) {
+          const k=marks.length,h=.031*fade;
+          for (const row of [a,b]) marks.push(offset(row.center,row.normal,f*row.half-h,.016),
+            offset(row.center,row.normal,f*row.half+h,.016));
+          markFaces.push(k,k+2,k+1,k+1,k+2,k+3);
+        }
+      }
+      const markings=addPaving(label+' · 延续车道标线','RoadPaint',paintedMaterial,marks,markFaces,true);
+      wuhanApproachFeatures.push({side,road,sidewalks,markings,stations,walkStations:walks});
     }
+    scene.add(...details);
   }
   const tower   = place(builtLandmark('tower'), AT.tower, .88, .18, '黄鹤楼', 'tower');
   summitGround(tower, 12.1, 17.4, 17.4, 13.5, -.78);
@@ -422,7 +510,21 @@
     const oldTown = ['lane', 'lane', 'arcade', 'apartment'];
     const port = ['wharf', 'wharf', 'lane', 'arcade'];
     const suburbs = ['lane', 'apartment', 'apartment'];
-    function districtRoute({ name, group, points, width, material = 'Path', terrace = false, earthy = false, connect = false, gradeStart = null, entryHeight = null, plain = false }) {
+    function reservePath(path, registerStreet = true) {
+      if (registerStreet) cityGround.streets.push(path);
+      const reserve = path.width/2+8;
+      const x0 = Math.floor((Math.min(path.a.x,path.b.x)-reserve)/cellSize);
+      const x1 = Math.floor((Math.max(path.a.x,path.b.x)+reserve)/cellSize);
+      const z0 = Math.floor((Math.min(path.a.z,path.b.z)-reserve)/cellSize);
+      const z1 = Math.floor((Math.max(path.a.z,path.b.z)+reserve)/cellSize);
+      for (let x=x0; x<=x1; x++) for (let z=z0; z<=z1; z++) {
+        const key = x+','+z;
+        if (!protectedPaths.has(key)) protectedPaths.set(key,[]);
+        protectedPaths.get(key).push(path);
+      }
+    }
+
+    function districtRoute({ name, group, points, width, material = 'Path', terrace = false, earthy = false, connect = false, gradeStart = null, entryHeight = null, plain = false, surfaceLift = 0, junctionLift = 0 }) {
       const vertices = [], indices = [];
       const rows = [];
       for (let i = 0; i < points.length-1; i++) {
@@ -440,10 +542,11 @@
         return [-1,0,1].map(side => {
           const x = p.x+side*dz/length*width/2, z = p.z-side*dx/length*width/2;
           const floor = plantingSurface(x,z);
-          const surface = (floor ?? 0)+(terrace ? .112 : .068);
+          const surface = (floor ?? 0)+(terrace ? .112 : .068)+surfaceLift*Math.min(i/3,1);
           const u = i/(rows.length-1);
           let height = gradeStart === null ? surface : THREE.MathUtils.lerp(gradeStart,surface,u);
           if (i === 0 && entryHeight !== null) height = entryHeight;
+          if (junctionLift) height += junctionLift * (1-THREE.MathUtils.smoothstep(Math.min(i, rows.length-1-i), 3, 8));
           return [x, height, z];
         });
       });
@@ -461,17 +564,7 @@
         }
         if (active) {
           const path = { a: rows[i], b: rows[i+1], width, group, name };
-          cityGround.streets.push(path);
-          const reserve = width/2+8;
-          const x0 = Math.floor((Math.min(path.a.x,path.b.x)-reserve)/cellSize);
-          const x1 = Math.floor((Math.max(path.a.x,path.b.x)+reserve)/cellSize);
-          const z0 = Math.floor((Math.min(path.a.z,path.b.z)-reserve)/cellSize);
-          const z1 = Math.floor((Math.max(path.a.z,path.b.z)+reserve)/cellSize);
-          for (let x=x0; x<=x1; x++) for (let z=z0; z<=z1; z++) {
-            const key = x+','+z;
-            if (!protectedPaths.has(key)) protectedPaths.set(key,[]);
-            protectedPaths.get(key).push(path);
-          }
+          reservePath(path);
           if (gradeStart !== null) {
             // Two embedded embankment faces close the gap between the leveled deck and grade.
             for (const j of [0,2]) {
@@ -495,7 +588,7 @@
       if (!districtPaving.has(key)) districtPaving.set(key, { name, group, material, earthy, tiles: new Acc() });
       districtPaving.get(key).tiles.push(geometry);
     }
-    buildDistrictRoutes(districtRoute, buildLot);
+    buildDistrictRoutes(districtRoute, buildLot, reservePath);
     urbanCore(114.277, 30.583, 25, 42, 'slab_tower');          // 汉口商埠背后的内城
     urbanCore(114.260, 30.544, 13, 45, 'terrace_tower');       // 汉阳内街，桥上远望
     urbanCore(114.3074, 30.553, -26, 19.5, 'slab_tower');      // 武昌楼群东退，蛇山近侧保留中层街坊

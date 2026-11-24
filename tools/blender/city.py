@@ -114,7 +114,8 @@ def imported_mesh(item, mat, dest):
     obj = bpy.data.objects.new(item["name"], data)
     dest.objects.link(obj)
     obj.matrix_world = placement(item["matrix"])
-    if item["material"] in ("Streets", "ApproachPaving"):
+    if item["material"] in ("Streets", "ApproachPaving", "RoadPaint") or item["group"] in (
+            "汉阳桥头街坊", "武昌桥头街坊", "汉阳两桥街道", "武昌两桥街道"):
         # Thin paving ribbons meet at intersections; their pigment casts no extra shadow.
         obj.visible_shadow = False
         obj.visible_diffuse = False
@@ -478,7 +479,7 @@ def build():
             "WetBank":"8c9c86", "ShoreStone":"979d8d", "Reeds":"687e65",
             "BankStone":"b4a88d", "Path":"d1c3a7", "Slate":"677872",
             "Masonry":"c4b9a2", "Ink":"4b5049", "Paper":"d4cfc2",
-            "DistantRidge":"c5c6b5", "Greenway":"909c89", "Water":"9ab7b2", "Ripples":"c4d1c4", "Streets":"c6c1af", "ApproachPaving":"98998b", "Boat":"aa9980"}.items()}
+            "DistantRidge":"c5c6b5", "Greenway":"909c89", "Water":"9ab7b2", "Ripples":"c4d1c4", "Streets":"c6c1af", "ApproachPaving":"98998b", "RoadPaint":"e6dabc", "Boat":"aa9980"}.items()}
         if any("deckPigment" in item for item in capture["meshes"]):
             # The apron begins in deck asphalt and ends in the receiving street's paving.
             tree = mats["ApproachPaving"].node_tree

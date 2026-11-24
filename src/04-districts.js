@@ -1,5 +1,5 @@
   /* 码头、坡街与支巷按原岸线和地标落位；街坊细部是画意概括。 */
-  function buildDistrictRoutes(route, lot) {
+  function buildDistrictRoutes(route, lot, reservePath) {
     function bankPoint(edge, i, side, offset) {
       const p = edge[i], a = edge[Math.max(0,i-1)], b = edge[Math.min(edge.length-1,i+1)];
       const dx = b[0]-a[0], dz = b[1]-a[1], length = Math.hypot(dx,dz) || 1;
@@ -9,6 +9,26 @@
     function local(site, ...pairs) {
       site.updateMatrixWorld(true);
       return pairs.map(([x,z]) => site.localToWorld(V(x,0,z)));
+    }
+
+    // The two bridges feed a continuous street on each bank. The first span
+    // continues the actual bridgehead cross street at the same width and tangent.
+    for (const [side, group, name, bends] of [
+      [-1, '汉阳两桥街道', '汉阳桥间街道', [[-256,43],[-260,34],[-265,16],[-270,-3],[-279,-12],[-282,-19]]],
+      [1, '武昌两桥街道', '武昌桥间街道', [[-28,117],[-22,100],[-14,85],[-8,69],[4,51],[8,38]]],
+    ]) {
+      const start = yingwuzhouNorthStreetEnd(side), junction = yingwuzhouJunction(side);
+      const tangent = start.clone().sub(junction).setY(0).normalize();
+      const lead = start.clone().addScaledVector(tangent, 2.4);
+      const curve = new THREE.CatmullRomCurve3([lead, ...bends.map(([x,z]) => V(x,0,z))]);
+      const centerline = [start, ...curve.getSpacedPoints(Math.ceil(curve.getLength()/2))];
+      route({ group, name, points:centerline, width:3.9, surfaceLift:.022 });
+      // Leave the junctions open and group verge trees along the intervening blocks.
+      for (let k=6; k<centerline.length-4; k+=5) {
+        const normal = centerline[k+1].clone().sub(centerline[k-1]).setY(0).normalize();
+        const offset = k % 3 === 0 ? -4.4 : 4.7;
+        cityGround.verges.push({x:centerline[k].x + normal.z*offset, z:centerline[k].z - normal.x*offset});
+      }
     }
 
     // The municipal road hierarchy places Zhongbei, Donghu and Wuluo/Luoyu on these
@@ -87,11 +107,22 @@
     }
 
     const wuchang = '武昌古城';
+    for (const {walkStations} of wuhanApproachFeatures) for (const [i,row] of walkStations.slice(1).entries()) {
+      const previous=walkStations[i];
+      reservePath({a:previous.center,b:row.center,width:row.edges[0].outer.distanceTo(row.edges[1].outer)+1.45}, false);
+    }
     const bridgeExit = approachLinks[0].at(-1);
     route({ name: '蛇山脚坡街与首义街口', group: wuchang, width: bridgeStreetEntries[0].width, connect: true, entryHeight:bridgeExit.y,
-      points: [bridgeExit, bridgeStreetEntries[0].next, ...points([-29,27],[-19,34],[-9,37],[8,38],[25,39],[45,45],[71,50])] });
-    route({ name: '蛇山东麓土径', group: wuchang, width: 1.04, earthy: true,
-      points: points([-29,27],[-32,14],[-34,2],[-31,-12],[-24,-25],[-13,-36],[-1,-42],[17,-43],[27,-53]) });
+      points: [bridgeExit, bridgeStreetEntries[0].next, ...points([25,39],[45,45],[71,50])] });
+    // The hillside walk reaches the outer curb on its own side of the approach.
+    const parkStation = wuhanApproachFeatures[0].stations.reduce((best,row)=>
+      Math.abs(row.edges[1].outer.z-16.1)<Math.abs(best.edges[1].outer.z-16.1) ? row : best);
+    const parkLink=parkStation.edges[1].outer;
+    const curbExit=parkLink.clone().addScaledVector(parkStation.normal,1.45);
+    route({ name: '蛇山东麓土径', group: wuchang, width: 1.04, earthy: true, entryHeight:parkLink.y,
+      points: [parkLink,curbExit,...points([-17.5,14.1],[-19.0,12.1],[-22,8],[-25,4],[-28.1,1.8],[-29.1,.1],[-31.0,-2.1],[-32.7143,-4],[-31,-12],
+        [-24,-25],[-13,-36],[-1,-42],[17,-43],[27,-53])] });
+    wuhanApproachFeatures[0].parkLink = parkLink;
     for (const [x,z,yaw,kind] of [[-23,30,.15,'arcade'],[-12,29,.22,'lane'],[4,36,.25,'lane'],
       [17,40,.32,'arcade'],[-9,-49,3.45,'lane'],[6,-49,3.48,'lane'],[23,-47,2.75,'arcade']])
       lot(kind,{x,z},yaw,.82,.71);
@@ -103,9 +134,11 @@
       points: points([-127,-127],[-134,-135],[-143,-140],[-155,-142],[-166,-144]) });
     route({ name: '晴川阁与铁门关沿台石径', group: '晴川阁', width: 1.38, material: 'BankStone',
       points: local(qc,[0,10.6],[1,11.8],[7,10.2],[13,10.1],[18,11.75],[22,13.6]) });
+    const rounds=[bridgeStreetEntries[1].next,...points([-269,-22.15],[-276,-21.3],[-282,-19],[-286.9,-12],
+      [-288,0],[-288,14],[-289.4,22],[-292,31])];
+    const hanyangStreet=new THREE.CatmullRomCurve3(rounds.map(({x,z})=>V(x,0,z))).getPoints((rounds.length-1)*8);
     route({ name: '汉阳桥头至翠微巷', group: hanyang, width: bridgeStreetEntries[1].width, entryHeight:approachLinks[1].at(-1).y,
-      points: [approachLinks[1].at(-1), bridgeStreetEntries[1].next,
-        ...points([-257,-19.8],[-265,-22],[-282,-19],[-297,-12],[-297,4],[-309,12])] });
+      points: [approachLinks[1].at(-1),...hanyangStreet] });
     route({ name: '归元禅寺山门前庭', group: '归元禅寺', width: 6.4, material: 'BankStone',
       points: local(guiyuan,[0,29],[0,33],[0,40]) });
     route({ name: '翠微山门接乡路', group: hanyang, width: 2.6, connect: true,
@@ -123,10 +156,5 @@
     }
     route({ name: '武大老斋舍台阶接樱园', group: '珞珈山', width: 2.28, terrace: true,
       points: local(wuda,[-25,13],[-12,13],[0,13],[12,13],[25,13],[34,12]) });
-    // The two asphalt approaches start flush with the authored 100-unit deck ends.
-    const deckEnd = yingwuzhou.position.y+7.70-(100-71.5)*.095;
-    for (const side of [-1,1]) {
-      route({ name: '鹦鹉洲两岸接地引道', group: '鹦鹉洲长江大桥', width: 15.47, earthy: true, gradeStart: deckEnd,
-        points: local(yingwuzhou,[0,side*100],[0,side*108],[0,side*120],[side*2,side*136]) });
-    }
+    buildYingwuzhouRoads(route, reservePath, lot);
   }
