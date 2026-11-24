@@ -17,14 +17,25 @@
     tower: { paths: [], steps: [], shade: [] }
   };
   function buildLandmarkGrounds() {
+    const inkFog='col = mix(col, uFog, smoothstep(uNear, uFar, vD));';
+    const grassColor=`
+      vec3 grassColor(vec3 ink, vec3 paper, float tone, float washHeight) {
+        float patches = fbm(vW.xz * .51 + vec2(7.4, 2.1));
+        return mix(uFog * .937, mix(ink, paper, clamp(tone + (patches - .51) * .26, 0., 1.)),
+          smoothstep(.742, .867, washHeight));
+      }
+    `;
     const stone = inkMat(.30, false, ['#8b826d', '#d9cbb4']);
     const curb = inkMat(.20, false, ['#777362', '#c5b8a2']);
     const terrace = inkMat(.43, false, ['#857b66', '#e2d5bd']);
     const lakesideGrass = inkMat(.27, false, ['#6d7865', '#aeb49b']);
     const shoreGrass = lakesideGrass.clone();
     shoreGrass.uniforms = lakesideGrass.uniforms;
-    shoreGrass.fragmentShader = shoreGrass.fragmentShader.replace('col = mix(col, uFog, smoothstep(uNear, uFar, vD));',
-      'col = mix(uFog * .937, col, smoothstep(.742, .867, vW.y)); col = mix(col, uFog, smoothstep(uNear, uFar, vD));');
+    shoreGrass.vertexShader='attribute float wetEdge; varying float vWetEdge;\n'+shoreGrass.vertexShader.replace(
+      'vW = w.xyz;', 'vWetEdge = wetEdge; vW = w.xyz;');
+    shoreGrass.fragmentShader='varying float vWetEdge;\n'+shoreGrass.fragmentShader
+      .replace('void main(){', `${grassColor} void main(){`)
+      .replace(inkFog, `col = grassColor(uInk, uPaper, tone, vW.y + .12 * vWetEdge); ${inkFog}`);
     const tuftShape = new THREE.IcosahedronGeometry(1,0);
     const hillsideStone = inkMat(.26, false, ['#777562', '#c3b7a0']);
     const landHeightAt = p => plantingSurface(p.x,p.z) ?? LAND_Y;
@@ -143,15 +154,15 @@
       function shoreWindMaterial(material, strength) {
         material.uniforms = { ...material.uniforms, ...weatherU, uWindStrength: { value: strength } };
         material.vertexShader = vegetationWind + `
-          attribute vec3 stemWind;
+          attribute vec4 stemWind;
           uniform float uWindStrength;
         ` + material.vertexShader.replace('vec4 w = modelMatrix * local;', `
           vec4 w = modelMatrix * local;
           vec2 root = (modelMatrix * vec4(stemWind.x, 0., stemWind.y, 1.)).xz;
           vec2 gust = windAt(root);
-          float flex = uWindStrength * stemWind.z * stemWind.z;
+          float flex = .70 * uWindStrength * stemWind.w * stemWind.z * stemWind.z;
           w.xz += flex * gust;
-          w.y -= flex * .22 * dot(gust, gust);
+          w.y -= flex * .12 * dot(gust, gust);
         `);
         material.userData.windVegetation = true;
         return material;
@@ -175,46 +186,52 @@
         if (closest) p.lerp(closest,1-THREE.MathUtils.smoothstep(tail,0,5.8));
       }
       function softenEnds(mat, base, span) {
-        const softened=mat.clone(), fog='col = mix(col, uFog, smoothstep(uNear, uFar, vD));';
+        const softened=mat.clone();
         // The wet edge fades into the lake wash and the path into the dry paper.
         const tail=`${margin.toFixed(4)} - abs(vW.z - (${middle.toFixed(4)}))`;
         softened.uniforms=mat.uniforms;
-        softened.fragmentShader=mat.fragmentShader.replace(fog,
-          `col = mix(${base}, col, smoothstep(.18, ${span.toFixed(2)}, ${tail})); ${fog}`);
+        softened.fragmentShader=mat.fragmentShader.replace(inkFog,
+          `col = mix(${base}, col, smoothstep(.18, ${span.toFixed(2)}, ${tail})); ${inkFog}`);
         return softened;
       }
       const lawn=[], slope=[], foot=[], promenade=[], tufts=new Acc(), rocks=new Acc(), reeds=new Acc();
+      // Use a local seed so planting changes do not move other procedural scenery.
+      let plantSeed = 813;
+      const plantRandom = () => (plantSeed = plantSeed * 16807 % 2147483647) / 2147483647;
       function weightStem(geometry, root, tip) {
         const positions = geometry.attributes.position;
         const stem = tip.clone().sub(root), lengthSquared = stem.lengthSq(), point = V(0,0,0), weights = [];
         for (let i = 0; i < positions.count; i++) {
           point.fromBufferAttribute(positions, i).sub(root);
           const height = THREE.MathUtils.clamp(point.dot(stem) / lengthSquared, 0, 1);
-          weights.push(root.x, root.z, height < .001 ? 0 : height);
+          weights.push(root.x, root.z, height < .001 ? 0 : height, stem.y);
         }
-        geometry.setAttribute('stemWind', new THREE.Float32BufferAttribute(weights, 3));
+        geometry.setAttribute('stemWind', new THREE.Float32BufferAttribute(weights, 4));
       }
-      function plantBlades(batch, root, phase, scale) {
+      function plantBlades(batch, root, scale) {
         const positions = [], weights = [], indices = [];
-        for (let blade = 0; blade < 6; blade++) {
-          const yaw = phase + blade * 2.4, dx = Math.cos(yaw), dz = Math.sin(yaw);
-          const height = (.58 + .19 * Math.sin(yaw * 2.7)) * scale, spread = .21 + height * .30;
+        const count = 3 + Math.floor(plantRandom() * 5), phase = plantRandom() * Math.PI * 2;
+        for (let blade = 0; blade < count; blade++) {
+          const yaw = phase + (blade + plantRandom() * .7) * 2.4;
+          const dx = Math.cos(yaw), dz = Math.sin(yaw);
+          const height = (.31 + .51 * plantRandom()) * scale, spread = (.12 + .18 * plantRandom()) * scale;
+          const girth = .62 + .45 * scale;
           const start = positions.length / 3;
           for (const [progress, width, lean] of [[0, .046, .13], [.48, .032, .38], [1, 0, 1]]) {
             const x = root.x + dx * lean * spread, z = root.z + dz * lean * spread;
             const y = root.y + progress * height;
-            positions.push(x - dz * width, y, z + dx * width);
-            weights.push(root.x, root.z, progress);
+            positions.push(x - dz * width * girth, y, z + dx * width * girth);
+            weights.push(root.x, root.z, progress, height);
             if (width > 0) {
-              positions.push(x + dz * width, y, z - dx * width);
-              weights.push(root.x, root.z, progress);
+              positions.push(x + dz * width * girth, y, z - dx * width * girth);
+              weights.push(root.x, root.z, progress, height);
             }
           }
           indices.push(start, start + 1, start + 2, start + 1, start + 3, start + 2, start + 2, start + 3, start + 4);
         }
         const geometry = new THREE.BufferGeometry();
         geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
-        geometry.setAttribute('stemWind', new THREE.Float32BufferAttribute(weights, 3));
+        geometry.setAttribute('stemWind', new THREE.Float32BufferAttribute(weights, 4));
         geometry.setIndex(indices);
         geometry.computeVertexNormals();
         batch.push(geometry);
@@ -227,7 +244,9 @@
         const stoneNose=.59*(1-THREE.MathUtils.smoothstep(mouth,.7,4.2));
         const edge=bank+.075+blend*(.32+.17*Math.sin((z-middle)*.45)+stoneNose);
         const crest=V(edge,LAND_Y+.044*blend+.008,z);
-        const shoulder=V(edge+.13+.59*blend,LAND_Y-.32,z);
+        const freeBank=blend*THREE.MathUtils.smoothstep(mouth,2.4,5.2);
+        const shoulder=V(edge+.13+.59*blend+freeBank*(.21*Math.sin(z*.42)+.10*Math.sin(z*1.2)),
+          LAND_Y-.32+freeBank*(.10*Math.sin(z*.31)+.05*Math.sin(z*.88)),z);
         const lower=V(edge+.29+1.05*blend,LAND_Y-.60,z);
         const toe=V(edge+.47+1.32*blend,LAND_Y-.755,z);
         lawn.push([V(bank-5.4-(7.55+1.90*Math.sin(z*.27))*blend,LAND_Y-.027,z),
@@ -239,24 +258,41 @@
         meetGreenway(p,tail);
         const w=.09+1.21*THREE.MathUtils.smoothstep(tail,0,5.4);
         promenade.push([V(p.x-w/2,p.y,z),V(p.x+w/2,p.y,z)]);
-        if (i%8===2 && blend>.56) {
-          const x=bank-8.1-.55*Math.sin(z*.69);
-          for (const offset of [-.36,.12,.52]) {
-            plantBlades(tufts, V(x + offset, LAND_Y + .036*blend, z + offset*.72), z + offset*4, 1);
-          }
-        }
         if (blend>.9 && i%4===2) {
           const scale=.24+.12*Math.sin(i*1.9)+.17*stoneNose;
           rocks.place(tuftShape,lower.x-.18,lower.y+.024,z,scale*1.3,scale*.58,scale*1.6,z);
         }
-        if (blend>.85 && i%11===4 && mouth>2.2) {
-          for (const d of [-.54,-.28,-.08,.22,.43]) {
-            const stem=V(lower.x-.14+d*.28,lower.y-.06,z+d);
-            const height = 1.03 + .24*Math.sin(i*.74 + d*5.3);
-            const tip=stem.clone().add(V(.25+d*.48,height,.15+d*.42));
-            reeds.beam(stem,tip,.035);
-            weightStem(reeds.l[reeds.l.length-1], stem, tip);
-            if (d < 0) plantBlades(reeds, stem, i + d*7, 1.25);
+      }
+      function scatterBankPlants(grass, bankSlope) {
+        const ray=new THREE.Raycaster(V(0,0,0),V(0,-1,0));
+        function rooted(mesh,x,z) {
+          if (mouths.some(({bank})=>Math.abs(z-bank.z)<3.4)) return null;
+          ray.ray.origin.set(x,LAND_Y+1,z);
+          const hit=ray.intersectObject(mesh)[0];
+          return hit && hit.point;
+        }
+
+        for (let z=middle-margin+6; z<middle+margin-6; z+=1.3+3.7*plantRandom()) {
+          const x=shoreX(z)-7.2-2.0*plantRandom();
+          const count=1+Math.floor(plantRandom()*4), footprint=.45+plantRandom()*1.15;
+          for (let i=0; i<count; i++) {
+            const root=rooted(grass,x+(plantRandom()-.5)*footprint,z+(plantRandom()-.5)*footprint*1.8);
+            if (root) plantBlades(tufts,root,.36+.39*plantRandom());
+          }
+        }
+        for (let z=middle-margin+6; z<middle+margin-6; z+=2.8+5.9*plantRandom()) {
+          const count=3+Math.floor(plantRandom()*6), footprint=.54+plantRandom()*1.9;
+          for (let i=0; i<count; i++) {
+            const station=z+(plantRandom()-.5)*footprint;
+            const x=shoreX(station)+.68+.88*plantRandom();
+            const root=rooted(bankSlope,x,station);
+            if (!root) continue;
+            if (plantRandom()<.64) {
+              const tip=root.clone().add(V(.11+.43*plantRandom(),.45+.85*plantRandom(),(plantRandom()-.45)*.46));
+              reeds.beam(root,tip,.019+.021*plantRandom());
+              weightStem(reeds.l[reeds.l.length-1],root,tip);
+            }
+            plantBlades(reeds,root,.60+.50*plantRandom());
           }
         }
       }
@@ -266,13 +302,45 @@
           const a=(i-1)*columns+c, d=a+columns;
           indices.push(a,d,a+1,a+1,d,d+1);
         }
-        faces(name,'东湖听涛',mat,key,rows.flat(),indices);
+        return faces(name,'东湖听涛',mat,key,rows.flat(),indices);
       }
       const waterWash='mix(mix(uFog, vec3(.43, .59, .56), .22), uFog * .937, smoothstep(.05, .77, vW.y))';
-      strip('听涛 · 两桥间落岸草坡',shoreGrass,'BankGrass',lawn);
-      strip('听涛 · 近水草土缓坡',softenEnds(wetBank,waterWash,6.3),'WetBank',slope);
+      function mixWithGrass(mat, blend, washHeight) {
+        const grassUniforms={ uGrassInk: lakesideGrass.uniforms.uInk, uGrassPaper: lakesideGrass.uniforms.uPaper };
+        mat.uniforms={ ...mat.uniforms, ...grassUniforms };
+        mat.fragmentShader=mat.fragmentShader.replace('void main(){', `
+          uniform vec3 uGrassInk, uGrassPaper;
+          ${grassColor}
+          void main(){
+        `).replace(inkFog, `
+          float grassTone = clamp((tone - uTone) / (1.0 - uTone) * .73 + .27, 0., 1.);
+          col = mix(col, grassColor(uGrassInk, uGrassPaper, grassTone, ${washHeight}), ${blend});
+          ${inkFog}
+        `);
+      }
+      const grass=strip('听涛 · 两桥间落岸草坡',shoreGrass,'BankGrass',lawn);
+      const wetEdge=lawn.flatMap(row=>{
+        const crest=row[row.length-1];
+        const weight=THREE.MathUtils.smoothstep(margin-Math.abs(crest.z-middle),0,5.8);
+        return [0,0,0,.45*weight,weight];
+      });
+      grass.geometry.setAttribute('wetEdge',new THREE.Float32BufferAttribute(wetEdge,1));
+      const slopeInk=wetBank.clone();
+      slopeInk.uniforms=wetBank.uniforms;
+      mixWithGrass(slopeInk,'smoothstep(.49, .796, vW.y + (vnoise(vW.xz * 1.2) - .5) * .10)', '.867');
+      const bankSlope=strip('听涛 · 近水草土缓坡',softenEnds(slopeInk,waterWash,6.3),'WetBank',slope);
       ribbon('听涛 · 岸脚浅石','东湖听涛',softenEnds(toeStone,waterWash,6.3),'ShoreStone',foot);
-      ribbon('听涛 · 连续岸侧步道','东湖听涛',softenEnds(stone,'mix(uInk, uPaper, .70)',4.5),'Path',promenade);
+      const pathInk=softenEnds(stone,'mix(uInk, uPaper, .70)',4.5);
+      pathInk.vertexShader='attribute float pathAcross; varying float vPathAcross;\n'+pathInk.vertexShader.replace(
+        'vW = w.xyz;', 'vPathAcross = pathAcross; vW = w.xyz;');
+      pathInk.fragmentShader='varying float vPathAcross;\n'+pathInk.fragmentShader;
+      mixWithGrass(pathInk, `smoothstep(
+        .22 + .48 * vnoise(vW.xz * 1.35) + .17 * vnoise(vW.xz * 5.4),
+        .91, abs(vPathAcross)) * smoothstep(1.7, 5.4, ${margin.toFixed(4)} - abs(vW.z - (${middle.toFixed(4)})))`,
+        'vW.y - .03');
+      const path=ribbon('听涛 · 连续岸侧步道','东湖听涛',pathInk,'Path',promenade);
+      path.geometry.setAttribute('pathAcross',new THREE.Float32BufferAttribute(promenade.flatMap(()=>[-1,1]),1));
+      scatterBankPlants(grass,bankSlope);
       function windSurface(name, material, key, plants) {
         const geometry = plants.mesh(material, false).geometry;
         geometry.computeBoundingSphere();
