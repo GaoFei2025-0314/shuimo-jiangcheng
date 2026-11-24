@@ -30,7 +30,7 @@ test('reduced motion switches instantly and freezes automatic scenery', async ({
   expect(next.frames).toBe(first.frames);
 });
 
-test('river strokes and windblown planting visibly move at a fixed city camera', async ({ page }) => {
+test('river strokes drift gently while planting sways at a fixed city camera', async ({ page }) => {
   await page.setViewportSize({ width: 1080, height: 720 });
   await page.emulateMedia({ reducedMotion: 'reduce' });
   await ready(page);
@@ -39,7 +39,7 @@ test('river strokes and windblown planting visibly move at a fixed city camera',
     const water = scene.children.find(node => node.material?.uniforms?.uBoats).material;
     const planting = new Set();
     scene.traverse(node => { if (node.material?.userData?.windVegetation) planting.add(node.material); });
-    // Hold boats, mist and camera still. Render each material group separately at two times.
+    // At a fixed camera, compare a brief glance with a longer look at the water.
     const target = new THREE.WebGLRenderTarget(540, 360);
     const previous = renderer.getRenderTarget();
     function frame() {
@@ -48,12 +48,12 @@ test('river strokes and windblown planting visibly move at a fixed city camera',
       renderer.readRenderTargetPixels(target, 0, 0, target.width, target.height, pixels);
       return pixels;
     }
-    function changedPixels(materials) {
+    function changedPixels(materials, seconds) {
       const saved = materials.map(m => m.uniforms.uTime);
       try {
         for (const m of materials) m.uniforms.uTime = { value: 0 };
         const start = frame();
-        for (const m of materials) m.uniforms.uTime.value = 1.6;
+        for (const m of materials) m.uniforms.uTime.value = seconds;
         const end = frame();
         let count = 0;
         for (let i = 0; i < end.length; i += 4) {
@@ -66,13 +66,18 @@ test('river strokes and windblown planting visibly move at a fixed city camera',
     }
     try {
       renderer.setRenderTarget(target);
-      return { river: changedPixels([water]), planting: changedPixels([...planting]) };
+      return {
+        riverGlance: changedPixels([water], 1.6),
+        riverDrift: changedPixels([water], 9.6),
+        planting: changedPixels([...planting], 1.6)
+      };
     } finally {
       renderer.setRenderTarget(previous);
       target.dispose();
     }
   });
-  expect(changed.river).toBeGreaterThan(300);
+  expect(changed.riverGlance).toBeLessThan(150);
+  expect(changed.riverDrift).toBeGreaterThan(300);
   expect(changed.planting).toBeGreaterThan(60);
 });
 

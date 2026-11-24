@@ -325,6 +325,7 @@
           }
           vec3 base = uPaper;
           float ink = 0.;
+          float ambientDriftTime = uTime / 6.;
           float fineDetail = 1.-smoothstep(300.,1050.,vD);
           if(lake<.999){
             vec4 drift = texture2D(uDrift,clamp(uv,.0015,.9985));
@@ -332,7 +333,7 @@
             vec2 stream = vec2(station,aw);
             // Broad brush groups travel along the mapped channel. Warped spacing and
             // broken ends let the moving strokes read at the scale of the whole city.
-            vec2 current = vec2(station-uTime*13.,aw);
+            vec2 current = vec2(station-ambientDriftTime*13.,aw);
             float group = vnoise(current*vec2(.021,.051));
             float phase = aw*.22+4.8*vnoise(current*vec2(.011,.036))+.47*sin(current.x*.033);
             float strokes = smoothstep(.08,.94,sin(phase))*smoothstep(.31,.77,group);
@@ -345,13 +346,13 @@
             float driftPhase = aw*.78+knot*.93;
             float track = floor(driftPhase/6.28318+.5);
             float across = abs(fract(driftPhase/6.28318+.5)-.5)*6.28318;
-            float advance = (station-uTime*9.)*.071+hash(vec2(track,17.));
+            float advance = (station-ambientDriftTime*9.)*.071+hash(vec2(track,17.));
             float segment = floor(advance);
             float grain = hash(vec2(segment,track));
             float along = (fract(advance)-.5)/mix(.19,.47,grain);
             float shape = length(vec2(across/mix(.22,.46,grain),along));
             float main = (1.-smoothstep(.14,1.,shape))*smoothstep(.16,.69,grain);
-            float dryMask = smoothstep(.47,.74,vnoise(stream*vec2(.31,.19)-vec2(uTime*.047,0.)));
+            float dryMask = smoothstep(.47,.74,vnoise(stream*vec2(.31,.19)-vec2(ambientDriftTime*.047,0.)));
             float faint = smoothstep(.92,.999,sin(driftPhase*2.07+knot))*dryMask;
             ink += (main*.17+faint*.065)*fineDetail*away*drift.a*(1.-lake);
 
@@ -361,7 +362,7 @@
           }
           if(lake>.001){
             // Independent wind ripples make sparse, nearly horizontal lake brushwork.
-            vec2 wind = p-uWindDirection*(5.2*uTime);
+            vec2 wind = p-uWindDirection*(5.2*ambientDriftTime);
             float wash = smoothstep(.29,.76,vnoise(wind*vec2(.018,.038)));
             float warp = 4.4*vnoise(wind*vec2(.008,.029));
             float crest = wind.y*.27+wind.x*.017+warp;
@@ -372,7 +373,7 @@
             lakeInk += brokenCrest(ripples)*(.30+.70*wash)*.23*fineDetail*smoothstep(.018,.21,band);
             float littoral = (1.-smoothstep(.0,.32,band))*lake*wet;
             float lakeWash = lake*wet*(.105+.065*fbm(p*.021))+.14*littoral;
-            float shoreRipples = smoothstep(.86,.99,sin(p.y*2.2+warp+uTime*.25));
+            float shoreRipples = smoothstep(.86,.99,sin(p.y*2.2+warp+ambientDriftTime*.25));
             lakeInk += .12*littoral*shoreRipples*smoothstep(.32,.70,fbm(p*.075))*fineDetail;
             base *= mix(1.,.99-fbm(p*.004)*.018,lake*wet);
             base = mix(base,vec3(.43,.59,.56),lakeWash);
