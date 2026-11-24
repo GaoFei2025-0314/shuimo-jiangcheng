@@ -100,12 +100,15 @@ def cables():
     cables = Part("Yingwuzhou / continuous twin main cables", "suspensionOrange")
     hangers = Part("Yingwuzhou / paired hangers and anchor sockets", "suspensionOrange")
     clamps = Part("Yingwuzhou / main-cable bands", "timber")
+    maintenance = Part("Yingwuzhou / main-cable access handlines", "suspensionOrange")
     for x in (-CABLE_X, CABLE_X):
-        path, suspended = [], []
+        path, suspended, access_spans = [], [], []
         for i, ((start, z0), (stop, z1)) in enumerate(zip(SADDLES, SADDLES[1:])):
             main = i in (1, 2)
             samples = 48 if main else 16
             sag = 22.75 if main else .79
+            if main:
+                access_spans.append(range(len(path) + 1, len(path) + samples))
             for k in range(samples):
                 t = k/samples
                 y = start + (stop-start)*t
@@ -126,6 +129,16 @@ def cables():
                      z-dy/length*radius*sin(j*tau/8)) for j in range(8)]
 
         loft(cables, [ring(i, .228) for i in range(len(path))])
+        # Inspection handlines follow both sides of the cable between tower platforms.
+        for span in access_spans:
+            for side in (-1, 1):
+                loft(maintenance, [[(px + side * .31, py, pz + .44)
+                                   for px, py, pz in ring(index, .032)]
+                                  for index in span])
+                for index in span[::8]:
+                    y, z = path[index]
+                    maintenance.beam((x + side * .18, y, z + .02),
+                                     (x + side * .31, y, z + .44), .052)
         for y, z in suspended:
             # Two rods land in sockets on each roadway edge at each cable band.
             clamps.beam((x, y-.16, z), (x, y+.16, z), .51)
@@ -133,7 +146,7 @@ def cables():
                 bottom = road_height(y) + .12
                 hangers.cylinder(x, y+dy, bottom-.28, z, .040, 6)
                 hangers.cylinder(x, y+dy, bottom-.36, bottom+.15, .086, 8)
-    for part in (cables, hangers, clamps):
+    for part in (cables, hangers, clamps, maintenance):
         part.finish()
 
 

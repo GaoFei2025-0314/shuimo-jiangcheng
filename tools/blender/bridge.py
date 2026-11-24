@@ -55,6 +55,7 @@ def loft(part, rings):
 def build_piers():
     piers = Part("Eight cutwater piers and two abutments", "stone")
     seats = Part("Pier caps and bearing shoes", "steel")
+    granite = Part("Cutwater piers / dressed granite springing course", "stone")
     # Long upstream and downstream noses face across the deck.
     plan = [(-6.3, 0), (-5.65, -1.12), (-3.8, -1.66), (3.8, -1.66),
             (5.65, -1.12), (6.3, 0), (5.65, 1.12), (3.8, 1.66),
@@ -63,6 +64,9 @@ def build_piers():
         loft(piers, [[(x * scale, y + dy * scale, z) for x, dy in plan]
                      for z, scale in [(-3, 1.06), (.7, 1.06), (4.23, .89)]])
         piers.box((0, y, 4.37), (11.3, 3.34, .46))
+        loft(granite, [[(x * scale, y + dy * scale, z) for x, dy in plan]
+                       for z, scale in ((.68, 1.058), (.73, 1.082),
+                                        (.90, 1.082), (.98, 1.052))])
     for y in (-MAIN_END, MAIN_END):
         piers.box((0, y, .76), (11.3, 3.25, 7.65))
     for y in range(-MAIN_END, MAIN_END + 1, 16):
@@ -72,6 +76,7 @@ def build_piers():
             seats.box((x, y, 4.83), (.86, .95, .22))
     piers.finish()
     seats.finish()
+    granite.finish()
 
 
 def side_plate(part, x, outline, depth):

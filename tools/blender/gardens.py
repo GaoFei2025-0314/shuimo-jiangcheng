@@ -230,6 +230,11 @@ def qc():
     balcony(site.part("晴川阁 · riverside balcony", "vermilion"), 0, 0, 14.75, 8.78, 6.9,
             height=.79, pitch=1.72)
     plaque(site, "晴川阁", 0, -3.25, 9.41, 2.75, .56)
+    parapet = site.part("禹功矶石台 · river-facing parapet and corner posts", "stone")
+    for sign in (-1, 1):
+        rails(parapet, [(sign * 3.14, -6.48, 2.02), (sign * 11.50, -6.48, 2.02),
+                        (sign * 11.50, 4.95, 2.02)], height=.91, pitch=1.58, width=.27)
+        slab(parapet, sign * 11.5, -6.48, .4, .4, 2.88, 3.04)
     courtyard = site.part("绿瓦游廊 · foundations", "stone")
     for i, (x, y) in enumerate(((-14.8, 1.4), (14.7, 2.2))):
         slab(courtyard, x, y, 6.8, 6.9, -.65, 1.5)
@@ -325,6 +330,13 @@ def chutian():
               height=.85, pitch=1.8, width=.2)
         slab(terrace, s * 4.52, -25.37, 2.45, 2.16, .01, .72)
         phoenix(site, f"凤标 · {'east' if s > 0 else 'west'} phoenix", s * 4.52, -25.37, .72, 1.59, -s)
+
+    # The layered terrace ends expose dressed coping above the rough retaining courses.
+    coping = site.part("章华台式 · terrace coping and stair shoulder", "plaster")
+    for y, span, z in ((-12.37, 28.27, 1.02), (-11.22, 26.33, 2.4), (-9.59, 23.94, 3.68)):
+        for sign in (-1, 1):
+            slab(coping, sign * (span / 2 + 3.5) / 2, y, span / 2 - 3.5, .29, z - .18, z + .045)
+            slab(coping, sign * 3.55, y, .48, .46, z - .10, z + .18)
 
     # The photographed silhouette has broad and narrow roof bands alternating,
     # with prominent triangular end gables above the narrower roof shoulders.
@@ -459,6 +471,17 @@ def hongshan():
     for x in (-2.66, 2.66):
         supports.cylinder(x, -22.06, .92, 3.8, .18, 8)
     plaque(site, "宝通禅寺", 0, -22.1, 3.42, 2.65, .45)
+    lions = site.part("宝通寺 · paired stone lions and plinths", "stone")
+    for x in (-3.88, 3.88):
+        y = -22.76
+        slab(lions, x, y, 1.19, 1.35, .09, .47)
+        slab(lions, x, y, 1.06, 1.19, .47, .66)
+        circular(lions, x, y + .10, [(.43, .65), (.44, .9), (.34, 1.29)], sy=1.17)
+        circular(lions, x, y - .21, [(.24, 1.19), (.37, 1.42), (.32, 1.66), (.21, 1.75)])
+        lions.box((x, y - .51, 1.43), (.41, .29, .29))
+        for sign in (-1, 1):
+            lions.beam((x + .24 * sign, y, 1.23), (x + .26 * sign, y - .42, .76), .21)
+            lions.cylinder(x + .23 * sign, y - .17, 1.63, 1.83, .091, 6)
     flanks = site.part("宝通寺 · yellow flank walls", "roofGold")
     caps = site.part("宝通寺 · coping tiles", "ink")
     for s in (-1, 1):
@@ -509,6 +532,13 @@ def guiyuan():
     voussoirs(site.part("山门 · stone door surround", "stone"), 0, -29.38, 1.48, 1.36)
     roof(site, "山门 · painted terrace roof", 0, -28.3, 12.22, 4.32, 3.26, 1.37, "ink", kick=.51)
     plaque(site, "归元禅寺山门", 0, -30.43, 3.36, .66, .84)
+    threshold = site.part("山门 · dressed threshold and inner stone margins", "stone")
+    slab(threshold, 0, -29.63, 2.88, .62, .04, .18)
+    for sign in (-1, 1):
+        x = sign * 2.57
+        slab(threshold, x, -29.47, 1.12, .73, .04, .34)
+        slab(threshold, x, -29.47, .94, .61, .34, .49)
+        slab(threshold, sign * 6.06, -19.33, .31, 6.9, .04, .23)
     for s in (-1, 1):
         x = s * 8
         label = "钟楼" if s < 0 else "鼓楼"
@@ -568,6 +598,12 @@ def guiyuan():
     for y in (9.75, 15.15):
         slab(pond, 0, y, 9.55, .49, .04, .62)
     slab(site.part("翠微古池 · reflective basin", "glaze"), 0, 12.45, 8.92, 5.03, .05, .22)
+    coping = site.part("翠微古池 · dressed rim stones", "plaster")
+    for sign in (-1, 1):
+        for i in range(6):
+            slab(coping, sign * 4.56, 10.24 + .885 * i, .55, .855, .61, .735)
+        for i in range(8):
+            slab(coping, (i - 3.5) * 1.065, 12.45 + sign * 2.7, 1.04, .58, .61, .735)
     slab(ground, 0, 23.22, 15.0, 10.5, .04, .79)
     lower_canopy(site, "藏经阁 · lower gallery", 0, 23.22, 12.03, 7.82, .79, 3.35, 5, "ink", wall="plaster")
     hall(site, "藏经阁 · sutra storey", 0, 23.22, 10.13, 6.1, 5.1, 2.98, 5, "ink", rise=2.13,
@@ -623,6 +659,19 @@ def qintai():
     roof(site, "古琴台 · gateway ridge", 0, -17.14, 10.3, 3.67, 4.14, 1.24, "glaze",
          ridge=.48, kick=.56)
     plaque(site, "古琴台山门", 0, -17.99, 3.72, 2.36, .48)
+    stone = site.part("古琴台 · gate arch trim and garden terrace edging", "stone")
+    voussoirs(stone, 0, -17.84, 1.95, 1.56, .16, .23)
+    slab(stone, 0, -17.98, 3.24, .69, .03, .17)
+    for sign in (-1, 1):
+        slab(stone, sign * 2.16, -17.94, .86, .57, .04, .54)
+        slab(stone, sign * 2.16, -17.96, .99, .64, .54, .68)
+        # Low stone-edged beds run from the white marble terrace to the stele gallery.
+        for x in (sign * 6.57, sign * 9.0):
+            slab(stone, x, -2.39, .22, 6.6, .04, .35)
+        for y in (-5.66, .88):
+            slab(stone, sign * 7.785, y, 2.21, .22, .04, .35)
+        slab(site.part("琴台园 · planted court beds", "glaze"),
+             sign * 7.785, -2.39, 2.21, 6.37, .045, .19)
     screen = site.part("印心石屋 · inscribed screen wall", "plaster")
     slab(screen, -8.16, -12.88, 4.76, .54, .04, 2.54)
     slab(site.part("印心石屋 · screen roof", "ink"), -8.16, -12.88, 5.03, .82, 2.54, 2.76)
@@ -735,6 +784,16 @@ def lake():
               site.part("落羽桥 · handrails", "plaster"),
               [(-7.32, 13.56, .89), (-11.08, 17.12, .96), (-16.08, 21.55, 1.01),
                (-21.55, 26.48, .9)], 2.93, stone=True)
+    # Island-side threshold stones remain on the built bridge axes so the shore walk can meet them.
+    threshold = site.part("荷风桥与落羽桥 · bridgehead coping and newels", "plaster")
+    for x, y, z, w, angle in ((0, -20.44, .998, 3.64, -.03),
+                             (-8.94, 15.10, .925, 2.99, .81)):
+        threshold.box((x, y, z), (w, .36, .17), angle)
+        for sign in (-1, 1):
+            px = x + sign * w / 2 * cos(angle)
+            py = y + sign * w / 2 * sin(angle)
+            threshold.box((px, py, z + .38), (.36, .36, .79), angle)
+            threshold.box((px, py, z + .81), (.46, .46, .13), angle)
     dock = site.part("行吟阁码头 · boarding terrace", "deck")
     slab(dock, 15.6, -9.91, 8.6, 6.02, -.15, .89)
     slab(dock, 21.5, -9.91, 3.2, 4.1, -.3, .49)

@@ -228,6 +228,11 @@ def tv():
     _course(plinth, [(-14, 18, 18), (-.05, 18, 18), (.12, 19.8, 19.8),
                      (.74, 19.8, 19.8), (.92, 19.1, 19.1)])
     _stairs(service, 0, -7.6, 5.2, .90, 2.18, 5)
+    for side in (-1, 1):
+        x = side * 2.74
+        doors.beam((x, -9.63, .68), (x, -7.44, 1.54), .085)
+        for y, z in ((-9.63, .3), (-8.58, .73), (-7.44, 1.13)):
+            doors.box((x, y, z), (.095, .095, .76))
     _course(service, [(3.45, 16.8, 14.6), (3.75, 16.8, 14.6), (3.98, 15.6, 13.7),
                       (4.22, 14.0, 12.7)])
     for face, w in _sides(0, 0, 16, 14.1):
@@ -297,6 +302,12 @@ def customs():
     _course(base, [(0, 32.8, 18.4), (.26, 32.8, 18.4), (.46, 32.2, 17.8),
                     (1.18, 31.4, 17.1)])
     _stairs(base, 0, -8.35, 10.0, 1.19, 2.06, 6)
+    # The broad top landing connects the river-side steps directly to the column bases.
+    entablature.box((0, -9.52, .055), (13.18, 1.36, .13))
+    for side in (-1, 1):
+        x = side * 5.26
+        base.box((x, -9.23, .40), (.51, 2.36, .85))
+        carving.beam((x, -10.38, .39), (x, -8.25, 1.27), .63, .18)
     _course(entablature, [(16.32, 30.4, 14.7), (16.67, 30.5, 14.8),
                            (16.76, 31.2, 15.5), (17.26, 31.2, 15.5),
                            (17.47, 32.12, 16.35), (17.89, 32.12, 16.35),
@@ -417,6 +428,15 @@ def watertower():
     _round(base, [(-.02, 6.4), (.34, 6.4), (.48, 6.12), (.98, 6.04),
                   (1.08, 5.82), (1.39, 5.82)], 8, angle=pi / 8)
     _stairs(base, -2.8, -5.15, 2.25, 1.05, 1.9, 5)
+    # Dressed granite at the street corner follows the octagonal brick plan.
+    street_corner = Part('Water tower / street-level granite apron and rusticated courses', 'stone')
+    for angle in (-pi / 4, 0, pi / 4):
+        face = (5.45 * sin(angle), -5.45 * cos(angle), angle)
+        for row in range(2):
+            for i in range(4):
+                street_corner.box(_point(*face, (i - 1.5) * .96, -.04, .55 + row * .32),
+                                  (.927, .14, .284), angle)
+    street_corner.box((-2.8, -7.47, .10), (3.35, .76, .16))
     # The water tank occupies the tall top storey behind the old fire-watch parapet.
     floors = (1.35, 4.75, 8.38, 12.09, 15.81, 19.48, 23.53, 25.55)
     apothem = 5.38 * cos(pi / 8)
@@ -476,7 +496,7 @@ def watertower():
                    (29.34, 3.62, 3.71), (29.47, 3.29, 3.36)], tx, ty)
     cap.box((tx, ty, 29.32), (2.91, 3.03, .34))
     cap.cylinder(tx, ty, 29.46, 31.64, .071, 8)
-    _finish(base, brick, trim, glass, surrounds, sash, crenels, cap)
+    _finish(base, brick, trim, glass, surrounds, sash, crenels, cap, street_corner)
 
 
 def wuda():
@@ -533,6 +553,11 @@ def wuda():
         _wall(brick, facade, 3.51, -.28, 10.15, 8.54, [portal])
         _arch_trim(bands, facade, portal, .245, 11, -.28, .06)
         _arch_trim(bands, (x, 3.69, pi), portal, .15, 7, -.14)
+        _section(bands, *facade, [(-.17, 4.68), (.17, 4.68), (.23, 5.10), (-.23, 5.10)],
+                 -.36, -.16)
+        for side in (-1, 1):
+            for z in (1.02, 2.16, 3.30):
+                bands.box((x + side * 1.31, -4.99, z), (.32, .35, .17))
         _stairs(stairs, x, -4.70, 2.20, 1.0, 2.54, 7)
         _stairs(stairs, x, 2.82, 2.26, 2.98, 7.45, 14)
         stairs.box((x, 4.50, 2.84), (2.35, 3.42, .31))
@@ -572,8 +597,18 @@ def museum():
                      (2.73, 34.44, 19.70), (3.89, 33.4, 18.10)], 0, 3.96)
     _course(paving, [(3.85, 33.8, 18.43), (4.11, 33.80, 18.43)], 0, 3.96)
     _stairs(ground, 0, -5.47, 8.5, 4.02, 7.32, 13)
-    for x in (-4.65, 4.65):
-        paving.beam((x, -12.95, .38), (x, -5.21, 4.39), .41, .45)
+    cheek = Part('Hubei Museum / stepped granite cheeks and landing returns', 'stone')
+    for sign in (-1, 1):
+        x = sign * 4.65
+        for step in range(4):
+            back = -12.8 + 1.9 * step
+            top = .63 + 1.02 * step
+            cheek.box((x, back + .97, top / 2), (.67, 1.94, top))
+            paving.box((x, back + .97, top + .06), (.75, 1.94, .12))
+        cheek.box((x, -5.04, 2.18), (.77, .62, 4.36))
+        paving.box((x, -5.04, 4.42), (.88, .74, .14))
+        for offset in (1.24, 2.48, 3.72):
+            paving.box((sign * (4.65 + offset), -5.12, 4.18), (1.19, .45, .15))
     paving.box((0, -14.72, .055), (8.56, 3.71, .17))
     for x in (-8.91, 8.91):
         paving.box((x, -11.0, .035), (1.02, 8.11, .13))
@@ -627,7 +662,7 @@ def museum():
                 _hip(roofs, raised, dx * 13.65, 8.40, 11.72, 13.82, 8.61, 3.47,
                      4.41, 3.52, .05, 2.4)
                 shell.box((dx * 13.65, 8.47, 7.86), (10.0, 12.26, 1.62))
-    _finish(ground, paving, shell, curtain, metal, roofs, raised, soffit)
+    _finish(ground, paving, shell, curtain, metal, roofs, raised, soffit, cheek)
 
 
 def honglou():
@@ -645,6 +680,12 @@ def honglou():
     _course(base, [(-.04, 41.5, 14.2), (.36, 41.50, 14.2), (.55, 41.14, 13.88),
                     (1.0, 40.63, 13.56)], 0, .02)
     _stairs(base, 0, -9.05, 7.48, 1.11, 2.36, 7)
+    for side in (-1, 1):
+        x = side * 3.94
+        brick.box((x, -10.0, .45), (.46, 2.89, .98))
+        plaster.beam((x, -11.47, .46), (x, -8.85, 1.20), .56, .13)
+        _course(plaster, [(.09, .68, .64), (.36, .58, .59), (.90, .53, .52),
+                          (1.01, .69, .68)], x, -11.30)
     for sx in (-1, 1):
         x = 12.48 * sx
         front = (x, -6.44, 0)
@@ -666,6 +707,9 @@ def honglou():
                 else:
                     frames.box(_point(*front, u, .20, sill + .36), (w + .16, .16, .77))
                     railing.box(_point(*front, u, .11, sill + .77), (w + .15, .13, .10))
+                    for picket in (-.48, -.24, 0, .24, .48):
+                        railing.box(_point(*front, u + picket, -.018, sill + .40),
+                                    (.048, .07, .68))
             plaster.box(_point(*front, 0, -.02, z0 + .19), (15.21, .37, .17))
         rear = (x, 6.40, pi)
         flank = (20.0 * sx, 0, sx * pi / 2)

@@ -48,8 +48,14 @@ def terrace():
                 p = turn(0, -15.20 + .51 * i, side)
                 plinth.box((*p, z / 2), (6.4, .53, z))
             for x in (-3.33, 3.33):
-                coping.beam((*turn(x, -15.4, side), .42),
-                            (*turn(x, -11.4, side), 2.80), .34, .38)
+                # Each stair cheek has an outward cap, carved newels and a sloped handrail.
+                coping.beam((*turn(x, -15.4, side), .43),
+                            (*turn(x, -11.4, side), 2.86), .32, .26)
+                for y, z in ((-15.34, .27), (-13.40, 1.45), (-11.46, 2.43)):
+                    px, py = turn(x, y, side)
+                    coping.box((px, py, z + .25), (.38, .39, .60))
+                    coping.box((px, py, z + .58), (.48, .49, .13))
+                    coping.cylinder(px, py, z + .65, z + .79, .143, 8)
         for lo, hi in intervals:
             bays = max(2, round((hi - lo) / 2.65))
             for i in range(bays + 1):
@@ -376,6 +382,9 @@ def plaque(radius):
     for x in (-1.42, 1.42):
         box(mount, x, y+.09, z-1.21, .35, .55, .26)
         box(gold, x, y-.197, z-1.18, .32, .09, .23)
+    for x in (-2.35, 2.35):
+        for h in (-1.10, 1.10):
+            box(gold, x, y-.176, z+h, .082, .038, .082)
     raised_inscription(gold, z, y-.150, side)
     for part in (board, gold, mount):
         part.finish()
