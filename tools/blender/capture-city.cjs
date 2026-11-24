@@ -9,11 +9,16 @@ const root = path.resolve(__dirname, '../..');
 const out = path.join(root, 'output/architecture');
 
 function capture() {
-  const { scene, YZ, HAN, LAKES } = window.__dbg;
+  const { scene, YZ, HAN, LAKES, vessels } = window.__dbg;
   scene.updateMatrixWorld(true);
   const parkAssets = [];
   const lots = {}, landmarks = {}, vegetation = {}, meshes = [], atmosphere = [], greenway = [];
-  const boats = scene.children.find(o => o.material?.uniforms?.uBoats).material.uniforms.uBoats.value;
+  const water = scene.children.find(o => o.material?.uniforms?.uBoats).material.uniforms;
+  const wakes = (water.uBoatWake?.value ?? []).flatMap((wake,i) => {
+    const center=water.uBoats.value[i];
+    return wake.w>0 && center && Math.hypot(wake.x,wake.y)>.1
+      ? [{center:[center.x,-center.y],forward:[wake.x,-wake.y],stern:wake.z,length:wake.w}] : [];
+  });
   const pack = array => {
     const bytes = new Uint8Array(array.buffer, array.byteOffset, array.byteLength);
     let binary = '';
@@ -23,8 +28,7 @@ function capture() {
   };
   function geometryOf(node) {
     const geo = node.geometry;
-    return { positions: pack(geo.getAttribute('position').array),
-      index: geo.index ? pack(Uint32Array.from(geo.index.array)) : null };
+    return {positions:pack(geo.getAttribute('position').array),index:geo.index ? pack(Uint32Array.from(geo.index.array)) : null};
   }
   function copy(node, group, name, material) {
     const item = { group, name, material, ...geometryOf(node), matrix: node.matrixWorld.toArray() };
@@ -67,21 +71,40 @@ function capture() {
       parkAssets.push({ key: node.userData.parkAsset, name: node.userData.name, matrix: node.matrixWorld.toArray() });
     } else if (node.userData.modelKey) {
       landmarks[node.userData.modelKey] = { name: node.userData.name, matrix: node.matrixWorld.toArray() };
-    } else if (node.isGroup &&
-               boats.some(p => p.x === node.position.x && p.y === node.position.z)) {
-      node.traverse(child => {
-        if (child.isMesh) copy(child, '江上舟船', 'River boat', child.material.isShaderMaterial ? 'Boat' : 'Ink');
-      });
     } else if (node.name === 'City streets') {
       copy(node, '武汉街道', 'Street network', 'Streets');
     } else if (node.geometry?.type === 'ExtrudeGeometry') {
       copy(node, '三镇河岸', 'Riverbank', 'Land');
     }
   }
+  const vesselModels=vessels ? vessels.map(vessel=>vessel.model) : scene.children.filter(node=>node.userData.vessel);
+  const ships=vesselModels.flatMap((model,i)=>{
+    if (!model.visible) return [];
+    const {type,stern,bow,draft}=model.userData.vessel;
+    const group=type==='lakeLaunch' ? '东湖轻舟' : '江上舟船';
+    const waterlineMidpoint=[(stern+bow)/2,0,0];
+    const worldToPivot=model.matrixWorld.clone()
+      .multiply(new THREE.Matrix4().makeTranslation(...waterlineMidpoint)).invert();
+    const parts=[];
+    model.traverse(child => {
+      if (!child.isMesh || !child.visible) return;
+      const material=child.userData.vesselMaterial;
+      if (!material) return;
+      const item={name:child.name,group,material:Array.isArray(material)?material[0]:material,
+        ...geometryOf(child),matrix:worldToPivot.clone().multiply(child.matrixWorld).toArray()};
+      if (Array.isArray(material)) {
+        item.materialSlots=material;
+        item.faceGroups=child.geometry.groups.map(({start,count,materialIndex})=>[start/3,count/3,materialIndex]);
+      }
+      parts.push(item);
+    });
+    return [{id:'vessel-'+String(i+1).padStart(2,'0'),name:model.name,type,group,draft,
+      matrix:model.matrixWorld.toArray(),waterlineMidpoint,parts}];
+  });
   const rivers = [YZ, HAN].map(river => river.s
     .map(s => [s.p.x, -s.p.z, s.d.z, s.d.x, s.w]));
-  const eastLake = LAKES[0].map(([x, z]) => [x, -z]);
-  return { lots, landmarks, parkAssets, vegetation, meshes, rivers, greenway, eastLake, atmosphere };
+  const lakes = LAKES.map(ring=>ring.map(([x,z])=>[x,-z]));
+  return { lots, landmarks, parkAssets, vegetation, meshes, vessels:ships, rivers, greenway, eastLake:lakes[0], lakes, atmosphere, wakes };
 }
 
 (async () => {

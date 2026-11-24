@@ -647,18 +647,84 @@
   buildCityBlocks();
 
   /* ═════════ 十、江上舟船 ═════════ */
-  const riverBoats = [
-    { m: cargoShip(),  t: .50, v: .0022,  off:  18, s: 1.38 },
-    { m: riverLiner(), t: .60, v: -.0018, off: -20, s: 1.4 },
-    { m: junk(),       t: .36, v: .0014,  off: -26, s: 1.2 },
-    { m: sampan(),     t: .52, v: -.0011, off:  28, s: 1.1 }
+  function riverStation(river, fraction, offset = 0) {
+    const point = river.curve.getPointAt(fraction);
+    const tangent = river.curve.getTangentAt(fraction);
+    return point.add(V(tangent.z * offset, 0, -tangent.x * offset));
+  }
+
+  // Parallel legs join through semicircles, so a vessel can turn back without teleporting or reversing its bow.
+  function returnChannel(spine, radius) {
+    const points = [], last = spine.length - 1;
+    const frames = spine.map((point, i) => {
+      const forward = spine[Math.min(i + 1, last)].clone().sub(spine[Math.max(i - 1, 0)]).normalize();
+      return { point, forward, normal: V(forward.z, 0, -forward.x) };
+    });
+    for (const sign of [1, -1]) {
+      for (let i = 0; i <= last; i++) {
+        const { point, normal } = frames[sign === 1 ? i : last - i];
+        points.push(point.clone().addScaledVector(normal, sign * radius));
+      }
+      const { point, forward, normal } = frames[sign === 1 ? last : 0];
+      for (let j = 1; j < 12; j++) {
+        const angle = j * Math.PI / 12;
+        points.push(point.clone().addScaledVector(normal, sign * radius * Math.cos(angle))
+          .addScaledVector(forward, sign * radius * Math.sin(angle)));
+      }
+    }
+    const route = new THREE.CatmullRomCurve3(points, true);
+    route.arcLengthDivisions = points.length * 10;
+    return route;
+  }
+
+  function alongRiver(river, start, end, count, offset, radius) {
+    const spine = Array.from({ length: count }, (_, i) =>
+      riverStation(river, start + (end - start) * i / (count - 1), offset));
+    return returnChannel(spine, radius);
+  }
+
+  function lakeRoute(radius, direction) {
+    const points = Array.from({ length: 48 }, (_, i) => {
+      const angle = direction * i * Math.PI / 24;
+      return V(lakeC.x + LRX * radius * Math.cos(angle), 0, lakeC.z + LRZ * radius * Math.sin(angle));
+    });
+    return new THREE.CatmullRomCurve3(points, true);
+  }
+
+  // The two freight lanes line up with open spans of both bridges. Ferry crossings use the wider confluence downstream.
+  const freightChannel = alongRiver(YZ, .395, .483, 42, -.5, 18.5);
+  const confluenceFerry = returnChannel([
+    riverStation(YZ, .497, 26), riverStation(YZ, .499, 19), riverStation(YZ, .502, 3),
+    riverStation(YZ, .505, -14), riverStation(YZ, .508, -25)
+  ], 5.2);
+  const hanFerry = alongRiver(HAN, .87, .991, 32, 0, 3.1);
+  const vessels = [
+    { model: cargoShip(),      route: freightChannel, phase: .27, speed: 1.55, scale: .74, wakeLength: 18 },
+    { model: cargoShip('containers'), route: freightChannel, phase: .78, speed: 1.55, scale: .72, wakeLength: 16 },
+    { model: riverLiner(),     route: confluenceFerry, phase: .19, speed: 1.22, scale: .77, wakeLength: 12 },
+    { model: riverLiner(),     route: hanFerry, phase: .34, speed: .96, scale: .66, wakeLength: 9 },
+    { model: lakeLaunch(true), route: lakeRoute(.92, 1), phase: .12, speed: .65, scale: 1, wakeLength: 6 },
+    { model: lakeLaunch(false), route: lakeRoute(.62, -1), phase: .43, speed: .46, scale: .93, wakeLength: 4 }
   ];
-  riverBoats.forEach((b, i) => { b.m.scale.setScalar(b.s); b.i = i; scene.add(b.m); });
-  const lakeBoats = [
-    { m: junk(),   a: .7, k: .92, sp: .045, s: 1.1 },
-    { m: sampan(), a: 3.4, k: .62, sp: -.035, s: 1.0 }
-  ];
-  lakeBoats.forEach((b, i) => { b.m.scale.setScalar(b.s); b.i = 4 + i; scene.add(b.m); });
+  const shipHeading = V(0, 0, 0);
+  vessels.forEach(({model, scale}) => {
+    model.scale.setScalar(scale);
+    model.rotation.order = 'YXZ';
+    scene.add(model);
+  });
+  function updateVessels(time) {
+    vessels.forEach(({model, route, phase, speed, scale, wakeLength}, i) => {
+      const station = THREE.MathUtils.euclideanModulo(phase + time * speed / route.getLength(), 1);
+      route.getPointAt(station, model.position);
+      route.getTangentAt(station, shipHeading);
+      model.position.y = .025 * scale * Math.sin(time * .8 + i);
+      model.rotation.y = Math.atan2(-shipHeading.z, shipHeading.x);
+      model.rotation.z = .003 * Math.sin(time * .77 + i);
+      model.rotation.x = .008 * Math.sin(time * .62 + i);
+      boatU[i].set(model.position.x, model.position.z);
+      boatWakeU[i].set(shipHeading.x, shipHeading.z, -model.userData.vessel.stern * scale, wakeLength);
+    });
+  }
 
   /* ═════════ 十一、江上飞鸟：几笔浓墨 ═════════ */
   const birds = [];

@@ -348,3 +348,65 @@ test('the East Lake greenway follows land around the full lake', async ({ page }
   expect(result.error).toBeLessThan(.09);
   for (const size of result.extent) expect(size).toBeGreaterThan(.95);
 });
+
+test('vessels clear the banks, sit in the water and carry their wakes through each loop', async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await page.goto('/?debug');
+  await page.waitForFunction(() => window.__ready && window.__dbg);
+  const metrics = await page.evaluate(() => {
+    const { vessels, updateVessels, scene, onLand } = window.__dbg;
+    const { uBoats, uBoatWake } = scene.children.find(o => o.material?.uniforms?.uBoatWake).material.uniforms;
+    return vessels.map(({ model, route, speed, phase, scale }, i) => {
+      const period = route.getLength() / speed;
+      const hull = model.children.find(part => Array.isArray(part.material));
+      const vertices = hull.geometry.attributes.position;
+      const data = model.userData.vessel, centre = new THREE.Vector3(), bow = new THREE.Vector3();
+      let touchesLand = false, maxKeel = -Infinity, minDeck = Infinity;
+      let maxOriginError = 0, minFacing = 1, maxSternError = 0;
+      for (let step = 0; step < 80; step++) {
+        const time = period * (step / 80 - phase);
+        updateVessels(time);
+        model.updateMatrixWorld(true);
+        let keel = Infinity, deck = -Infinity;
+        for (let n = 0; n < vertices.count; n++) {
+          const y = bow.fromBufferAttribute(vertices, n).applyMatrix4(hull.matrixWorld).y;
+          keel = Math.min(keel, y);
+          deck = Math.max(deck, y);
+        }
+        maxKeel = Math.max(maxKeel, keel);
+        minDeck = Math.min(minDeck, deck);
+        for (const x of [data.stern, 0, data.bow]) for (const z of [-data.beam/2, data.beam/2]) {
+          bow.set(x, 0, z).applyMatrix4(model.matrixWorld);
+          touchesLand ||= onLand(bow.x, bow.z);
+        }
+        const wake = uBoatWake.value[i], origin = uBoats.value[i];
+        maxOriginError = Math.max(maxOriginError, Math.hypot(origin.x-model.position.x, origin.y-model.position.z));
+        maxSternError = Math.max(maxSternError, Math.abs(wake.z + data.stern * scale));
+        centre.copy(model.position);
+        const dx = wake.x, dz = wake.y;
+        updateVessels(time + .02);
+        bow.copy(model.position).sub(centre);
+        bow.y = 0;
+        bow.normalize();
+        minFacing = Math.min(minFacing, bow.x*dx + bow.z*dz);
+      }
+      // Check the actual moving model on both sides of the route's wrap.
+      updateVessels(period * (1 - phase) - .015);
+      centre.copy(model.position);
+      updateVessels(period * (1 - phase) + .015);
+      return { type: data.type, touchesLand, maxKeel, minDeck, maxOriginError, minFacing, maxSternError,
+        seamDistance: centre.distanceTo(model.position), wakeLength: uBoatWake.value[i].w };
+    });
+  });
+  expect(metrics.map(v => v.type).sort()).toEqual(['cargo','cargo','ferry','ferry','lakeLaunch','lakeLaunch']);
+  for (const ship of metrics) {
+    expect(ship.touchesLand).toBe(false);
+    expect(ship.maxKeel).toBeLessThan(-.1);
+    expect(ship.minDeck).toBeGreaterThan(.1);
+    expect(ship.minFacing).toBeGreaterThan(.99);
+    expect(ship.maxOriginError).toBeLessThan(.001);
+    expect(ship.maxSternError).toBeLessThan(.001);
+    expect(ship.seamDistance).toBeLessThan(.06);
+    expect(ship.wakeLength).toBeGreaterThan(0);
+  }
+});

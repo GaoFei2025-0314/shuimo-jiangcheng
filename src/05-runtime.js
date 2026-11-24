@@ -370,25 +370,7 @@
     waterU.uTime.value = t;
     mistMats.forEach(m => m.uniforms.uTime.value = t);
 
-    riverBoats.forEach(b => {
-      let u = (b.t + b.v * t) % 1; if (u < 0) u += 1;
-      const tt = .30 + .40 * u;
-      const p = YZ.curve.getPointAt(tt), d = YZ.curve.getTangentAt(tt);
-      const nx = d.z, nz = -d.x, L = Math.hypot(nx, nz) || 1;
-      const sgn = b.v > 0 ? 1 : -1;
-      b.m.position.set(p.x + nx / L * b.off, .3 + Math.sin(t * 1.2 + b.i) * .12, p.z + nz / L * b.off);
-      b.m.rotation.y = Math.atan2(-d.z * sgn, d.x * sgn);
-      b.m.rotation.z = Math.sin(t * .9 + b.i * 2) * .02;
-      boatU[b.i].set(b.m.position.x, b.m.position.z);
-    });
-    lakeBoats.forEach(b => {
-      const a = b.a + t * b.sp;
-      const x = lakeC.x + Math.cos(a) * LRX * b.k, z = lakeC.z + Math.sin(a) * LRZ * b.k;
-      b.m.position.set(x, .3 + Math.sin(t * 1.1 + b.a) * .07, z);
-      const dx = -Math.sin(a) * LRX * b.k * Math.sign(b.sp), dz = Math.cos(a) * LRZ * b.k * Math.sign(b.sp);
-      b.m.rotation.y = Math.atan2(-dz, dx);
-      boatU[b.i].set(x, z);
-    });
+    updateVessels(t);
 
     birds.forEach(b => {                                            // 环飞，翅随之开合
       const a = b.a + t * b.sp;
@@ -429,5 +411,5 @@
   // ?debug 时把内部状态挂出来，供浏览器里核对；正常访问不暴露。就绪与否仍以 app.ready() 置的 window.__ready 为准
   if (/[?&]debug\b/.test(location.search)) window.__dbg = {
     GEO, LAKES, LAND_HOLES, HILLS, HILL, YZ, HAN, HANKOU, HANYANG, WUCHANG, AT, VIEWS, MARKS: overlays.marks, LABELS: overlays.labels,
-    LAND_Y, terrainTop, plantingSurface, cityGround, landmarkGrounds, towerPark, BRIDGES, approachRoads, roadAt, approachHalfWidth, reliefAt, onLand, inPoly, geo, camera, controls, flyTo, scene
+    LAND_Y, terrainTop, plantingSurface, cityGround, landmarkGrounds, towerPark, BRIDGES, approachRoads, roadAt, approachHalfWidth, vessels, updateVessels, reliefAt, onLand, inPoly, geo, camera, controls, flyTo, scene
   };

@@ -97,7 +97,7 @@ npm run build
 node tools/blender/capture-city.cjs
 ```
 
-使用同一 Blender MCP 调用运行 `tools/blender/city.py`，生成 `output/architecture/city.blend`、两江近景 `city.png`、全城鸟瞰 `city-wide.png` 和蛇山街景 `city-hillside.png`。从工程的「武汉街坊」集合选择一栋屋舍即可独立移动或旋转，同屋型的实例共享几何。十五处建筑均按景点分集合，山林、船只和灯光也可分别编辑。网页版使用实时水墨渲染。全城工程的「镜头与光」集合中有八台相机。四台桥头相机分别面向两座大桥的武昌、汉阳落地点，同时输出 `bridge-wuhan-{wuchang,hanyang}.png` 和 `bridge-yingwuzhou-{wuchang,hanyang}.png`，可检查坡道、过街和周边街坊。
+使用同一 Blender MCP 调用运行 `tools/blender/city.py`，生成 `output/architecture/city.blend`、两江近景 `city.png`、全城鸟瞰 `city-wide.png` 和蛇山街景 `city-hillside.png`。从工程的「武汉街坊」集合选择一栋屋舍即可独立移动或旋转，同屋型的实例共享几何。十五处建筑均按景点分集合，山林、船只和灯光也可分别编辑。网页版使用实时水墨渲染。全城工程的「镜头与光」集合中有九台相机。「长江货船 · 船艉与舱盖」近景输出为 `river-freighter.png`，可核对船身吃水、舱盖和尾迹的位置。四台桥头相机分别面向两座大桥的武昌、汉阳落地点，同时输出 `bridge-wuhan-{wuchang,hanyang}.png` 和 `bridge-yingwuzhou-{wuchang,hanyang}.png`，可检查坡道、过街和周边街坊。
 
 同一次运行还会输出蛇山西段独立工程 `output/architecture/tower-park.blend` 和西入口俯视图 `output/architecture/tower-park.png`。可以单独选择胜像宝塔、三楚一楼牌坊、归鹤池铜鹤、两座侧亭与园路，也可以从周边街道转到主楼检查坡地衔接。这些模型与网页共用 `tools/blender/tower_park.py` 的构件以及网页采集的场地坐标。
 
@@ -134,9 +134,9 @@ node tools/blender/capture-city.cjs
 **墨色分阶** —— 光照结果先量化成四阶，再在 `uInk`/`uPaper` 之间取色，
 叠 fbm 墨晕与交叉排线。每种材质可单独指定这两端的颜色，整幅图的色阶由此统一调度。
 
-**江面** —— 加载时在 CPU 上烤一张 512×512 的「水纹图」，逐像素存
-「距中泓的世界距离」「离岸远近」「是否水面」「是江还是湖」。
-Shader 据此让笔触顺河道走、近岸留白、江心笔浓，湖面则改为平远的横笔。
+**江水与湖水。** 两张 512×512 水纹图记录距中泓的距离、沿程、岸带和水域类型。长江用淡赭灰，汉江用冷灰青，短笔随河道转弯，在交汇处逐渐混合。湖面保留稀疏的横向风纹。色调参考武汉两江交汇的水色差异。[武汉市发改委的两江交汇影像](https://fgw.wuhan.gov.cn/xwzx/fgyw/202001/t20200116_864116.html)
+
+**江船与湖船。** 舱盖货船和载箱货船沿两座跨江桥的桥孔往返。两艘客渡分别在汉江和交汇区航行，东湖保留有篷、敞篷各一条游船。每艘船按自身吃水落位，尾流在船艉展开并随船速、船型取不同长度。航线和船速均按游览画面编排。Blender 工程保留同一时刻的船位和尾迹。选择船名可整船移动，展开后可单独编辑船壳、舱盖、舷窗和载荷。客渡的双层布局参考武汉普客轮渡。[武汉市交通运输局关于客渡尾部甲板的答复](https://jtj.wuhan.gov.cn/hdjl/lxxd/202602/t20260214_2730558.shtml)
 
 **山** —— 形状取自 Copernicus GLO-30，每座山一块高程格子（相对平原的起伏）；
    峰值改用实测海拔，因为 DSM 含建筑，能抹净楼群的滤波会连山一起削掉六成。

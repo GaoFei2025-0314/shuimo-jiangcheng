@@ -181,31 +181,63 @@
       groundTriangle(shoulderGround, point(index[i]), point(index[i+1]), point(index[i+2]));
   }
 
-  /* 水面：以「水纹图」驱动的笔触——顺流成线，近岸留白，湖面作同心波 */
+  /* 水纹图保存横向距离、岸带与沿江航程。两江汇合处让不同方向的笔触都变淡。 */
   const FN = 512, WR = { x: -1000, z: -1300, w: 2400, h: 2200 };
-  const flowTex = (() => {
+  const [flowTex, driftTex] = (() => {
     const data = new Uint8Array(FN * FN * 4);
-    const CL = [];
-    const grab = (S, step) => {
-      for (let k = 0; k < S.length; k += step) {
-        const s = S[k], L = Math.hypot(s.d.x, s.d.z) || 1;
-        CL.push({ x: s.p.x, z: s.p.z, w: s.w, nx: s.d.z / L, nz: -s.d.x / L });
+    const drift = new Uint8Array(FN * FN * 4);
+    function segments(samples, step) {
+      const stations = samples.filter((_, i) => i % step === 0 || i === samples.length-1);
+      let along = 0;
+      return stations.slice(0,-1).map((s,i)=>{
+        const next = stations[i+1], dx = next.p.x-s.p.x, dz = next.p.z-s.p.z;
+        const length = Math.hypot(dx,dz);
+        const record = { x:s.p.x, z:s.p.z, dx:dx/length, dz:dz/length, length,
+          w:s.w, taper:(next.w-s.w)/length, along };
+        along += length;
+        return record;
+      });
+    }
+    const yangtze = segments(YZ.s,5), han = segments(HAN.s,4);
+    function field(x,z,river,out) {
+      let nearest = Infinity;
+      for (const s of river) {
+        const px=x-s.x, pz=z-s.z;
+        const t=Math.max(0,Math.min(s.length,px*s.dx+pz*s.dz));
+        const dx=px-t*s.dx, dz=pz-t*s.dz, distance=dx*dx+dz*dz;
+        if (distance >= nearest) continue;
+        nearest=distance;
+        const radius=Math.sqrt(distance);
+        out.band=1-radius/(s.w+t*s.taper);
+        out.across=(px*s.dz-pz*s.dx < 0 ? -1 : 1)*radius;
+        out.along=s.along+t;
       }
-    };
-    grab(YZ.s, 5); grab(HAN.s, 4);   // 汉水原始采样点比长江少，跨步也按比例调小，取完两条中泓线的点数、烘焙开销大致相当
+    }
+    const yzField={}, hanField={}, outlet={};
+    field(mouth.x,mouth.z,yangtze,outlet);
+    const smooth=THREE.MathUtils.smoothstep;
+    const byte = v => Math.round(Math.max(0,Math.min(1,v))*255);
     const LK = LAKES.map(L => L.filter((p, k) => k % 3 === 0));
     for (let j2 = 0; j2 < FN; j2++) {
       const z = WR.z + (j2 + .5) / FN * WR.h;
       for (let i2 = 0; i2 < FN; i2++) {
         const x = WR.x + (i2 + .5) / FN * WR.w;
-        let bd = 1e18, b = CL[0];
-        for (let k = 0; k < CL.length; k++) {
-          const c = CL[k], dd = (c.x - x) * (c.x - x) + (c.z - z) * (c.z - z);
-          if (dd < bd) { bd = dd; b = c; }
-        }
-        const dist = Math.sqrt(bd);
-        let signed = (x - b.x) * b.nx + (z - b.z) * b.nz;
-        let band = 1 - dist / b.w, wet = dist < b.w ? 1 : 0, lake = 0;
+        field(x,z,yangtze,yzField);
+        field(x,z,han,hanField);
+        const margin=hanField.band-yzField.band;
+        const selected=margin>0 ? hanField : yzField;
+        let signed=selected.across, band=selected.band, lake=0;
+        const downstream=yzField.along-outlet.along;
+        const turn=smooth(downstream,-20,42);
+        const reach=smooth(downstream,-22,13)*(1-smooth(downstream,38,156));
+        const tongueAxis=outlet.across*(1-.26*turn)+1.8*Math.sin(downstream*.055);
+        const tongueWidth=22-8*turn;
+        const tongue=reach*(1-smooth(Math.abs(yzField.across-tongueAxis),tongueWidth*.12,tongueWidth));
+        const intoMain=smooth(downstream,-17,17)*smooth(yzField.band,-.23,.09);
+        const intake=smooth(margin,-.15,.24)*smooth(hanField.band,-.11,.23)*(1-intoMain);
+        const hanTint=Math.max(intake,.84*tongue);
+        const merger=1-.74*Math.max(tongue*(1-smooth(downstream,24,80)),
+          smooth(Math.min(yzField.band,hanField.band),-.05,.23)*(1-smooth(Math.abs(margin),.035,.23)));
         for (let li = 0; li < LAKES.length; li++) {
           const bb = LAKE_BB[li];
           if (x <= bb[0] || x >= bb[1] || z <= bb[2] || z >= bb[3] || !inPoly(LAKES[li], x, z)) continue;
@@ -216,27 +248,36 @@
           }
           signed = z - lakeC.z;                               // 湖面平远：横笔数道，不作同心圆；所有湖都借东湖湖心定相，仅为横笔取一致的相位基准，与各湖自身位置无关
           band = Math.min(1, Math.sqrt(de) / LAKE_REACH[li]); // 按各湖尺寸定取样半径，小湖也能收到几笔，东湖（半径已封顶 120）不受影响
-          wet = 1; lake = 1;
+          lake = 1;
           break;
         }
         const o = (j2 * FN + i2) * 4;
-        data[o]     = Math.round(Math.min(1, Math.max(0, signed / 512 + .5)) * 255);
-        data[o + 1] = Math.round(Math.min(1, Math.max(0, band)) * 255);
-        data[o + 2] = wet * 255;
-        data[o + 3] = lake * 255;
+        const cross=Math.round(THREE.MathUtils.clamp(signed/512+.5,0,1)*65535);
+        data[o] = cross >> 8;
+        data[o+1] = cross & 255;
+        data[o+2] = byte((band+.12)/1.12);
+        data[o+3] = byte(lake);
+        const station=Math.round(Math.min(selected.along/6500,1)*65535);
+        drift[o] = station >> 8;
+        drift[o+1] = station & 255;
+        drift[o+2] = byte(hanTint);
+        drift[o+3] = byte(merger);
       }
     }
-    const t = new THREE.DataTexture(data, FN, FN, THREE.RGBAFormat);
-    t.minFilter = t.magFilter = THREE.LinearFilter;
-    t.wrapS = t.wrapT = THREE.ClampToEdgeWrapping;
-    t.generateMipmaps = false; t.premultiplyAlpha = false; t.needsUpdate = true;
-    return t;
+    return [data,drift].map(bytes=>{
+      const tex=new THREE.DataTexture(bytes,FN,FN,THREE.RGBAFormat);
+      tex.minFilter=tex.magFilter=THREE.LinearFilter;
+      tex.needsUpdate=true;
+      return tex;
+    });
   })();
 
-  const boatU = [0, 1, 2, 3, 4, 5].map(() => new THREE.Vector2(9e5, 9e5));
+  const boatU = Array.from({length:6},()=>new THREE.Vector2(9e5,9e5));
+  const boatWakeU = Array.from({length:6},()=>new THREE.Vector4(0,0,0,0));
   const waterU = Object.assign({
-    uTime: { value: 0 }, uBoats: { value: boatU },
-    uFlow: { value: flowTex }, uRect: { value: new THREE.Vector4(WR.x, WR.z, WR.w, WR.h) }
+    uTime: { value: 0 }, uBoats: { value: boatU }, uBoatWake: { value: boatWakeU },
+    uFlow: { value: flowTex }, uDrift: { value: driftTex },
+    uRect: { value: new THREE.Vector4(WR.x, WR.z, WR.w, WR.h) }
   }, fogU, camU, sharedInk);
   const water = new THREE.Mesh(
     new THREE.PlaneGeometry(X1 - X0 + 900, ZBOT - ZTOP + 900),
@@ -246,46 +287,87 @@
         void main(){ vec4 w = modelMatrix * vec4(position,1.); vW = w.xyz; vec4 mv = viewMatrix * w; vD = -mv.z; gl_Position = projectionMatrix * mv; }`,
       fragmentShader: NOISE + `
         uniform vec3 uFog, uInk, uPaper; uniform float uNear, uFar, uTime;
-        uniform vec2 uBoats[6]; uniform sampler2D uFlow; uniform vec4 uRect;
+        uniform vec2 uBoats[6]; uniform vec4 uBoatWake[6], uRect;
+        uniform sampler2D uFlow, uDrift;
         varying vec3 vW; varying float vD;
         void main(){
           vec2 p = vW.xz;
           vec2 uv = (p - uRect.xy) / uRect.zw;
           vec4 f = texture2D(uFlow, clamp(uv, .0015, .9985));
           float inR = step(0., uv.x) * step(uv.x, 1.) * step(0., uv.y) * step(uv.y, 1.);
-          float aw   = (f.r - .5) * 512.0;          // 距中泓的世界距离
-          float band = f.g;                          // 1 江心 → 0 近岸
-          float wet  = f.b * inR;
-
+          const vec2 word = vec2(65280.,255.)/65535.;
+          float aw = (dot(f.rg,word)-.5)*512.;  // 距中泓的世界距离
+          float shore = f.b*1.12-.12;
+          float band = max(0.,shore);         // 1 江心 → 0 近岸
           float lake = f.a;
-          float freq = mix(.38, .17, lake);          // 湖面笔疏，江面笔密
-          float warp  = fbm(p * .010 + uTime * .004) * 11.0 + fbm(p * .035) * 3.0;
-          float s1 = sin(aw * freq + warp + uTime * .20);
-          float s2 = sin(aw * freq * 3.0 - warp * .5 + uTime * .38);
-          // 成片的留白把长线断开，沿程还有浓淡
-          float wash = mix(.26, .04, lake) + (1. - mix(.26, .04, lake))
-                     * smoothstep(mix(.30, .42, lake), .68, fbm(p * .0068 + vec2(uTime * .010, 0.)));
-          float vary = .42 + .58 * fbm(vec2(aw * .035, fbm(p * .0035) * 4.0));
-          float mid = smoothstep(.02, .26, band);    // 近岸留白
-          float ink = smoothstep(.42, .94, s1) * wash * vary * mid * .24
-                    + smoothstep(.80, .99, s2) * wash * mid * .10;
-          ink *= wet * mix(1.0, .34, lake);          // 湖面平静，笔淡
+          float wet = max(lake,smoothstep(-.12,.035,shore))*inR;
 
-          for(int i = 0; i < 6; i++){
-            float r = distance(p, uBoats[i]);
-            float ring = smoothstep(.86, 1., sin(r * 1.7 - uTime * 1.6)) * smoothstep(9., 1.5, r);
-            ink = max(ink, ring * .24 * wet);
+          float haze = smoothstep(uNear,uFar,vD);
+          if(wet<.001){
+            gl_FragColor=vec4(mix(uPaper,uFog,haze),1.);
+            return;
           }
+          vec3 base = uPaper;
+          float ink = 0.;
+          if(lake<.999){
+            vec4 drift = texture2D(uDrift,clamp(uv,.0015,.9985));
+            float station = dot(drift.rg,word)*6500.;
+            vec2 stream = vec2(station,aw);
+            float knot = fbm(stream*vec2(.025,.14));
+            float driftPhase = aw*.78+knot*.93+uTime*.048;
+            float track = floor(driftPhase/6.28318+.5);
+            float across = abs(fract(driftPhase/6.28318+.5)-.5)*6.28318;
+            float advance = station*.071+hash(vec2(track,17.))-uTime*.016;
+            float segment = floor(advance);
+            float grain = hash(vec2(segment,track));
+            float along = (fract(advance)-.5)/mix(.19,.47,grain);
+            float shape = length(vec2(across/mix(.22,.46,grain),along));
+            float main = (1.-smoothstep(.14,1.,shape))*smoothstep(.16,.69,grain);
+            float dryMask = smoothstep(.47,.74,vnoise(stream*vec2(.31,.19)-vec2(uTime*.047,0.)));
+            float faint = smoothstep(.92,.999,sin(driftPhase*2.07+knot))*dryMask;
+            float away = smoothstep(.04,.30,band);
+            ink += (main*.25+faint*.095)*away*drift.a*(1.-lake);
 
-          vec3 base = uPaper * mix(1.0, .99 - fbm(p * .004) * .018, wet);
-          // A dilute celadon wash separates a lake inlet from its paper-coloured bank.
-          float littoral = (1. - smoothstep(.0, .32, band)) * lake * wet;
-          float lakeWash = lake * wet * (.105 + .065 * fbm(p * .021)) + .14 * littoral;
-          base = mix(base, vec3(.43, .59, .56), lakeWash);
-          float shoreRipples = smoothstep(.86, .99, sin(p.y * 2.2 + warp + uTime * .25));
-          ink += .12 * littoral * shoreRipples * smoothstep(.32, .70, fbm(p * .075));
-          vec3 col = mix(base, uInk, clamp(ink, 0., 1.));
-          col = mix(col, uFog, smoothstep(uNear, uFar, vD));
+            vec3 tint = mix(vec3(.64,.66,.56),vec3(.45,.64,.60),drift.b);
+            float pigment = (.32+.26*away+.075*fbm(stream*vec2(.013,.043)))*wet*(1.-lake);
+            base = mix(base,tint,pigment);
+          }
+          if(lake>.001){
+            // The lake keeps its own sparse horizontal brush and dilute littoral wash.
+            float warp = fbm(p*.010+uTime*.004)*11.+fbm(p*.035)*3.;
+            float wash = .04+.96*smoothstep(.42,.68,fbm(p*.0068+vec2(uTime*.010,0.)));
+            float vary = .42+.58*fbm(vec2(aw*.035,fbm(p*.0035)*4.));
+            float lakeInk = (smoothstep(.42,.94,sin(aw*.17+warp+uTime*.20))*vary*.24
+              +smoothstep(.80,.99,sin(aw*.51-warp*.5+uTime*.38))*.10)
+              *wash*smoothstep(.02,.26,band)*.34;
+            float littoral = (1.-smoothstep(.0,.32,band))*lake*wet;
+            float lakeWash = lake*wet*(.105+.065*fbm(p*.021))+.14*littoral;
+            float shoreRipples = smoothstep(.86,.99,sin(p.y*2.2+warp+uTime*.25));
+            lakeInk += .12*littoral*shoreRipples*smoothstep(.32,.70,fbm(p*.075));
+            base *= mix(1.,.99-fbm(p*.004)*.018,lake*wet);
+            base = mix(base,vec3(.43,.59,.56),lakeWash);
+            ink += lakeInk*lake;
+          }
+          vec3 col = mix(base,uInk,wet*ink);
+          float foam = 0.;
+          for(int i=0;i<6;i++){
+            vec4 wake=uBoatWake[i];
+            vec2 delta=p-uBoats[i];
+            float aft=-dot(delta,wake.xy)-wake.z;
+            if(aft<0. || aft>=wake.w) continue;
+            float lateral=abs(dot(delta,vec2(-wake.y,wake.x)));
+            float t=aft/wake.w;
+            float strength=smoothstep(0.,.12,t)*(1.-smoothstep(.30,1.,t));
+            float width=mix(.12,.42,t);
+            float ripple=sin(aft*1.7-uTime*2.5)*.10;
+            float v=1.-smoothstep(width*.36,width,abs(lateral-aft*.27-ripple));
+            float echo=1.-smoothstep(width*.34,width,abs(lateral-aft*.42-ripple));
+            float prop=(1.-smoothstep(.04,.32,lateral))*max(0.,sin(aft*1.8-uTime*2.6))
+               *(1.-smoothstep(.05,.20,t));
+            foam=max(foam,(v*.60+echo*.29*(1.-smoothstep(.30,.67,t))+prop*.32)*strength);
+          }
+          col=mix(col,mix(uPaper,vec3(1.,.985,.93),.58),wet*foam*mix(.95,.40,lake));
+          col = mix(col,uFog,haze);
           gl_FragColor = vec4(col, 1.);
         }`
     })

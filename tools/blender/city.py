@@ -99,11 +99,17 @@ def geometry_arrays(item):
     return points, indices
 
 
-def imported_mesh(item, mat, dest):
+def imported_mesh(item, mat, dest, parent=None):
     points, indices = geometry_arrays(item)
     data = bpy.data.meshes.new(item["name"])
     data.from_pydata(points.tolist(), [], indices.tolist())
-    data.materials.append(mat)
+    for material in mat if isinstance(mat, tuple) else (mat,):
+        data.materials.append(material)
+    if "faceGroups" in item:
+        slots = np.zeros(len(indices), dtype=np.int32)
+        for start, count, slot in item["faceGroups"]:
+            slots[start:start + count] = slot
+        data.polygons.foreach_set("material_index", slots)
     if "deckPigment" in item:
         pigment = np.frombuffer(base64.b64decode(item["deckPigment"]), dtype="<f4")
         layer = data.attributes.new(name="Deck pigment", type='FLOAT', domain='POINT')
@@ -113,13 +119,33 @@ def imported_mesh(item, mat, dest):
     data.update()
     obj = bpy.data.objects.new(item["name"], data)
     dest.objects.link(obj)
-    obj.matrix_world = placement(item["matrix"])
+    if parent is None:
+        obj.matrix_world = placement(item["matrix"])
+    else:
+        obj.parent = parent
+        obj.matrix_basis = placement(item["matrix"])
     if item["material"] in ("Streets", "ApproachPaving", "RoadPaint") or item["group"] in (
             "汉阳桥头街坊", "武昌桥头街坊", "汉阳两桥街道", "武昌两桥街道"):
         # Thin paving ribbons meet at intersections; their pigment casts no extra shadow.
         obj.visible_shadow = False
         obj.visible_diffuse = False
         obj.visible_glossy = False
+
+
+def place_vessel(record, materials, dest):
+    root = bpy.data.objects.new(f'{record["name"]} · {record["id"]}', None)
+    root.empty_display_type = 'ARROWS'
+    root.empty_display_size = .65
+    dest.objects.link(root)
+    midpoint = AXES @ Vector(record["waterlineMidpoint"])
+    root.matrix_world = placement(record["matrix"]) @ Matrix.Translation(midpoint)
+    root["vessel_id"] = record["id"]
+    root["vessel_type"] = record["type"]
+    root["design_draft"] = record["draft"]
+    for item in record["parts"]:
+        slots = tuple(materials[key] for key in item.get("materialSlots", (item["material"],)))
+        imported_mesh(item, slots, dest, parent=root)
+    return root
 
 
 def city_blocks(scene, captured, streets):
@@ -196,39 +222,189 @@ def place_building(scene, builder, data, dest):
     return root
 
 
-def water(rivers, materials, dest):
-    data = bpy.data.meshes.new("江面")
-    data.from_pydata([(-3000,-3000,0), (3000,-3000,0), (3000,3000,0), (-3000,3000,0)],
-                     [], [(0,1,2,3)])
-    data.materials.append(materials["Water"])
-    obj = bpy.data.objects.new("两江与湖面", data)
-    dest.objects.link(obj)
-    # Break a few strokes along actual centreline tangents, tapering both ends.
+def water(rivers, materials, dest, lakes=()):
+    def surface(name, vertices, faces, material, field=None):
+        data = bpy.data.meshes.new(name)
+        data.from_pydata(vertices, [], faces)
+        data.materials.append(material)
+        obj = bpy.data.objects.new(name, data)
+        dest.objects.link(obj)
+        if field is not None:
+            data.attributes.new("pigment", 'FLOAT', 'POINT').data.foreach_set("value", field)
+        return obj
+
+    def shade_attribute(material):
+        nodes = material.node_tree.nodes
+        attribute = nodes.new("ShaderNodeAttribute")
+        attribute.attribute_name = "pigment"
+        return nodes, material.node_tree.links, attribute.outputs["Fac"]
+
+    def soften(material):
+        nodes, links, amount = shade_attribute(material)
+        mix = nodes.new("ShaderNodeMixShader")
+        links.new(amount, mix.inputs[0])
+        links.new(nodes.new("ShaderNodeBsdfTransparent").outputs[0], mix.inputs[1])
+        links.new(nodes.get("Principled BSDF").outputs[0], mix.inputs[2])
+        links.new(mix.outputs[0], nodes.get("Material Output").inputs["Surface"])
+
+    def smooth(t, lo, hi):
+        u = min(1., max(0., (t - lo) / (hi - lo)))
+        return u*u*(3 - 2*u)
+
+    surface("纸地", [(-3000,-3000,-.15), (3000,-3000,-.15), (3000,3000,-.15), (-3000,3000,-.15)],
+            [(0, 1, 2, 3)], materials["Land"])
+
+    yangtze, han = rivers
+    mouth_x, mouth_y = han[-1][:2]
+    junction = min(range(len(yangtze)), key=lambda i: math.dist(yangtze[i][:2], (mouth_x, mouth_y)))
+    cx, cy, nx, ny, _ = yangtze[junction]
+    bank = (mouth_x-cx)*nx + (mouth_y-cy)*ny
+    station = [0.]
+    for first, second in zip(yangtze, yangtze[1:]):
+        station.append(station[-1] + math.dist(first[:2], second[:2]))
+
+    main_mat = paint("Water", "bab8a5")
+    han_mat = paint("Water", "9fbcb0")
+    nodes, links, tint = shade_attribute(main_mat)
+    paint_mix = nodes.new("ShaderNodeMixRGB")
+    paint_mix.inputs[2].default_value = han_mat.diffuse_color
+    base_color = nodes.get("Principled BSDF").inputs["Base Color"]
+    links.new(base_color.links[0].from_socket, paint_mix.inputs[1])
+    links.new(tint, paint_mix.inputs[0])
+    links.new(paint_mix.outputs[0], base_color)
+    soften(han_mat)
+
+    # Cross-stream subdivisions soften the Han pigment into the Yangtze downstream.
+    width = 15
+    for number, (river, name, material) in enumerate(zip(rivers, ("长江", "汉水"), (main_mat, han_mat))):
+        vertices, faces, pigment = [], [], []
+        for i, (x, y, nx, ny, half) in enumerate(river):
+            for j in range(width):
+                offset = (2*j/(width-1)-1)*half*1.06
+                px, py = x+offset*nx, y+offset*ny
+                vertices.append((px, py, .012*number))
+                if number == 0:
+                    delta = station[i]-station[junction]
+                    turn = smooth(delta,-20,42)
+                    extent = 22-8*turn
+                    reach = smooth(delta,-22,13)*(1-smooth(delta,38,156))
+                    axis = bank*(1-.26*turn)+1.8*math.sin(delta*.055)
+                    shade = .84*reach*(1-smooth(abs(offset-axis),extent*.12,extent))
+                else:
+                    fade = smooth(i,len(han)-9,len(han)-1)
+                    if fade:
+                        overlap = max(1-math.hypot(px-sx,py-sy)/wh for sx,sy,_,_,wh in
+                                      yangtze[max(0,junction-7):junction+8])
+                        shade = 1-fade*smooth(overlap,-.03,.20)
+                    else:
+                        shade = 1.
+                pigment.append(shade)
+                if i and j:
+                    k = i*width+j
+                    faces.append((k-width-1,k-1,k,k-width))
+        wash = surface(name + " · 顺岸水洗", vertices, faces, material, pigment)
+        wash.visible_shadow = False
+    lake_mat = paint("Water", "aebfb4")
+    for index, outline in enumerate(lakes):
+        ring = list(outline)
+        if len(ring) >= 3 and math.dist(ring[0], ring[-1]) < 1e-6:
+            ring.pop()
+        if len(ring) >= 3:
+            area = sum(x * ny - y * nx for (x, y), (nx, ny) in zip(ring, ring[1:] + ring[:1]))
+            if area < 0:
+                ring.reverse()
+            surface("东湖 · 水洗" if index == 0 else f"湖面 · {index + 1}",
+                    [(x, y, .009) for x, y in ring], [tuple(range(len(ring)))], lake_mat)
+
+    # Flat, translucent marks need no light-blocking surface or hard paper edge.
+    stroke = paint("江水 · 淡墨", "8c9a90")
+    soften(stroke)
     rng = random.Random(1957)
-    for river, name in zip(rivers, ("长江", "汉水")):
-        verts, faces = [], []
+    for i_river, (river, name) in enumerate(zip(rivers, ("长江", "汉水"))):
+        verts, faces, pigment = [], [], []
         for i in range(1, len(river)-5):
-            for _ in range(2):
-                offset = rng.uniform(-.88, .88)
-                length = rng.uniform(.62, 2.22)
-                width = rng.uniform(.10, .31)
+            for _ in range(3 if i_river == 0 else 2):
+                lateral = rng.uniform(-.78, .78)
+                length = rng.uniform(.21, .70)
+                width = rng.uniform(.065, .18)
+                density = rng.uniform(.12, .31)
                 start = len(verts)
                 offset_along = rng.random()
-                for j in range(6):
-                    t = i + offset_along + length * j / 5
+                for j in range(7):
+                    t = i + offset_along + length*j/6
                     k, f = int(t), t % 1
                     x, y, nx, ny, half = (a + (b-a)*f for a,b in zip(river[k], river[k+1]))
-                    w = width * (.04 + math.sin(math.pi*j/5))
-                    for sign in (-1, 1):
-                        lateral = half * offset + w * sign
-                        verts.append((x + lateral * nx, y + lateral * ny, .07))
+                    taper = math.sin(math.pi*j/6)
+                    for u in (-1, 0, 1):
+                        offset = half*lateral + width*(.05+.95*taper)*u
+                        verts.append((x+offset*nx, y+offset*ny, .039))
+                        pigment.append(density*taper if u == 0 else 0.)
                     if j:
-                        k = start + j * 2
-                        faces.append((k-2, k-1, k+1, k))
-        data = bpy.data.meshes.new(name + " · 笔触")
-        data.from_pydata(verts, [], faces)
-        data.materials.append(materials["Ripples"])
-        dest.objects.link(bpy.data.objects.new(data.name, data))
+                        for col in (0, 1):
+                            a = start+(j-1)*3+col
+                            faces.extend(((a,a+3,a+1),(a+1,a+3,a+4)))
+        ripples = surface(name + " · 笔触", verts, faces, stroke, pigment)
+        ripples.visible_shadow = False
+
+
+def vessel_wakes(wakes, lakes, dest):
+    mat = paint("尾流 · 水沫", "f4efdd")
+    nodes, links = mat.node_tree.nodes, mat.node_tree.links
+    strength = nodes.new("ShaderNodeAttribute")
+    strength.attribute_name = "wake_strength"
+    mix = nodes.new("ShaderNodeMixShader")
+    links.new(strength.outputs["Fac"], mix.inputs[0])
+    links.new(nodes.new("ShaderNodeBsdfTransparent").outputs[0], mix.inputs[1])
+    links.new(nodes.get("Principled BSDF").outputs[0], mix.inputs[2])
+    links.new(mix.outputs[0], nodes.get("Material Output").inputs["Surface"])
+
+    lake_edges = [list(zip(ring, ring[1:] + ring[:1])) for ring in lakes]
+
+    def ease(t):
+        t = min(1, max(0, t))
+        return t * t * (3 - 2 * t)
+
+    for index, record in enumerate(wakes, 1):
+        x, y = record["center"]
+        forward_x, forward_y = record["forward"]
+        magnitude = math.hypot(forward_x, forward_y)
+        length, stern = record["length"], max(0, record["stern"])
+        if magnitude < 1e-6 or length <= 0:
+            continue
+        forward_x, forward_y = forward_x / magnitude, forward_y / magnitude
+        side_x, side_y = -forward_y, forward_x
+        in_lake = any(sum((ay > y) != (by > y) and x < ax + (bx-ax)*(y-ay)/(by-ay)
+                          for (ax, ay), (bx, by) in edges) % 2 for edges in lake_edges)
+        opacity = .40 if in_lake else .77
+        vertices, faces, amounts = [], [], []
+        # Two divergent outer lines and two shorter echoes share the actual stern.
+        for opening, extent, weight in ((.27, 1., 1.), (.42, .67, .55)):
+            for side in (-1, 1):
+                start = len(vertices)
+                for row in range(21):
+                    t = row / 20 * extent
+                    aft = length * t
+                    width = (.12 + .30*t) * (.75 if in_lake else 1.)
+                    center = side * (opening*aft + .066*math.sin(aft*1.7))
+                    fade = ease(t/.12) * (1 - ease((t-.29)/(extent-.29)))
+                    for u in (-1, 0, 1):
+                        offset = center + u * width
+                        vertices.append((x-(stern+aft)*forward_x+offset*side_x,
+                                         y-(stern+aft)*forward_y+offset*side_y, .083))
+                        amounts.append(opacity * weight * fade if u == 0 else 0.)
+                    if row:
+                        for col in (0, 1):
+                            a = start + (row-1)*3 + col
+                            faces.extend(((a, a+1, a+3), (a+1, a+4, a+3)))
+        name = f"{'湖上' if in_lake else '江上'}舟船 · 艉迹 {index}"
+        data = bpy.data.meshes.new(name)
+        data.from_pydata(vertices, [], faces)
+        data.materials.append(mat)
+        strength_field = data.attributes.new("wake_strength", 'FLOAT', 'POINT')
+        strength_field.data.foreach_set("value", amounts)
+        obj = bpy.data.objects.new(name, data)
+        dest.objects.link(obj)
+        obj.visible_shadow = False
 
 
 def lake_greenway(points, mat, dest):
@@ -375,6 +551,21 @@ def lighting(scene, camera_group):
     return overview, hillside
 
 
+def freight_view(scene, wake, camera_group):
+    along = Vector((*wake["forward"], 0)).normalized()
+    side = Vector((-along.y, along.x, 0))
+    target = Vector((*wake["center"], .4)) - along * (wake["stern"] + wake["length"] * .24)
+    back = (-along * .48 + side + Vector((0, 0, .78))).normalized()
+    camera = scene.camera.copy()
+    camera.data = camera.data.copy()
+    camera.name = camera.data.name = "长江货船 · 船艉与舱盖"
+    camera_group.objects.link(camera)
+    camera.location = target + back * 24
+    camera.rotation_euler = (-back).to_track_quat('-Z', 'Y').to_euler()
+    camera.data.ortho_scale = wake["length"] + wake["stern"] * 3.4
+    return camera
+
+
 def bridgehead_views(scene, camera_group):
     """Frame each approach and its receiving street from the river side."""
     views = []
@@ -508,7 +699,10 @@ def build():
             "WetBank":"8c9c86", "ShoreStone":"979d8d", "Reeds":"687e65",
             "BankStone":"b4a88d", "Path":"d1c3a7", "Slate":"677872",
             "Masonry":"c4b9a2", "Ink":"4b5049", "Paper":"d4cfc2",
-            "DistantRidge":"c5c6b5", "Greenway":"909c89", "Water":"9ab7b2", "Ripples":"c4d1c4", "Streets":"c6c1af", "ApproachPaving":"98998b", "RoadPaint":"e6dabc", "Boat":"aa9980"}.items()}
+            "DistantRidge":"c5c6b5", "Greenway":"909c89", "Water":"9ab7b2", "Ripples":"c4d1c4", "Streets":"c6c1af", "ApproachPaving":"98998b", "RoadPaint":"e6dabc",
+            "Boat":"aa9980", "BoatHull":"536e63", "BoatBottom":"995d48", "BoatDeck":"ab9b82", "BoatCabin":"ddd3b7",
+            "BoatGlass":"486767", "BoatRail":"7b8271", "BoatAccent":"ae6550", "BoatCargo":"788969",
+            "BoatLoad":"776956", "BoatCanopy":"a9ad83"}.items()}
         if any("deckPigment" in item for item in capture["meshes"]):
             # The apron begins in deck asphalt and ends in the receiving street's paving.
             tree = mats["ApproachPaving"].node_tree
@@ -526,7 +720,12 @@ def build():
             return groups[name]
         for item in capture["meshes"]:
             imported_mesh(item, mats[item["material"]], group(item["group"]))
-        water(capture["rivers"], mats, group("两江水墨"))
+        for vessel in capture.get("vessels", ()):
+            place_vessel(vessel, mats, group(vessel["group"]))
+        lakes = capture.get("lakes") or ([capture["eastLake"]] if capture.get("eastLake") else ())
+        water(capture["rivers"], mats, group("两江水墨"), lakes)
+        if capture.get("wakes"):
+            vessel_wakes(capture["wakes"], lakes, group("舟船尾迹"))
         if capture.get("greenway"):
             lake_greenway(capture["greenway"], mats["Greenway"], group("东湖岸线"))
         if capture.get("eastLake"):
@@ -547,7 +746,10 @@ def build():
         if park_roots:
             camera, corners = park_view(scene, park_roots, landmark_roots["tower"], group("镜头与光"))
             export_park(scene, camera, corners)
-        bridges = bridgehead_views(scene, group("镜头与光"))
+        detail_views = bridgehead_views(scene, group("镜头与光"))
+        if capture.get("wakes"):
+            camera = freight_view(scene, capture["wakes"][0], group("镜头与光"))
+            detail_views.append((camera, "river-freighter.png"))
         mesh.save_project(scene, OUT / "city.blend")
         scene.render.filepath = str(OUT / "city.png")
         bpy.ops.render.render(write_still=True, scene=scene.name)
@@ -556,7 +758,7 @@ def build():
             scene.render.filepath = str(OUT / filename)
             bpy.ops.render.render(write_still=True, scene=scene.name)
         scene.render.resolution_percentage = 64
-        for camera, filename in bridges:
+        for camera, filename in detail_views:
             scene.camera = camera
             scene.render.filepath = str(OUT / filename)
             bpy.ops.render.render(write_still=True, scene=scene.name)
