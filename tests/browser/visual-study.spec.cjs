@@ -262,15 +262,20 @@ test('both riverbanks have continuous paved streets between the two bridge junct
   expect(failures).toEqual([]);
 });
 
-test('the Wuhan bridge sidewalks clear the hillside all the way into the receiving streets', async ({ page }) => {
+test('the bridge sidewalks clear the hillside and the painted crossings at their landings', async ({ page }) => {
   await page.goto('/?debug');
   await page.waitForFunction(() => window.__ready && window.__dbg);
   const buried = await page.evaluate(() => {
     const { scene, plantingSurface } = window.__dbg;
     const missing = [];
-    for (const bank of ['武昌','汉阳']) for (const side of ['左','右']) {
-      const name = bank+'引道 · '+side+'侧连续步道';
-      const mesh = scene.getObjectByName(name);
+    const ray = new THREE.Raycaster(), down = new THREE.Vector3(0,-1,0);
+    const walks = [];
+    for (const bank of ['武昌','汉阳']) {
+      for (const side of ['左','右']) walks.push([bank+'引道 · '+side+'侧连续步道']);
+      walks.push(['鹦鹉洲'+bank+'引道 · 横街人行转角', '鹦鹉洲'+bank+'引道 · 车道线']);
+    }
+    for (const [name, paintName] of walks) {
+      const mesh = scene.getObjectByName(name), paint = paintName && scene.getObjectByName(paintName);
       const {position} = mesh.geometry.attributes, index = mesh.geometry.index;
       const [a,b,c] = Array.from({length:3}, () => new THREE.Vector3());
       const face = new THREE.Triangle(a,b,c), normal = new THREE.Vector3(), center = new THREE.Vector3();
@@ -280,6 +285,10 @@ test('the Wuhan bridge sidewalks clear the hillside all the way into the receivi
         face.getMidpoint(center);
         const grade = plantingSurface(center.x,center.z);
         if (grade == null || center.y < grade-.015) missing.push({name,i,grade,y:center.y});
+        if (paint) {
+          ray.set(new THREE.Vector3(center.x,65,center.z),down);
+          if (ray.intersectObject(paint).length) missing.push({name,i,reason:'curb in crossing'});
+        }
       }
     }
     return missing;

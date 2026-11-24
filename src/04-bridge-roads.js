@@ -46,7 +46,7 @@
       const nodes = Array.from({length: count + 1}, (_, i) => {
         const t = i / count, z = 100 + t * run;
         const center = toWorld(side < 0 ? 0 : 4.8 * smooth(t, .25, .88), side * z);
-        const taper = smooth(t, .28, .86);
+        const taper = smooth(t, .11, .91);
         // A cubic starts tangent to the bridge and settles onto the level street.
         const y = mix(deckY, junctionY, smooth(t, 0, 1)) - .095 * run * t * (1-t) ** 2;
         return { center, y, half: mix(deckEdge, streetEdge, taper), taper, z };
@@ -58,13 +58,16 @@
       });
       const point = (row, x, y) => [row.center.x+row.nx*x, y, row.center.z+row.nz*x];
       const pavement = row => [point(row,-row.half,row.y), point(row,row.half,row.y)];
-      function strip(section, start, end, vertices, indices) {
+      function ribbon(sections, vertices, indices) {
         const first = vertices.length / 3;
-        for (const row of rows.slice(start,end+1)) vertices.push(...section(row).flat());
-        for (let i=0;i<end-start;i++) {
+        for (const section of sections) vertices.push(...section.flat());
+        for (let i=0;i<sections.length-1;i++) {
           const a=first+i*2;
           indices.push(a,a+2,a+1,a+1,a+2,a+3);
         }
+      }
+      function strip(section, start, end, vertices, indices) {
+        ribbon(rows.slice(start,end+1).map(section),vertices,indices);
       }
       function show(label, material, ink, vertices, indices, pigment) {
         const shape = new THREE.BufferGeometry();
@@ -96,7 +99,9 @@
       show('车行面','ApproachPaving',approachPaving,road,roadTris,pigment);
       show('坡脚挡面','BankStone',M.bankStone,base,baseTris);
 
-      const walks=[], walkTris=[], marks=[], markTris=[];
+      const walks=[], walkTris=[], returns=[], returnTris=[], marks=[], markTris=[];
+      const turnStart = count - 8;
+      const forward = rows[count].center.clone().sub(rows[count-1].center).normalize();
       for (const direction of [-1,1]) {
         const walk = row => {
           const outer = mix(encoded(7.15 + .93 / 2), streetEdge - .06, row.taper);
@@ -105,13 +110,37 @@
           return direction<0 ? [point(row,-outer,y),point(row,-inner,y)] :
             [point(row,inner,y),point(row,outer,y)];
         };
-        strip(walk,0,count,walks,walkTris);
+        strip(walk,0,turnStart,walks,walkTris);
         strip(row => {
           const [a,b]=walk(row);
           const top = direction < 0 ? b : a;
           const bottom = [top[0],row.y-.015,top[2]];
           return direction < 0 ? [top,bottom] : [bottom,top];
-        },0,count,walks,walkTris);
+        },0,turnStart,walks,walkTris);
+
+        // Each sidewalk curves away from the crossing, then lowers beside the cross street.
+        const first = walk(rows[turnStart]);
+        const a = V(...first[0]).lerp(V(...first[1]),.5);
+        const outward = V(rows[count].nx * direction,0,rows[count].nz * direction);
+        const crossStreetHalf = direction === side ? 1.95 : 1.625;
+        const landing = junction.clone().addScaledVector(forward,-crossStreetHalf-.36).addScaledVector(outward,8);
+        const curve = new THREE.CubicBezierCurve3(a, a.clone().addScaledVector(forward,1.45),
+          landing.clone().addScaledVector(outward,-3.4).setY(a.y), landing.clone().setY(a.y));
+        const corners = [first];
+        for (let i=1;i<=15;i++) {
+          const t=i/15, p=curve.getPoint(t), along=curve.getTangent(t);
+          const half=mix(.37,.32,smooth(t,.65,1));
+          const grade=terrainTop(p.x,p.z);
+          p.y=mix(a.y,grade+.03,smooth(t,.04,1));
+          const across=V(along.z,0,-along.x).normalize().multiplyScalar(half);
+          corners.push([p.clone().sub(across).toArray(),p.clone().add(across).toArray()]);
+        }
+        ribbon(corners,returns,returnTris);
+        ribbon(corners.map(([left,right])=>{
+          const top=direction<0 ? right : left;
+          const base=[top[0],terrainTop(top[0],top[2])-.025,top[2]];
+          return direction<0 ? [top,base] : [base,top];
+        }),returns,returnTris);
         for (const lane of [1,2,3]) {
           // Two dashed tracks per direction terminate as the side lanes merge.
           const end = lane===1 ? count-7 : Math.floor(count*(lane===2 ? .64 : .49));
@@ -134,6 +163,7 @@
         strip(row => [point(row,x-.13,row.y+.018),point(row,x+.13,row.y+.018)],count-5,count-3,marks,markTris);
       }
       show('路缘与人行道','BankStone',M.bankStone,walks,walkTris);
+      show('横街人行转角','BankStone',M.bankStone,returns,returnTris);
       show('车道线','RoadPaint',lanePaint,marks,markTris);
       for (let i=0;i<count;i++) {
         reservePath({a:rows[i].center,b:rows[i+1].center,width:2*rows[i].half,group,name});
