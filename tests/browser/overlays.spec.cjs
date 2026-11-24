@@ -1,20 +1,30 @@
 const { test, expect, ready } = require('./fixtures.cjs');
 
-async function collisions(page) {
-  return page.evaluate(() => {
+async function collisions(page, duringAnimation = false) {
+  return page.evaluate(async moving => {
     const rect = e => ({ name: e.textContent, ...e.getBoundingClientRect().toJSON() });
     const visible = e => !e.hidden && getComputedStyle(e).visibility !== 'hidden' && Number(getComputedStyle(e).opacity) > .01 && e.getBoundingClientRect().width > 0;
-    const marks = [...document.querySelectorAll('.mark')].filter(visible).map(rect);
-    const ui = [...document.querySelectorAll('#title, #poem, #sound, #poem-toggle, #dock')].filter(visible).map(rect);
-    const labels = [...document.querySelectorAll('#labels b')].filter(visible).map(rect);
     const overlap = (a, b) => a.left < b.right + 7.8 && a.right + 7.8 > b.left && a.top < b.bottom + 7.8 && a.bottom + 7.8 > b.top;
     const errors = [];
-    marks.forEach((m, i) => {
-      if (m.left < 8 || m.right > innerWidth - 8 || m.top < 8 || m.bottom > innerHeight - 8) errors.push(`${m.name} outside viewport`);
-      [...marks.slice(i + 1), ...ui, ...labels].filter(r => overlap(m, r)).forEach(r => errors.push(`${m.name} overlaps ${r.name}`));
-    });
+    const samples = moving ? 8 : 1;
+    for (let i = 0; i < samples; i++) {
+      if (i) await new Promise(resolve => setTimeout(resolve, 100));
+      const marks = [...document.querySelectorAll('.mark')].filter(visible).map(rect);
+      const ui = [...document.querySelectorAll('#title, #poem, #sound, #poem-toggle, #dock')].filter(visible).map(rect);
+      const labels = [...document.querySelectorAll('#labels b')].filter(visible).map(rect);
+      marks.forEach((m, index) => {
+        if (m.left < 8 || m.right > innerWidth - 8 || m.top < 8 || m.bottom > innerHeight - 8) errors.push(`${m.name} outside viewport`);
+        [...marks.slice(index + 1), ...ui, ...labels].filter(r => overlap(m, r)).forEach(r => errors.push(`${m.name} overlaps ${r.name}`));
+      });
+      if (moving) {
+        for (const m of document.querySelectorAll('.mark:enabled')) {
+          if (Number(getComputedStyle(m).opacity) <= .35 || Number(getComputedStyle(m.parentElement).opacity) <= .01)
+            errors.push(`${m.textContent} is enabled while fading`);
+        }
+      }
+    }
     return errors;
-  });
+  }, duringAnimation);
 }
 
 for (const [width, height] of [[1440, 900], [1280, 720], [390, 844], [360, 640], [844, 390]]) {
@@ -79,11 +89,7 @@ test('entry animations and their cancellation keep marks clear of moving UI', as
   await page.setViewportSize({ width: 844, height: 390 });
   await page.emulateMedia({ reducedMotion: 'no-preference' });
   await ready(page);
-  for (let i = 0; i < 8; i++) {
-    expect(await collisions(page)).toEqual([]);
-    expect(await page.locator('.mark:enabled').evaluateAll(marks => marks.every(m => Number(getComputedStyle(m).opacity) > .35 && Number(getComputedStyle(m.parentElement).opacity) > .01))).toBe(true);
-    await page.waitForTimeout(100);
-  }
+  expect(await collisions(page, true)).toEqual([]);
   await page.emulateMedia({ reducedMotion: 'reduce' });
   await expect.poll(() => collisions(page)).toEqual([]);
 });
