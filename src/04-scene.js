@@ -40,43 +40,16 @@
   }
   const tower   = place(builtLandmark('tower'), AT.tower, .88, .18, '黄鹤楼', 'tower');
   summitGround(tower, 12.1, 17.4, 17.4, 13.5, -.78);
-  { // 两处楼梯在山肩上接短转折梯，薄石面随土坡降到原地面。
-    tower.updateMatrixWorld(true);
-    const ground = (x, z) => {
-      const p = tower.localToWorld(V(x, 0, z));
-      return (plantingSurface(p.x, p.z) - tower.position.y) / tower.scale.y;
-    };
-    const stone = new Acc();
-    function stoneCourse(x, z, width, depth, top) {
-      const heights = [-1, 1].flatMap(i => [-1, 1].map(j => ground(x+i*width/2, z+j*depth/2)));
-      const tread = Math.max(top, ...heights.map(h => h+.09));
-      const foot = Math.min(tread-.20, ...heights) - .06;
-      stone.box(width, tread-foot, depth, x, (tread+foot)/2, z);
-    }
-    for (const side of [-1, 1]) {
-      stoneCourse(0, side*15.58, 6.54, 4.25, .06);
-      const z = side*16.2, width = 3.06, run = 13, start = 3.27;
-      const toe = ground(side*(start+run), z)+.08;
-      const count = Math.max(3, Math.ceil(Math.abs(.06-toe)/.27));
-      for (let i = 0; i < count; i++) {
-        const t = (i+1)/count, x = side*(start+(i+.5)*run/count);
-        stoneCourse(x, z, run/count, width, .06 + (toe-.06)*t);
-      }
-    }
-    const terrace = stone.mesh(M.bankPath, false);
-    terrace.name = '蛇山石阶与转折步道';
-    terrace.userData.keepTreesClear = true;
-    terrace.userData.landscapeSurface = { group: '蛇山', name: terrace.name, material: 'Path' };
-    terrace.applyMatrix4(tower.matrixWorld);
-    scene.add(terrace);
-  }
   const tv      = place(builtLandmark('tv'), AT.tv, 1.5, 0, '龟山电视塔', 'tv');
-  const qc      = place(builtLandmark('qc'), AT.qc, .92, Math.PI / 2, '晴川阁', 'qc');
-  const customs = place(builtLandmark('customs'), AT.customs, .98, Math.PI / 2, '江汉关', 'customs');
+  tv.scale.x = tv.scale.z = 1.13;
+  // Keep the exaggerated architectural footprints on the surveyed land side of the bank.
+  const qc      = place(builtLandmark('qc'), {x:AT.qc.x-4,z:AT.qc.z-2}, .92, Math.PI / 2, '晴川阁', 'qc', terrainTop(AT.qc.x,AT.qc.z)+.16);
+  qc.scale.set(.85,.92,.60);
+  const customs = place(builtLandmark('customs'), {x:AT.customs.x-2,z:AT.customs.z}, .98, Math.PI / 2, '江汉关', 'customs');
   // The three archways face downhill; their toe meets the graded campus apron.
   const wuda    = place(builtLandmark('wuda'), AT.wuda, .74, Math.PI-.08, '武大 · 老斋舍', 'wuda');
   summitGround(wuda, 25, 7.8, 8.5, 16.5, -.42);
-  const xingyin = place(builtLandmark('lake'), AT.xingyin, .34, -.35, '东湖 · 行吟阁', 'xingyin', .45);
+  const xingyin = place(builtLandmark('lake'), { x: AT.xingyin.x-7.7, z: AT.xingyin.z }, .34, -.35, '东湖 · 行吟阁', 'xingyin', .45);
   xingyin.scale.y = .42; // 在狭小的湖岛上保留三层楼阁的宽高关系。
   const chutian = place(builtLandmark('chutian'), AT.chutian, .82, 0, '东湖 · 楚天台', 'chutian');
   // Blend a grass shoulder under each footing without burying the entrance steps.
@@ -98,7 +71,13 @@
         THREE.MathUtils.smoothstep(Math.abs(along), 51, 55));
       const fill = onLand(wx,wz) ? Math.max(0,base-ground) * bridgeClearance *
         (1-THREE.MathUtils.smoothstep(distance,0,margin)) : 0;
-      const height = cutForApproach(wx,wz,ground+fill);
+      let height = cutForApproach(wx,wz,ground+fill);
+      if (site.userData.focus === 'tv') {
+        // At the summit podium keep the road's own clearance, with a shorter soil taper outside it.
+        const path = roadAt(wx,wz);
+        if (path) height = THREE.MathUtils.lerp(height, ground+fill,
+          THREE.MathUtils.smoothstep(path.distance, approachHalfWidth+1.85, approachHalfWidth+5.08));
+      }
       const point = [wx, height, wz];
       points.push(point); vertices.push(...point);
       raised.push(height-ground > .045);
@@ -119,14 +98,16 @@
     scene.add(bank);
   }
   summitGround(tv, 9.5, 10.8, 9.5, 15.5, -.34);
+  summitGround(qc, 26, 8.7, 11.6, 4.4, -.24);
   summitGround(chutian, 14.5, 26.7, 14.3, 16.2, -.38);
   const hongshan   = place(builtLandmark('hongshan'), AT.hongshan, .74, 0, '洪山宝塔 · 宝通禅寺', 'hongshan');
+  summitGround(hongshan, 13.2, 14, 25.4, 11.3, -.43);
   const watertower = place(builtLandmark('watertower'), AT.watertower, .82, 0, '汉口水塔', 'watertower');
-  const museum     = place(builtLandmark('museum'), AT.museum, .78, 0, '湖北省博物馆', 'museum');
+  const museum     = place(builtLandmark('museum'), AT.museum, .78, Math.PI-.32, '湖北省博物馆', 'museum', terrainTop(AT.museum.x,AT.museum.z)+.14);
   const honglou    = place(builtLandmark('honglou'), AT.honglou, .8, 0, '红楼', 'honglou');
   summitGround(honglou, 23, 9.8, 12, 10.6, -.53);
   const guiyuan    = place(builtLandmark('guiyuan'), AT.guiyuan, .7, 0, '归元禅寺', 'guiyuan');
-  const qintai     = place(builtLandmark('qintai'), AT.qintai, .7, -Math.PI / 2, '古琴台', 'qintai');   // 台面朝西，对着月湖
+  const qintai     = place(builtLandmark('qintai'), AT.qintai, .53, .13, '古琴台', 'qintai', terrainTop(AT.qintai.x, AT.qintai.z)+.27);
   // 鹦鹉洲大桥：沿 OSM 桥向（原两端点连线并非江岸），两端各在水体掩膜江面之外 150 米落岸，桥长随之
   const yA = geo(114.26637, 30.53657), yB = geo(114.28587, 30.52963);
   const yingwuzhou = place(builtLandmark('yingwuzhou'), AT.yingwuzhou, 1,
@@ -150,7 +131,7 @@
   pickables.push(lakePick); scene.add(lakePick);
 
   /* ── 东湖绿道：沿岸一圈淡墨 ── */
-  {
+  function buildLakeGreenway() {
     // 绿道沿陆侧绕行。凹湾按曲率缩短偏移，尖角处裁掉自交的小环。
     const shore = LAKE.slice(0, -1); // Closed Catmull-Rom samples repeat their first point.
     const n = shore.length, sg = shore.reduce((s, p, i) => s + p[0] * shore[(i + 1) % n][1] - shore[(i + 1) % n][0] * p[1], 0) > 0 ? 1 : -1;
@@ -222,6 +203,7 @@
     road.userData.lakeGreenway = true;
     road.raycast = function () {}; scene.add(road);
   }
+  buildLakeGreenway();
 
   // The planting pass queries the completed street grid and building footprints.
   const cityGround = { occupied: () => false, streets: [] };
@@ -229,17 +211,22 @@
   /* ═════════ 九、三镇市廛 ═════════ */
   // 以街坊为单位，里分顺巷成排、临江商埠与厂房成带，现代楼群在内街起伏。
   // 空间为画意概括，河湖、桥轴和地标仍使用实测位置。
-  {
+  function buildCityBlocks() {
     const lots = { lane: [], arcade: [], wharf: [], apartment: [], highrise: [], terrace_tower: [], slab_tower: [] };
     const landmarks = pickables.filter(g => !['bridge', 'yingwuzhou', 'lake'].includes(g.userData.focus))
       .map(g => { g.updateMatrixWorld(true); return new THREE.Box3().setFromObject(g).expandByScalar(2.2); });
     const cells = new Map(), cellSize = 14;
     const streetsMesh = new Acc(), streetSurface = new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2);
-    const plannedStreets = [];
+    const plannedStreets = [], protectedPaths = [], routeEnds = [], districtPaving = new Map();
     let citySeed = 571;
     const cityRandom = () => (citySeed = (citySeed * 16807) % 2147483647) / 2147483647;
     const halfWidth = 5.25, halfDepth = 3.95;
     const landmarkAt = (x, z) => landmarks.some(box => x > box.min.x && x < box.max.x && z > box.min.z && z < box.max.z);
+    const distanceToPath = (x, z, { a, b }) => {
+      const dx = b.x-a.x, dz = b.z-a.z;
+      const t = THREE.MathUtils.clamp(((x-a.x)*dx+(z-a.z)*dz)/(dx*dx+dz*dz), 0, 1);
+      return Math.hypot(x-a.x-dx*t, z-a.z-dz*t);
+    };
     function occupied(x, z, radius = 0) {
       const cx = Math.floor(x / cellSize), cz = Math.floor(z / cellSize);
       const cellsToCheck = Math.ceil((radius + 9) / cellSize);
@@ -278,7 +265,10 @@
       return true;
     }
     function buildLot(kind, {x, z}, yaw, scale, height) {
-      if (occupied(x, z, Math.hypot(halfWidth, halfDepth) * scale + .24) || !fits(x, z, yaw, scale)) return false;
+      const lotRadius = Math.hypot(halfWidth, halfDepth)*scale;
+      if (protectedPaths.some(path =>
+        distanceToPath(x, z, path) < path.width/2 + lotRadius + .18)) return false;
+      if (occupied(x, z, lotRadius+.24) || !fits(x, z, yaw, scale)) return false;
       dummy.position.set(x, LAND_Y - .10, z);
       dummy.rotation.set(0, yaw, 0);
       dummy.scale.set(scale, height, scale);
@@ -290,7 +280,7 @@
       return true;
     }
     const skylineClearance = [[AT.tower, 51], [AT.tv, 57], [AT.qc, 46], [AT.customs, 47], [AT.watertower, 29],
-      [AT.honglou, 43], [AT.guiyuan, 41], [AT.qintai, 39]];
+      [AT.honglou, 43], [AT.guiyuan, 59], [AT.qintai, 47]];
     const prototypeHeight = { lane: 4.4, apartment: 9.92, highrise: 18.83, terrace_tower: 25.69, slab_tower: 30.92 };
     const inlandAt = (x, z, r) => onLand(x - r, z) && onLand(x + r, z) && onLand(x, z - r) && onLand(x, z + r);
     function urbanCore(lon, lat, degrees, height, preferred) {
@@ -390,6 +380,68 @@
     const oldTown = ['lane', 'lane', 'arcade', 'apartment'];
     const port = ['wharf', 'wharf', 'lane', 'arcade'];
     const suburbs = ['lane', 'apartment', 'apartment'];
+    function districtRoute({ name, group, points, width, material = 'Path', terrace = false, earthy = false, connect = false, gradeStart = null }) {
+      const vertices = [], indices = [];
+      const rows = [];
+      for (let i = 0; i < points.length-1; i++) {
+        const a = points[i], b = points[i+1];
+        const length = Math.hypot(b.x-a.x,b.z-a.z);
+        if (length < .05) continue;
+        const steps = Math.ceil(length/(earthy ? .62 : 1.2));
+        for (let j = 0; j < steps; j++) rows.push({ x: a.x+(b.x-a.x)*j/steps, z: a.z+(b.z-a.z)*j/steps });
+      }
+      if (!rows.length) return;
+      rows.push(points.at(-1));
+      const worldPoints = rows.map((p, i) => {
+        const a = rows[Math.max(0,i-1)], b = rows[Math.min(rows.length-1,i+1)];
+        const dx = b.x-a.x, dz = b.z-a.z, length = Math.hypot(dx,dz) || 1;
+        return [-1,0,1].map(side => {
+          const x = p.x+side*dz/length*width/2, z = p.z-side*dx/length*width/2;
+          const floor = plantingSurface(x,z);
+          const surface = (floor ?? 0)+(terrace ? .112 : .068);
+          const u = i/(rows.length-1);
+          const height = gradeStart === null ? surface : THREE.MathUtils.lerp(gradeStart,surface,u);
+          return [x, height, z];
+        });
+      });
+      for (const row of worldPoints) for (const point of row) vertices.push(...point);
+      for (let i = 0; i < worldPoints.length-1; i++) {
+        let active = false;
+        for (let j = 0; j < 2; j++) {
+          const a = i*3+j, b = a+1, c = a+3, d = c+1;
+          for (const tri of [[a,c,b],[b,c,d]]) {
+            const v = tri.map(k => worldPoints[Math.floor(k/3)][k%3]);
+            if (!triangleOnLand(...v)) continue;
+            indices.push(...tri); active = true;
+          }
+        }
+        if (active) {
+          const path = { a: rows[i], b: rows[i+1], width, group, name };
+          cityGround.streets.push(path); protectedPaths.push(path);
+          if (gradeStart !== null) {
+            // Two embedded embankment faces close the gap between the leveled deck and grade.
+            for (const j of [0,2]) {
+              const a = worldPoints[i][j], b = worldPoints[i+1][j];
+              if (!onLand(a[0],a[2]) || !onLand(b[0],b[2])) continue;
+              const base = (p) => [p[0],Math.min(p[1]-.03,plantingSurface(p[0],p[2])-.045),p[2]];
+              const k = vertices.length/3;
+              vertices.push(...a,...b,...base(a),...base(b));
+              if (j) indices.push(k,k+1,k+2,k+1,k+3,k+2);
+              else indices.push(k,k+2,k+1,k+1,k+2,k+3);
+            }
+          }
+        }
+      }
+      if (!indices.length) return;
+      if (connect) routeEnds.push({ name, group, point: rows.at(-1), width, material, earthy });
+      const geometry = new THREE.BufferGeometry();
+      geometry.setAttribute('position', new THREE.Float32BufferAttribute(vertices,3));
+      geometry.setIndex(indices); geometry.computeVertexNormals();
+      const key = group+' / '+material+(earthy ? ' / soil' : '');
+      if (!districtPaving.has(key)) districtPaving.set(key, { name, group, material, earthy, tiles: new Acc() });
+      districtPaving.get(key).tiles.push(geometry);
+    }
+    buildDistrictRoutes(districtRoute, buildLot);
     urbanCore(114.277, 30.583, 25, 42, 'slab_tower');          // 汉口商埠背后的内城
     urbanCore(114.260, 30.544, 13, 45, 'terrace_tower');       // 汉阳内街，桥上远望
     urbanCore(114.3074, 30.553, -26, 19.5, 'slab_tower');      // 武昌楼群东退，蛇山近侧保留中层街坊
@@ -404,10 +456,36 @@
     district(114.358, 30.520, 8, 8, 14, suburbs);
     district(114.344, 30.598, 9, 8, 26, port);
     plannedStreets.forEach(([a, b, width]) => pavedLine(a, b, width));
+    const localStreets = cityGround.streets.filter(street => !street.group);
+    for (const { point, ...route } of routeEnds) {
+      let target, nearest = 30;
+      for (const { a, b, width } of localStreets) {
+        const dx = b.x-a.x, dz = b.z-a.z, length = Math.hypot(dx,dz);
+        const t = THREE.MathUtils.clamp(((point.x-a.x)*dx+(point.z-a.z)*dz)/(length*length), 0, 1);
+        const p = { x:a.x+dx*t, z:a.z+dz*t };
+        const distance = Math.hypot(point.x-p.x,point.z-p.z);
+        if (distance >= nearest) continue;
+        const steps = Math.max(1,Math.ceil(distance/1.5));
+        const clear = Array.from({length:steps+1}, (_,i) => i/steps).every(s => {
+          const x = THREE.MathUtils.lerp(point.x,p.x,s), z = THREE.MathUtils.lerp(point.z,p.z,s);
+          return onLand(x,z) && !occupied(x,z,Math.max(width,route.width)*.5+.30) && !landmarkAt(x,z);
+        });
+        if (clear) { target = p; nearest = distance; }
+      }
+      if (target && nearest > .15) districtRoute({ ...route, points:[point,target] });
+    }
     cityGround.occupied = (x, z, radius) => occupied(x, z, radius);
     const streets = streetsMesh.mesh(inkMat(.42, false, ['#b3a895', '#dfd8c7']), false);
     streets.name = 'City streets';
     scene.add(streets);
+    const earthPath = inkMat(.23, false, ['#788074', '#a9ad99']);
+    for (const { name, group, material, earthy, tiles } of districtPaving.values()) {
+      const mesh = tiles.mesh(earthy ? earthPath : material === 'BankStone' ? M.bankStone : M.bankPath, false);
+      mesh.name = name;
+      mesh.userData.landscapeSurface = { group, name, material };
+      mesh.raycast = function () {};
+      scene.add(mesh);
+    }
     for (const [kind, matrices] of Object.entries(lots)) {
       if (!matrices.length) continue;
       for (const { geometry, material } of architectureParts(kind)) {
@@ -419,22 +497,11 @@
       }
     }
   }
-
-  {   // 汉口江滩：汉水口以下的长江西岸，护岸与路灯，江汉关就立在岸上
-    const B = new Acc(), L = new Acc(), latOf = z => O[1] - z * MPU / M_LAT;
-    for (let i = 0; i < YZ.s.length; i++) {
-      const s = YZ.s[i], nx = s.d.z, nz = -s.d.x, Ln = Math.hypot(nx, nz) || 1;
-      const x = s.p.x + nx / Ln * (s.w - .9), z = s.p.z + nz / Ln * (s.w - .9), lat = latOf(z);
-      if (lat < 30.566 || lat > 30.600 || !inPoly(HANKOU, s.p.x + nx / Ln * (s.w + 2), s.p.z + nz / Ln * (s.w + 2))) continue;   // 护岸骑在水线上，取岸上 2 个单位处判定是否属汉口；纬度窗 30.566～30.600：南界在汉水入江口略北，北界约当武汉长江二桥
-      B.box(6, 1.2, 5.2, x, LAND_Y - .1, z, Math.atan2(s.d.x, s.d.z));
-      if (i % 3 === 0) { L.cyl(.09, 4.2, x, LAND_Y + 2.1, z); L.box(.7, .22, .7, x, LAND_Y + 4.3, z); }
-    }
-    scene.add(B.mesh(M.pale, true, 32), L.mesh(brushMat, false));
-  }
+  buildCityBlocks();
 
   /* ═════════ 十、江上舟船 ═════════ */
   const riverBoats = [
-    { m: cargoShip(),  t: .44, v: .0022,  off:  18, s: 1.5 },
+    { m: cargoShip(),  t: .50, v: .0022,  off:  18, s: 1.38 },
     { m: riverLiner(), t: .60, v: -.0018, off: -20, s: 1.4 },
     { m: junk(),       t: .36, v: .0014,  off: -26, s: 1.2 },
     { m: sampan(),     t: .52, v: -.0011, off:  28, s: 1.1 }

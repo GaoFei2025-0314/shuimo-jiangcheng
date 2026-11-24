@@ -12,21 +12,21 @@
     home:    { pos: { x: 440, y: 650, z: 1180 }, target: { x: 250, y: 0, z: -130 } },
     core:    orbit(geo(114.2855, 30.5528), 32, 440, 22, 30),
     tower:   orbit(AT.tower, terrainTop(AT.tower.x, AT.tower.z) + 13, 100, -68, 11),
-    bridge:  orbit(AT.bridge, 6.2, 174, -85, 23),
-    qc:      orbit(AT.qc, terrainTop(AT.qc.x, AT.qc.z) + 7, 112, 82, 19),
+    bridge:  orbit(AT.bridge, 6.2, 174, -71, 16),
+    qc:      orbit(qc.position, qc.position.y + 7, 112, 71, 22),
     tv:      orbit(AT.tv, 82, 350, 104, 10),
     customs: orbit(AT.customs, 18, 115, 92, 17),
     wuda:    orbit(wudaAt, terrainTop(wudaAt.x, wudaAt.z) + 6, 112, 152, 26),
-    xingyin:  orbit(AT.xingyin, terrainTop(AT.xingyin.x, AT.xingyin.z) + 5, 68, 22, 17),
+    xingyin:  orbit(xingyin.position, xingyin.position.y + 5, 68, 22, 17),
     lake:    orbit(lakeC, 3, 560, 14, 25),
     chutian: orbit(AT.chutian, terrainTop(AT.chutian.x, AT.chutian.z) + 14, 155, 22, 19),
     hongshan:   orbit(AT.hongshan, terrainTop(AT.hongshan.x, AT.hongshan.z) + 11, 125, 18, 18),
     watertower: orbit(AT.watertower, 12, 95, 38, 15),
-    museum:     orbit(AT.museum, 6, 150, 12, 20),
+    museum:     orbit(AT.museum, 6, 150, 146, 20),
     honglou:    orbit(AT.honglou, terrainTop(AT.honglou.x, AT.honglou.z) + 7, 120, 8, 17),
     yingwuzhou: orbit(AT.yingwuzhou, 14, 300, -24, 11),
     guiyuan:    orbit(AT.guiyuan, 5, 135, 18, 22),
-    qintai:     orbit(AT.qintai, 4, 110, 250, 19)
+    qintai:     orbit(AT.qintai, 4, 110, 25, 23)
   };
   const COPY = {
     home:    ['两江四岸', '汉水自西北来，于南岸嘴汇入长江。江北为汉口，两江之间是汉阳，大江东南岸为武昌。图上方位依实测经纬度，水平一比一，山楼竖向略作夸张。'],
@@ -68,8 +68,8 @@
   scene.updateMatrixWorld(true);
   const viewBounds = {};
   pickables.forEach(object => { viewBounds[object.userData.focus] = new THREE.Box3().setFromObject(object); });
-  viewBounds.home = new THREE.Box3();                  // 全城取景框住所有地标（东湖水面本身除外）
-  pickables.forEach(object => { if (object.userData.focus !== 'lake') viewBounds.home.union(viewBounds[object.userData.focus]); });
+  viewBounds.home = pickables.filter(object => object.userData.focus !== 'lake')
+    .map(object => viewBounds[object.userData.focus]);
   // Follow the curve as well as the straight truss. A single box around both banks
   // would fit a large empty rectangle beside the Hanyang approach.
   const bridgeSlices = new Map(), bridgePoint = new THREE.Vector3();
@@ -89,10 +89,12 @@
     // 竖屏沿龟蛇两山的轴线取景，让地标前后展开。
     let base = VIEWS[key];
     if (W < H && key === 'core') base = orbit(geo(114.2855, 30.5528), 32, 440, 55, 30);
-    if (W < H && key === 'bridge') base = orbit(AT.bridge, 6.2, 174, 84, 28);
+    if (W < H && key === 'home') base = orbit({ x: 245, z: -105 }, 16, 1100, 49, 38);
+    if (W < H && key === 'bridge') base = orbit(AT.bridge, 6.2, 174, 94, 17);
     if (!isFramed(key)) return base;
     const bounds = key === 'bridge' ? bridgeBounds : viewBounds[key];
-    const fill = !layout.compact && (key === 'tower' || key === 'bridge') ? .97 : .8;
+    const fill = key === 'museum' ? .97 : !layout.compact && (key === 'tower' || key === 'bridge') ? .97 :
+      layout.compact && ['home','bridge'].includes(key) ? .92 : .8;
     return fittedView(base, bounds, safeRect, W, H, camera.fov, fill);
   }
   function stopFlight() {
@@ -392,7 +394,8 @@
       renderer.render(scene, camera);
       sceneDirty = false;
     }
-    overlays.draw(W, H, activeView, uiBlocks, markFarScale);
+    const focusMarks = layout.compact && !['home','core','lake','bridge','yingwuzhou'].includes(activeView) ? .38 : markFarScale;
+    overlays.draw(W, H, activeView, uiBlocks, focusMarks);
     frameId = requestAnimationFrame(frame);
   }
   enterScene();
@@ -400,5 +403,5 @@
   // ?debug 时把内部状态挂出来，供浏览器里核对；正常访问不暴露。就绪与否仍以 app.ready() 置的 window.__ready 为准
   if (/[?&]debug\b/.test(location.search)) window.__dbg = {
     GEO, LAKES, LAND_HOLES, HILLS, HILL, YZ, HAN, HANKOU, HANYANG, WUCHANG, AT, VIEWS, MARKS: overlays.marks, LABELS: overlays.labels,
-    LAND_Y, terrainTop, plantingSurface, cityGround, BRIDGES, approachRoads, roadAt, approachHalfWidth, reliefAt, onLand, inPoly, geo, camera, controls, flyTo, scene
+    LAND_Y, terrainTop, plantingSurface, cityGround, landmarkGrounds, BRIDGES, approachRoads, roadAt, approachHalfWidth, reliefAt, onLand, inPoly, geo, camera, controls, flyTo, scene
   };

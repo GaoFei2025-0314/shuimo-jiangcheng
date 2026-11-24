@@ -226,7 +226,7 @@ def water(rivers, materials, dest):
 def lake_greenway(points, mat, dest):
     route = bpy.data.curves.new("东湖绿道", 'CURVE')
     route.dimensions = '3D'
-    route.bevel_depth = .17
+    route.bevel_depth = .12
     route.bevel_resolution = 1
     branch = route.splines.new('POLY')
     branch.points.add(len(points) - 1)

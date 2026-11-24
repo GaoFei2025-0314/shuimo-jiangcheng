@@ -1,6 +1,6 @@
 
   /* ═════════ 山林与行道树 ═════════ */
-  {
+  function buildVegetation() {
     // Separate seeds keep both street layouts and unrelated planting schemes stable.
     function seeded(seed) {
       return () => {
@@ -285,6 +285,22 @@
         }
       }
     }
+    const forecourtTrees = seeded(0x753cb64);
+    for (const [key, ground] of Object.entries(landmarkGrounds)) {
+      for (const p of ground.shade) {
+        if (plant('broadleaf', p.x, p.z, .87, .82, forecourtTrees) || key !== 'museum') continue;
+        // Preserve the side courts when an exact point lies too close to a walk.
+        const local = museum.worldToLocal(p.clone());
+        for (const [side, along] of [[2.1,-3.7],[2.6,2.6],[-1.2,-4.3],[3.5,-5.4]]) {
+          const q = museum.localToWorld(V(local.x+Math.sign(local.x)*side,0,local.z+along));
+          if (plant('broadleaf', q.x, q.z, .71, .76, forecourtTrees)) break;
+        }
+      }
+    }
+    const spitTrees = seeded(0x674fc2a);
+    for (const [x,z,scale] of [[-151,-124,.76],[-145,-131,.62],[-139,-128,.88],
+      [-134,-126,.70],[-124,-130,.52],[-120,-132,.58],[-113,-135,.46],[-148,-135,.62]])
+      plant(scale < .65 ? 'willow' : 'broadleaf', x, z, scale, .72*scale, spitTrees);
     slopeGrove(AT.tower, 0x15cd84a3, [
       [-22, 2, 11, 5.2], [-17.5, 10, 8, 5.1], [3.2, 23.8, 9, 4.9],
       [-31, -12, 8, 8.5], [-42, 2, 8, 10], [-29, 15, 10, 8.4],
@@ -393,7 +409,7 @@
     // 东湖只在听涛陆岸与磨山入口留短组柳树，岛及游步道仍清楚可见。
     {
       const rng = seeded(0x5aed131), ring = LAKE;
-      const island = AT.xingyin, hill = HILL['磨山'];
+      const island = xingyin.position, hill = HILL['磨山'];
       let previous = null;
       for (let i = 1; i < ring.length - 1; i++) {
         const [x, z] = ring[i];
@@ -480,3 +496,4 @@
       }
     }
   }
+  buildVegetation();
