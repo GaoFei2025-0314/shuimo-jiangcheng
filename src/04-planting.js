@@ -484,10 +484,10 @@
           vec2 root = (modelMatrix * instanceMatrix[3]).xz;
           // Bark and foliage share a shear so branch tips stay inside their lobes.
           vec2 wind = windAt(root) * windResponse;
-          float bendHeight = max(position.y - .16, 0.) * .19;
+          float bendHeight = max(position.y - .28, 0.) * .255;
           w.xz += wind * bendHeight * bendHeight * length(mat3(modelMatrix) * basis[1]);
           vec3 worldNormal = mat3(modelMatrix) * basis * scaled;
-          worldNormal.y -= dot(worldNormal.xz, wind) * bendHeight * .38;
+          worldNormal.y -= dot(worldNormal.xz, wind) * bendHeight * .51;
           vNormal = normalize(worldNormal);
           vTint = color;
           vWorld = w.xyz;

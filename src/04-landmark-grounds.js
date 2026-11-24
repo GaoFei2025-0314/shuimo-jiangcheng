@@ -7,7 +7,7 @@
       float travel = dot(root, downwind);
       float broad = sin(uTime * 1.32 - travel * .067 + .48 * sin(dot(root, across) * .042));
       float fine = sin(uTime * 2.41 - travel * .15 + dot(root, across) * .046);
-      return downwind * (.26 + .48 * broad + .16 * fine) + across * (.17 * fine);
+      return downwind * (.23 + .67 * broad + .15 * fine) + across * (.23 * fine);
     }`;
 
   /* ── 三处地标场地：岛岸登陆、北馆前庭、蛇山石阶 ── */
@@ -148,7 +148,10 @@
         ` + material.vertexShader.replace('vec4 w = modelMatrix * local;', `
           vec4 w = modelMatrix * local;
           vec2 root = (modelMatrix * vec4(stemWind.x, 0., stemWind.y, 1.)).xz;
-          w.xz += uWindStrength * stemWind.z * stemWind.z * windAt(root);
+          vec2 gust = windAt(root);
+          float flex = uWindStrength * stemWind.z * stemWind.z;
+          w.xz += flex * gust;
+          w.y -= flex * .22 * dot(gust, gust);
         `);
         material.userData.windVegetation = true;
         return material;
@@ -273,7 +276,7 @@
       function windSurface(name, material, key, plants) {
         const geometry = plants.mesh(material, false).geometry;
         geometry.computeBoundingSphere();
-        geometry.boundingSphere.radius += material.uniforms.uWindStrength.value;
+        geometry.boundingSphere.radius += 1.16 * material.uniforms.uWindStrength.value;
         surface(name, '东湖听涛', material, key, geometry);
       }
       windSurface('听涛 · 岸草', grassInk, 'BankGrass', tufts);
