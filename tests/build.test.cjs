@@ -77,12 +77,13 @@ test('a failing minifier falls back to checked uncompressed output', t => {
   assert.match(fs.readFileSync(path.join(dir, 'dist/index.html'), 'utf8'), /水墨江城/);
 });
 
-test('both exported bridges retain valid triangles on the web coordinate grid', () => {
+test('exported bridges and west garden models retain valid triangles on the web coordinate grid', () => {
   const source = fs.readFileSync(path.join(root, 'src/architecture.gen.js'), 'utf8');
   const models = require('node:vm').runInNewContext(source + '\nARCHITECTURE');
-  for (const name of ['bridge', 'yingwuzhou']) {
+  const materialCounts = { bridge: 5, yingwuzhou: 5, park_paifang: 8, park_stupa: 3, park_cranes: 5, park_pavilion: 6 };
+  for (const [name, minimum] of Object.entries(materialCounts)) {
     const batches = Object.entries(models[name]);
-    assert.ok(batches.length >= 5);
+    assert.ok(batches.length >= minimum, name);
     for (const [material, [coordinates, triangles, visibility]] of batches) {
       const points = Buffer.from(coordinates, 'base64'), index = Buffer.from(triangles, 'base64');
       const count = points.length / 6, seen = new Set();

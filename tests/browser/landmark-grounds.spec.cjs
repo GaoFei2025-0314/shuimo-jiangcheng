@@ -77,3 +77,84 @@ test('footbridges, museum approach and hillside stairs meet their ground surface
   expect(result.slopes).toHaveLength(6);
   expect(Math.max(...result.slopes)).toBeLessThan(.035);
 });
+
+test('the Yellow Crane Tower view includes the west courts, pond and selectable garden buildings', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await page.goto('/?debug');
+  await page.waitForFunction(() => window.__ready && window.__dbg);
+  await page.locator('#b-tower').click();
+  await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+  const report = await page.evaluate(() => {
+    const { towerPark: park, camera, controls, scene } = window.__dbg;
+    scene.updateMatrixWorld(true);
+    camera.updateMatrixWorld(true);
+    const down = new THREE.Vector3(0, -1, 0), ray = new THREE.Raycaster();
+    const court = key => key === 'park_stupa' ? park.courts[0].name :
+      key === 'park_paifang' ? park.courts[1].name : key === 'park_cranes' ? '归鹤池 · 池水' : park.courts[2].name;
+    const top = document.querySelector('#title').getBoundingClientRect().bottom;
+    const bottom = document.querySelector('#dock').getBoundingClientRect().top;
+    const supports = [], outside = [];
+    let stupaPoint;
+    for (const asset of park.assets) {
+      const key = asset.userData.parkAsset, bounds = new THREE.Box3().setFromObject(asset);
+      ray.set(asset.position.clone().addScaledVector(down, -1), down);
+      const pavement = ray.intersectObject(scene.getObjectByName(court(key)))[0];
+      if (!pavement) throw Error('Missing floor at ' + asset.name);
+      supports.push(Math.abs(pavement.point.y - asset.position.y));
+      for (const x of [bounds.min.x, bounds.max.x]) for (const y of [bounds.min.y, bounds.max.y])
+        for (const z of [bounds.min.z, bounds.max.z]) {
+          const v = new THREE.Vector3(x,y,z).project(camera);
+          const px = (1 + v.x) * innerWidth / 2, py = (1 - v.y) * innerHeight / 2;
+          if (px < 14 || px > innerWidth - 14 || py < top || py > bottom) outside.push(asset.name);
+        }
+      if (key === 'park_stupa') {
+        const body = bounds.getCenter(new THREE.Vector3()).project(camera);
+        stupaPoint = [(1 + body.x) * innerWidth / 2, (1 - body.y) * innerHeight / 2];
+      }
+    }
+    // Sample both sides of the shared landing, including the outer walking lines.
+    const seams = [];
+    function checkMouth(path, atStart, stepName, landingName) {
+      const seam = atStart ? path[0] : path.at(-1);
+      const along = (atStart ? path[1] : path.at(-2)).clone().sub(seam);
+      along.y = 0;
+      along.normalize();
+      const across = new THREE.Vector3(-along.z, 0, along.x);
+      const height = (p, mesh) => {
+        ray.set(p.clone().addScaledVector(down, -1), down);
+        const hit = ray.intersectObject(scene.getObjectByName(mesh))[0];
+        if (!hit) throw Error('Open threshold at ' + mesh);
+        return hit.point.y;
+      };
+      for (const width of [-.20, 0, .20]) {
+        const p = seam.clone().addScaledVector(across, width);
+        seams.push(Math.abs(height(p.clone().addScaledVector(along, .075), stepName) -
+          height(p.clone().addScaledVector(along, -.075), landingName)));
+      }
+    }
+    checkMouth(park.paths[1], true, '西区 · 西门石阶', '西区 · 山脚街口');
+    checkMouth(park.paths[4], false, '西区 · 由牌坊至归鹤池', park.courts[2].name);
+    return { keys: park.assets.map(a => a.userData.parkAsset).sort(), supports, seams, outside, stupaPoint,
+      position: camera.position.toArray(), target: controls.target.toArray() };
+  });
+  expect(report.keys).toEqual(['park_cranes','park_paifang','park_pavilion','park_pavilion','park_stupa']);
+  expect(Math.max(...report.supports)).toBeLessThan(.06);
+  expect(Math.max(...report.seams)).toBeLessThan(.23);
+  expect(report.outside).toEqual([]);
+  // Reach the same spot by manual browsing while the two-rivers view is selected.
+  await page.locator('#b-core').click();
+  await page.evaluate(({position, target}) => {
+    const { camera, controls } = window.__dbg;
+    controls.dispatchEvent({type: 'start'});
+    camera.position.fromArray(position);
+    controls.target.fromArray(target);
+    controls.update();
+    camera.updateMatrixWorld(true);
+  }, report);
+  await expect(page.locator('#b-tower')).toHaveAttribute('aria-pressed', 'false');
+  await page.mouse.move(...report.stupaPoint);
+  await expect(page.locator('#tip')).toHaveText('胜像宝塔');
+  await page.mouse.click(...report.stupaPoint);
+  await expect(page.locator('#b-tower')).toHaveAttribute('aria-pressed', 'true');
+});

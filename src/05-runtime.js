@@ -11,7 +11,7 @@
   const VIEWS = {
     home:    { pos: { x: 440, y: 650, z: 1180 }, target: { x: 250, y: 0, z: -130 } },
     core:    orbit(geo(114.2855, 30.5528), 32, 440, 22, 30),
-    tower:   orbit(AT.tower, terrainTop(AT.tower.x, AT.tower.z) + 13, 100, -68, 11),
+    tower:   orbit(AT.tower, terrainTop(AT.tower.x, AT.tower.z) + 13, 100, -48, 35),
     bridge:  orbit(AT.bridge, 6.2, 174, -71, 16),
     qc:      orbit(qc.position, qc.position.y + 7, 112, 65, 8),
     tv:      orbit(AT.tv, 82, 350, 104, 10),
@@ -31,7 +31,7 @@
   const COPY = {
     home:    ['两江四岸', '汉水自西北来，于南岸嘴汇入长江。江北为汉口，两江之间是汉阳，大江东南岸为武昌。图上方位依实测经纬度，水平一比一，山楼竖向略作夸张。'],
     core:    ['龟蛇锁大江', '龟蛇隔江对峙：蛇山踞武昌，上有黄鹤楼；龟山在汉阳，顶立电视塔。大桥自蛇山头跨向龟山东麓。'],
-    tower:   ['黄鹤楼', '现楼为一九八五年重建，通高五十一点四米，五层攒尖、层层飞檐，顶冠五米高的葫芦形宝顶。踞蛇山西端，下临大江。'],
+    tower:   ['黄鹤楼', '从蛇山西麓拾级而上，经过胜像宝塔、三楚一楼牌坊和归鹤池，抵达主楼。楼高五十一点四米，西面顶层悬「黃鶴樓」匾。'],
     bridge:  ['武汉长江大桥', '全长一千六百七十米，正桥一千一百五十六米，九孔八墩，最大跨径一百二十八米；上层行车、下层走火车，两端立着七层桥头堡。'],
     qc:      ['晴川阁', '在汉阳龟山东麓的禹功矶上，北望汉水入江口，东濒长江，与黄鹤楼夹江相望。一九八四年起复建，旁有铁门关。'],
     tv:      ['龟山电视塔', '塔身二百二十一点二米，海拔三百一十一点四米，一九八五年建成，中国第一座自行设计施工的电视塔，人称「亚洲桅杆」。'],
@@ -90,11 +90,12 @@
     let base = VIEWS[key];
     if (W < H && key === 'core') base = orbit(geo(114.2855, 30.5528), 32, 440, 55, 30);
     if (W < H && key === 'home') base = orbit({ x: 245, z: -105 }, 16, 1100, 49, 38);
+    if (W < H && key === 'tower') base = orbit(AT.tower, VIEWS.tower.target.y, 100, -66, 29);
     const portraitBridge = key === 'bridge' && W < H;
     if (portraitBridge) base = orbit(AT.bridge, 6.2, 174, -100, 11);
     if (!isFramed(key)) return base;
     const redChamberContext = key === 'honglou' && !layout.compact;
-    const bounds = key === 'bridge' ? bridgeBounds :
+    const bounds = key === 'tower' ? [viewBounds.tower, ...towerPark.assetBounds] : key === 'bridge' ? bridgeBounds :
       redChamberContext ? [viewBounds.honglou, viewBounds.tower] : viewBounds[key];
     let fill = .8;
     if (redChamberContext) fill = 1;
@@ -194,13 +195,14 @@
 
   /* ═════════ 十四、点选 ═════════ */
   const ray = new THREE.Raycaster(), ndc = new THREE.Vector2(), tip = document.getElementById('tip');
+  const sitePickables = [...pickables, ...towerPark.assets];
   function pick(ev) {
     const r = renderer.domElement.getBoundingClientRect();
     ndc.set(((ev.clientX - r.left) / r.width) * 2 - 1, -((ev.clientY - r.top) / r.height) * 2 + 1);
     ray.setFromCamera(ndc, camera);
-    const hit = ray.intersectObjects(pickables, true)[0];
+    const hit = ray.intersectObjects(sitePickables, true)[0];
     if (!hit) return null;
-    let o = hit.object; while (o && !o.userData.focus) o = o.parent;
+    let o = hit.object; while (o && !o.userData.focus && !o.userData.parkAsset) o = o.parent;
     return o || null;
   }
   let down = null;
@@ -209,7 +211,7 @@
     if (!down) return;
     const moved = Math.hypot(e.clientX - down.x, e.clientY - down.y); down = null;
     if (moved > 5) return;
-    const o = pick(e); if (o) flyTo(o.userData.focus);
+    const o = pick(e); if (o) flyTo(o.userData.parkAsset ? 'tower' : o.userData.focus);
   });
   // 悬停的 raycast 按帧节流：指针事件可能比渲染帧率密得多，没必要逐次都算一遍拾取
   let hoverEv = null, hoverQueued = false;
@@ -415,5 +417,5 @@
   // ?debug 时把内部状态挂出来，供浏览器里核对；正常访问不暴露。就绪与否仍以 app.ready() 置的 window.__ready 为准
   if (/[?&]debug\b/.test(location.search)) window.__dbg = {
     GEO, LAKES, LAND_HOLES, HILLS, HILL, YZ, HAN, HANKOU, HANYANG, WUCHANG, AT, VIEWS, MARKS: overlays.marks, LABELS: overlays.labels,
-    LAND_Y, terrainTop, plantingSurface, cityGround, landmarkGrounds, BRIDGES, approachRoads, roadAt, approachHalfWidth, reliefAt, onLand, inPoly, geo, camera, controls, flyTo, scene
+    LAND_Y, terrainTop, plantingSurface, cityGround, landmarkGrounds, towerPark, BRIDGES, approachRoads, roadAt, approachHalfWidth, reliefAt, onLand, inPoly, geo, camera, controls, flyTo, scene
   };

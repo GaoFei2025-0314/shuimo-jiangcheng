@@ -218,6 +218,7 @@
     const cell = (x, z) => [Math.floor(x / cellSize), Math.floor(z / cellSize)];
     const keyAt = (x, z) => x + ',' + z;
     const trunks = new Map(), roadCells = new Map();
+    const parkCourts = towerPark.courts.map(court=>court.polygon.map(p=>[p.x,p.z]));
     for (const road of cityGround.streets) {
       const { a, b, width } = road, margin = width / 2 + 6;
       const [x0, z0] = cell(Math.min(a.x, b.x) - margin, Math.min(a.z, b.z) - margin);
@@ -243,6 +244,9 @@
           (roadAt(x,z)?.distance ?? Infinity) < approachHalfWidth + radius + .45 ||
           landmarkGrids.some(b => x + radius + 2.4 > b.min.x && x - radius - 2.4 < b.max.x
                               && z + radius + 2.4 > b.min.z && z - radius - 2.4 < b.max.z) ||
+          towerPark.assetBounds.some(b => x+radius+.6>b.min.x && x-radius-.6<b.max.x
+                                      && z+radius+.6>b.min.z && z-radius-.6<b.max.z) ||
+          parkCourts.some(court=>inPoly(court,x,z) || roots.some(([dx,dz])=>inPoly(court,x+dx*radius*.62,z+dz*radius*.62))) ||
           cityGround.occupied(x, z, radius * .81 + .42) ||
           roadCells.get(keyAt(cx, cz))?.some(road => distanceTo(x, z, road.a, road.b) < road.width / 2 + radius * .65 + .48))
         return false;
@@ -285,6 +289,8 @@
         }
       }
     }
+    const westParkTrees = seeded(0x7ef245df);
+    for (const {species,x,z,spread,height} of towerPark.plantBeds) plant(species,x,z,spread,height,westParkTrees);
     const forecourtTrees = seeded(0x753cb64);
     for (const [key, ground] of Object.entries(landmarkGrounds)) {
       for (const p of ground.shade) {

@@ -18,7 +18,7 @@ MINJS_OUT="$TMPDIR_BUILD/bundle.min.js"
   # Keep the baked geometry outside the scene initializer so WebKit can compile each builder independently.
   cat src/00-boot.js src/geodata.gen.js src/architecture.gen.js src/architecture-plates.gen.js
   printf '\nasync function initialize() {\nawait loadDependencies();\nif (app.state !== "loading") return;\n'
-  cat src/01-core.js src/02-landmarks.js src/03-terrain.js src/04-districts.js src/04-scene.js src/04-landmark-grounds.js src/04-planting.js src/05-layout.js src/05-overlays.js src/05-runtime.js src/06-audio.js
+  cat src/01-core.js src/02-landmarks.js src/03-terrain.js src/04-districts.js src/04-scene.js src/04-landmark-grounds.js src/04-tower-park.js src/04-planting.js src/05-layout.js src/05-overlays.js src/05-runtime.js src/06-audio.js
   printf '\napp.ready();\n}\ninitialize().catch(error => { console.error("Map initialization failed:", error); app.fail("三维场景未能初始化，请检查浏览器图形加速后重新加载。"); });\n})();\n'
 } > "$JS"
 
