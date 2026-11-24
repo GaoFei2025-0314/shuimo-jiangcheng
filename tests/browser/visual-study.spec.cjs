@@ -410,3 +410,64 @@ test('vessels clear the banks, sit in the water and carry their wakes through ea
     expect(ship.wakeLength).toBeGreaterThan(0);
   }
 });
+
+test('all eight Yangtze Bridge piers split the water locally and fade in the overview', async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await ready(page);
+  const result = await page.evaluate(() => {
+    const renderer = window.__testRenderer, scene = window.__testScene;
+    const bridge = scene.children.find(node => node.userData.modelKey === 'bridge');
+    const water = scene.children.find(node => node.material?.uniforms?.uCutwaterRow);
+    const row = water.material.uniforms.uCutwaterRow.value, originalX = row.x;
+    const flow = water.material.uniforms.uCutwaterFlow.value;
+    const center = bridge.getWorldPosition(new THREE.Vector3());
+    const waterOnly = new THREE.Scene();
+    waterOnly.add(water.clone());
+    const camera = new THREE.OrthographicCamera(-66,66,66,-66,.1,600);
+    camera.up.set(0,0,-1);
+    const size = 384, target = new THREE.WebGLRenderTarget(size,size);
+    const previous = renderer.getRenderTarget();
+    function differences(height) {
+      camera.position.set(center.x,height,center.z);
+      camera.lookAt(center.x,0,center.z);
+      function frame() {
+        const pixels = new Uint8Array(size*size*4);
+        renderer.render(waterOnly,camera);
+        renderer.readRenderTargetPixels(target,0,0,size,size,pixels);
+        return pixels;
+      }
+      row.x = originalX;
+      const painted = frame();
+      row.x = 1e5;
+      const plain = frame();
+      return Int16Array.from({length:size*size}, (_,i) => painted[i*4]-plain[i*4]);
+    }
+    try {
+      renderer.setRenderTarget(target);
+      const near = differences(65), far = differences(320);
+      // Test small patches around the actual ends of each modelled pier, in world space.
+      function visibleNear(point, radius, sign) {
+        const x = Math.floor((.5+(point.x-center.x)/132)*size);
+        const y = Math.floor((.5-(point.z-center.z)/132)*size);
+        const reach = Math.ceil(radius*size/132);
+        for (let dy=-reach; dy<=reach; dy++) for (let dx=-reach; dx<=reach; dx++) {
+          if (dx*dx+dy*dy <= reach*reach && near[(y+dy)*size+x+dx]*sign >= 2) return true;
+        }
+        return false;
+      }
+      const piers = Array.from({length:8}, (_,i) => {
+        const ends = [-1,1].map(sign => bridge.localToWorld(new THREE.Vector3(sign*6.3*1.06,0,-56+i*16)));
+        ends.sort((a,b) => (a.x-b.x)*flow.x+(a.z-b.z)*flow.y);
+        const downstream = ends[1].add(new THREE.Vector3(3*flow.x,0,3*flow.y));
+        return visibleNear(ends[0],2.5,1) && visibleNear(downstream,2.5,-1);
+      });
+      return { piers, distant: far.some(delta => delta !== 0) };
+    } finally {
+      row.x = originalX;
+      renderer.setRenderTarget(previous);
+      target.dispose();
+    }
+  });
+  expect(result.piers).toEqual(Array(8).fill(true));
+  expect(result.distant).toBe(false);
+});

@@ -282,6 +282,7 @@
   const waterU = Object.assign({
     ...weatherU, uBoats: { value: boatU }, uBoatWake: { value: boatWakeU },
     uFlow: { value: flowTex }, uDrift: { value: driftTex },
+    uCutwaterRow: { value: new THREE.Vector4() }, uCutwaterFlow: { value: new THREE.Vector4() },
     uRect: { value: new THREE.Vector4(WR.x, WR.z, WR.w, WR.h) }
   }, fogU, camU, sharedInk);
   const water = new THREE.Mesh(
@@ -293,6 +294,7 @@
       fragmentShader: NOISE + `
         uniform vec3 uFog, uInk, uPaper; uniform float uNear, uFar, uTime;
         uniform vec2 uWindDirection, uBoats[6]; uniform vec4 uBoatWake[6], uRect;
+        uniform vec4 uCutwaterRow, uCutwaterFlow;
         uniform sampler2D uFlow, uDrift;
         varying vec3 vW; varying float vD;
         // Short tapered crests interrupt the long washes when the camera approaches the water.
@@ -305,6 +307,46 @@
           float crest = 1.-smoothstep(.012,.077,abs(y));
           float echo = (1.-smoothstep(.015,.062,abs(y+.14)))*(1.-smoothstep(.16,.68,abs(x+.14)));
           return taper*(crest+.36*echo)*smoothstep(.18,.63,seed);
+        }
+        // Stagger the small groups in both axes so a portrait view never stacks them into rules.
+        float lakeBrush(vec2 wind, float scale, float width){
+          vec2 spacing = vec2(48.,38.)*scale;
+          vec2 cell = floor(wind/spacing);
+          float seed = hash(cell);
+          vec2 jitter = vec2(hash(cell+2.4),hash(cell+8.1))-.5;
+          vec2 offset = wind-(cell+.5+.40*jitter)*spacing;
+          vec2 axis = normalize(vec2(1.,(hash(cell+9.4)-.5)*1.62));
+          vec2 stroke = vec2(dot(offset,axis),dot(offset,vec2(-axis.y,axis.x)));
+          float x = stroke.x/(scale*mix(5.9,13.1,hash(cell+6.2)));
+          float y = stroke.y/width-(seed-.54)*1.45*x*x;
+          float body = (1.-smoothstep(.12,1.,abs(x)))*(1.-smoothstep(.18,1.02,abs(y)));
+          float echo = (1.-smoothstep(.12,.70,abs(x-.20)))*(1.-smoothstep(.16,.83,abs(y-2.45)));
+          echo *= smoothstep(.16,.44,abs(x-.06))*smoothstep(.67,.93,seed);
+          return (body+.52*echo)*smoothstep(.48,.76,seed);
+        }
+        vec2 cutwaterBrush(vec2 p, float time){
+          vec2 delta = p-uCutwaterRow.xy;
+          if(max(abs(delta.x),abs(delta.y))>57.) return vec2(0.);
+          vec2 downstream = uCutwaterFlow.xy;
+          vec2 lateral = vec2(-downstream.y,downstream.x);
+          // Project across the current so a downstream trace stays attached to its own pier.
+          float station = dot(delta,lateral)/dot(uCutwaterRow.zw,lateral);
+          float pier = floor(station+4.);
+          if(pier<0. || pier>7.) return vec2(0.);
+          delta -= (pier-3.5)*uCutwaterRow.zw;
+          vec2 fromCenter = vec2(dot(delta,downstream),dot(delta,lateral));
+          vec2 nose = uCutwaterFlow.zw;
+          vec2 upstream = fromCenter+nose;
+          float split = abs(upstream.y);
+          float bow = (1.-smoothstep(.06,.43,abs(upstream.x+.45-.40*split*split)));
+          bow *= smoothstep(.15,.65,split)*(1.-smoothstep(1.18,2.65,split));
+          vec2 tail = fromCenter-nose;
+          float aft = tail.x;
+          float lateralTail = abs(tail.y-.052*aft);
+          float trace = 1.-smoothstep(.08,.50,abs(lateralTail-.48-.10*aft));
+          trace *= smoothstep(.14,1.10,aft)*(1.-smoothstep(4.,9.5,aft));
+          trace *= mix(.12,1.,smoothstep(-.55,.42,sin(.88*aft+1.7*pier-.68*time+tail.y)));
+          return vec2(bow,trace);
         }
         void main(){
           vec2 p = vW.xz;
@@ -325,6 +367,7 @@
           }
           vec3 base = uPaper;
           float ink = 0.;
+          float pierLight = 0.;
           float ambientDriftTime = uTime / 6.;
           float fineDetail = 1.-smoothstep(300.,1050.,vD);
           if(lake<.999){
@@ -359,27 +402,37 @@
             vec3 tint = mix(vec3(.64,.66,.56),vec3(.45,.64,.60),drift.b);
             float pigment = (.32+.26*away+.075*fbm(stream*vec2(.013,.043)))*wet*(1.-lake);
             base = mix(base,tint,pigment);
+            if(vD<290. && lake<.001 && shore>.012){
+              float pierDetail = (1.-smoothstep(145.,290.,vD))*smoothstep(.012,.075,shore);
+              vec2 brush = cutwaterBrush(p,ambientDriftTime)*pierDetail;
+              pierLight = .30*brush.x;
+              ink += .125*brush.y;
+            }
           }
           if(lake>.001){
-            // Independent wind ripples make sparse, nearly horizontal lake brushwork.
             vec2 wind = p-uWindDirection*(5.2*ambientDriftTime);
             float wash = smoothstep(.29,.76,vnoise(wind*vec2(.018,.038)));
             float warp = 4.4*vnoise(wind*vec2(.008,.029));
-            float crest = wind.y*.27+wind.x*.017+warp;
-            float lakeInk = (smoothstep(.24,.96,sin(crest))*mix(.08,.22,smoothstep(80.,460.,vD))
-              +smoothstep(.65,.99,sin(crest*1.96-warp))*.065*fineDetail)
-              *wash*smoothstep(.02,.26,band);
-            vec2 ripples = vec2(wind.x+.11*wind.y,wind.y-.08*wind.x)*vec2(.097,.14);
-            lakeInk += brokenCrest(ripples)*(.30+.70*wash)*.23*fineDetail*smoothstep(.018,.21,band);
+            float lakeDetail = 1.-smoothstep(185.,520.,vD);
+            float lakeInk = 0.;
+            if(lakeDetail<1.){
+              // World-space strokes with enough body to survive the compressed aerial view.
+              lakeInk = lakeBrush(wind,1.48,2.25)*.235*(1.-lakeDetail)*smoothstep(.035,.31,band);
+            }
+            if(lakeDetail>0.){
+              lakeInk += lakeBrush(wind,1.,1.)*.135*lakeDetail*smoothstep(.035,.31,band);
+              vec2 ripples = vec2(wind.x+.11*wind.y,wind.y-.08*wind.x)*vec2(.097,.14);
+              lakeInk += brokenCrest(ripples)*(.30+.70*wash)*.23*lakeDetail*smoothstep(.018,.21,band);
+            }
             float littoral = (1.-smoothstep(.0,.32,band))*lake*wet;
-            float lakeWash = lake*wet*(.105+.065*fbm(p*.021))+.14*littoral;
+            float lakeWash = lake*wet*(.153+.032*vnoise(p*.009))+.12*littoral;
             float shoreRipples = smoothstep(.86,.99,sin(p.y*2.2+warp+ambientDriftTime*.25));
-            lakeInk += .12*littoral*shoreRipples*smoothstep(.32,.70,fbm(p*.075))*fineDetail;
-            base *= mix(1.,.99-fbm(p*.004)*.018,lake*wet);
-            base = mix(base,vec3(.43,.59,.56),lakeWash);
+            lakeInk += .12*littoral*shoreRipples*smoothstep(.32,.70,fbm(p*.075))*lakeDetail;
+            base = mix(base,vec3(.43,.57,.57),lakeWash);
             ink += lakeInk*lake;
           }
           vec3 col = mix(base,uInk,wet*ink);
+          col = mix(col,uPaper,wet*pierLight);
           float foam = 0.;
           for(int i=0;i<6;i++){
             vec4 wake=uBoatWake[i];

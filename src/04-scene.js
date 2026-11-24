@@ -12,6 +12,29 @@
   // 大桥轴线：武昌蛇山头 → 汉阳龟山东麓
   const bridge  = place(builtLandmark('bridge'), AT.bridge, bridgeScale, bridgeAngle, '武汉长江大桥', 'bridge', 0);
   bridge.scale.z = bridgeScale * bridgeLengthRatio;
+  {
+    // The eight cutwaters in tools/blender/bridge.py span stations -56 to 56.
+    bridge.updateMatrixWorld(true);
+    const center = bridge.localToWorld(V(0,0,0));
+    const pierStep = bridge.localToWorld(V(0,0,16)).sub(center);
+    const nose = bridge.localToWorld(V(6.3*1.06,0,0)).sub(center);
+    let distance = Infinity, riverT = 0;
+    for (let i = 1; i < YZ.s.length; i++) {
+      const start = YZ.s[i-1].p, end = YZ.s[i].p;
+      const dx = end.x-start.x, dz = end.z-start.z;
+      const t = THREE.MathUtils.clamp(((center.x-start.x)*dx+(center.z-start.z)*dz)/(dx*dx+dz*dz),0,1);
+      const gap = (center.x-start.x-t*dx)**2+(center.z-start.z-t*dz)**2;
+      if (gap < distance) {
+        distance = gap;
+        riverT = (i-1+t)/(YZ.s.length-1);
+      }
+    }
+    const flow = YZ.curve.getTangent(riverT);
+    const downstream = Math.sign(nose.dot(flow));
+    waterU.uCutwaterRow.value.set(center.x,center.z,pierStep.x,pierStep.z);
+    waterU.uCutwaterFlow.value.set(flow.x,flow.z,nose.dot(flow)*downstream,
+      (nose.z*flow.x-nose.x*flow.z)*downstream);
+  }
   const wuhanApproachFeatures = [];
   {
     const carriageMaterial=approachPaving.clone();
