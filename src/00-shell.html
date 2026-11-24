@@ -121,18 +121,19 @@
   #poem p { margin: 0; display: flex; flex-direction: column; align-items: center; }
   #poem p span {
     font-family: var(--brush); font-size: clamp(19px, 2.3vw, 28px); line-height: 1.44;
-    color: var(--ink); text-shadow: 0 0 14px var(--paper), 0 0 5px var(--paper);
+    color: var(--ink); text-shadow: 0 0 2px var(--paper), 0 0 4px var(--paper), 0 0 8px var(--paper);
   }
   #poem p.meta { padding-top: .3em; }
   #poem p.meta span {
-    font-family: var(--song); font-size: clamp(11px, 1.15vw, 14px); line-height: 2.05;
-    color: var(--ink-soft); text-shadow: 0 0 8px var(--paper);
+    font-family: var(--song); font-size: clamp(12px, 1.22vw, 15px); font-weight: 600; line-height: 1.95;
+    color: var(--ink); text-shadow: 0 0 1px var(--paper), 0 0 3px var(--paper), 0 0 6px var(--paper);
   }
   #poem::before {
-    content: ""; position: absolute; z-index: -1; pointer-events: none; inset: -16px -17px;
-    background:
-      radial-gradient(ellipse at 17% 83%, rgba(242,239,230,.88) 6%, transparent 34%),
-      radial-gradient(ellipse at 56% 48%, rgba(242,239,230,.95) 32%, rgba(242,239,230,.78) 60%, transparent 80%);
+    content: ""; position: absolute; z-index: -1; pointer-events: none; inset: -22px -22px -20px;
+    /* A transparent wash leaves the structure underneath legible. Ink edges carry the lettering. */
+    background: radial-gradient(ellipse 54% 55% at 52% 47%, rgba(242,239,230,.67) 14%,
+      rgba(242,239,230,.52) 48%, rgba(242,239,230,.25) 74%, transparent 98%);
+    filter: blur(6px);
   }
   #poem .seal { align-self: flex-end; margin-bottom: .15em; margin-right: .45em; }
   .seal {
