@@ -11,6 +11,59 @@
       return pairs.map(([x,z]) => site.localToWorld(V(x,0,z)));
     }
 
+    // The municipal road hierarchy places Zhongbei, Donghu and Wuluo/Luoyu on these
+    // axes. The map simplifies their detail around the registered lakes and hills.
+    const north = points([27,-53],[53,-67],[74,-100],[84,-142],[94,-176],[112,-219],
+      [142,-252],[188,-274],[244,-290],[293,-317],[321,-349],[347,-375],
+      [385,-361],[421,-335],[448,-288],[452,-233],[445,-199]);
+    const northEdge = points([321,-349],[331,-394],[343,-426],[380,-456],[417,-450]);
+    const south = points([71,50],[91,61],[126,69],[166,75],[203,80],[222,94],[227,116],
+      [244,138],[283,149],[318,155],[363,166],[399,184],[437,202],[475,217],[516,220]);
+    const campus = points([399,184],[403,146],[418,119],[426,89],[438,62],[448,42],[457,42]);
+    const group = '武昌内陆街廊';
+    route({ group, name:'中北路至东湖路', points:north, width:3.36, plain:true });
+    route({ group, name:'秦园路北侧支路', points:northEdge, width:2.18, plain:true });
+    route({ group, name:'武珞路至珞喻路', points:south, width:3.26, plain:true });
+    route({ group, name:'珞狮路至珞珈山', points:campus, width:2.31, plain:true });
+    route({ group, name:'东湖路接省博外围', width:1.44, plain:true,
+      points:[north.at(-1), ...local(museum,[40,57],[35,48.9])] });
+    route({ group, name:'珞珈山入口园径', width:1.40, earthy:true,
+      points:[campus.at(-1),{x:458,z:47.5},...local(wuda,[34,12])] });
+
+    // Short, staggered frontage groups leave intermittent views across the parks.
+    const protectedSites = [[AT.museum,48],[AT.xingyin,35],[AT.wuda,33],[AT.hongshan,28]];
+    for (const [line, shift, weight] of [[north,0,1],[northEdge,5,.80],[south,9,1],[campus,15,.64]]) {
+      let passed = 0, next = 14, station = shift;
+      for (let j = 1; j < line.length; j++) {
+        const a = line[j-1], b = line[j], dx = b.x-a.x, dz = b.z-a.z, length = Math.hypot(dx,dz);
+        while (next < passed+length-2) {
+          const t = Math.max(0,(next-passed)/length), nx = -dz/length, nz = dx/length;
+          const x = a.x+t*dx, z = a.z+t*dz;
+          const side = station % 5 < 2 ? -1 : 1;
+          const setback = side*(8.1+2.7*(1+Math.sin(station*1.81)));
+          const p = {x:x+nx*setback, z:z+nz*setback};
+          const clear = protectedSites.every(([site,r]) => Math.hypot(p.x-site.x,p.z-site.z)>r);
+          if (clear && station % 7 !== 4) {
+            const edge = Math.min(1,j/4,(line.length-j)/3) * weight;
+            const scale = .63+edge*.22;
+            if (station % 6 === 0) lot('apartment',p,Math.atan2(-nx*side,-nz*side),scale,.39+edge*.21);
+            else lot(station % 5 === 2 ? 'arcade' : 'lane',p,Math.atan2(-nx*side,-nz*side),scale,.57+edge*.20);
+            if (edge > .58 && station % 5 < 2) {
+              const q = {x:p.x+dx/length*9.7+nx*side*1.4, z:p.z+dz/length*9.7+nz*side*1.4};
+              if (protectedSites.every(([site,r]) => Math.hypot(q.x-site.x,q.z-site.z)>r))
+                lot('lane',q,Math.atan2(-nx*side,-nz*side),scale*.91,.62);
+            }
+          }
+          const treeSide = station % 4 === 0 ? side : -side;
+          const treeOffset = treeSide*(4.2+.88*Math.cos(station*1.53));
+          if (clear) cityGround.verges.push({x:x+nx*treeOffset,z:z+nz*treeOffset});
+          station++;
+          next += 16+6*(1+Math.sin(station*1.28))+(station%5===0?12:0);
+        }
+        passed += length;
+      }
+    }
+
     // Jianghanguan to the nearby ferry landings: continuous riverside street,
     // cross lanes at the water, and low storefronts opening towards the street.
     const hankou = '汉口商埠', bank = yangtzeLowerWest;

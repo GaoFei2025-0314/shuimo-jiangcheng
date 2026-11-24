@@ -206,7 +206,7 @@
   buildLakeGreenway();
 
   // The planting pass queries the completed street grid and building footprints.
-  const cityGround = { occupied: () => false, streets: [] };
+  const cityGround = { occupied: () => false, streets: [], verges: [] };
 
   /* ═════════ 九、三镇市廛 ═════════ */
   // 以街坊为单位，里分顺巷成排、临江商埠与厂房成带，现代楼群在内街起伏。
@@ -217,7 +217,7 @@
       .map(g => { g.updateMatrixWorld(true); return new THREE.Box3().setFromObject(g).expandByScalar(2.2); });
     const cells = new Map(), cellSize = 14;
     const streetsMesh = new Acc(), streetSurface = new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2);
-    const plannedStreets = [], protectedPaths = [], routeEnds = [], districtPaving = new Map();
+    const plannedStreets = [], routeEnds = [], districtPaving = new Map(), protectedPaths = new Map();
     let citySeed = 571;
     const cityRandom = () => (citySeed = (citySeed * 16807) % 2147483647) / 2147483647;
     const halfWidth = 5.25, halfDepth = 3.95;
@@ -266,7 +266,8 @@
     }
     function buildLot(kind, {x, z}, yaw, scale, height) {
       const lotRadius = Math.hypot(halfWidth, halfDepth)*scale;
-      if (protectedPaths.some(path =>
+      const nearby = protectedPaths.get(Math.floor(x/cellSize)+','+Math.floor(z/cellSize));
+      if (nearby?.some(path =>
         distanceToPath(x, z, path) < path.width/2 + lotRadius + .18)) return false;
       if (occupied(x, z, lotRadius+.24) || !fits(x, z, yaw, scale)) return false;
       dummy.position.set(x, LAND_Y - .10, z);
@@ -330,7 +331,7 @@
         plannedStreets.push([point(crossStreet, rows[i] * rowPitch), point(crossStreet, rows[i + 1] * rowPitch), 1.8]);
       }
     }
-    function district(lon, lat, cols, rows, degrees, streets, shoulders = []) {
+    function district(lon, lat, cols, rows, degrees, streets, shoulders = [], fringe = false) {
       const center = geo(lon, lat), yaw = degrees * Math.PI / 180;
       const c = Math.cos(yaw), s = Math.sin(yaw);
       const blocks = new Map();
@@ -346,11 +347,12 @@
       for (let row = 0; row < rows; row++) for (let col = 0; col < cols; col++) {
         const u = col + .5 - cols / 2, v = row + .5 - rows / 2;
         const edge = (2 * u / cols) ** 2 + (2 * v / rows) ** 2;
-        if (edge > 1 || cityRandom() < .10 + edge * .18) continue;
+        const irregular = fringe ? .65+.21*Math.sin(1.31*u+.86*v)**2+.14*Math.sin(v*1.13+.2)**2 : 1;
+        if (edge > irregular || cityRandom() < .10 + edge * (fringe ? .34 : .18)) continue;
         // Each block faces one street and has a shared building line and storey range.
-        const kind = streets[Math.floor(cityRandom() * streets.length)];
-        const blockHeight = (.80 + cityRandom() * .34) * (1 - .15 * edge);
-        const u0 = 31 * u + 4 * Math.sin(v * .69), v0 = 25 * v + 3 * Math.sin(u * .65 + row * .18);
+        const kind = fringe && edge > .52 ? 'lane' : streets[Math.floor(cityRandom() * streets.length)];
+        const blockHeight = (.80 + cityRandom() * .34) * (1 - (fringe ? .42 : .15) * edge);
+        const u0 = 31 * u + (fringe ? 11 : 4) * Math.sin(v * .69), v0 = 25 * v + (fringe ? 10 : 3) * Math.sin(u * .65 + row * .18);
         const x0 = center.x + c * u0 + s * v0, z0 = center.z - s * u0 + c * v0;
         for (let side = -1; side <= 1; side += 2) for (let lot = -1; lot <= 1; lot += 2) {
           if (cityRandom() < .09 + edge * .06) continue;
@@ -380,7 +382,7 @@
     const oldTown = ['lane', 'lane', 'arcade', 'apartment'];
     const port = ['wharf', 'wharf', 'lane', 'arcade'];
     const suburbs = ['lane', 'apartment', 'apartment'];
-    function districtRoute({ name, group, points, width, material = 'Path', terrace = false, earthy = false, connect = false, gradeStart = null }) {
+    function districtRoute({ name, group, points, width, material = 'Path', terrace = false, earthy = false, connect = false, gradeStart = null, plain = false }) {
       const vertices = [], indices = [];
       const rows = [];
       for (let i = 0; i < points.length-1; i++) {
@@ -412,12 +414,23 @@
           for (const tri of [[a,c,b],[b,c,d]]) {
             const v = tri.map(k => worldPoints[Math.floor(k/3)][k%3]);
             if (!triangleOnLand(...v)) continue;
+            if (plain && v.some(p => p[1] > LAND_Y+.57 || landmarkAt(p[0],p[2]))) continue;
             indices.push(...tri); active = true;
           }
         }
         if (active) {
           const path = { a: rows[i], b: rows[i+1], width, group, name };
-          cityGround.streets.push(path); protectedPaths.push(path);
+          cityGround.streets.push(path);
+          const reserve = width/2+8;
+          const x0 = Math.floor((Math.min(path.a.x,path.b.x)-reserve)/cellSize);
+          const x1 = Math.floor((Math.max(path.a.x,path.b.x)+reserve)/cellSize);
+          const z0 = Math.floor((Math.min(path.a.z,path.b.z)-reserve)/cellSize);
+          const z1 = Math.floor((Math.max(path.a.z,path.b.z)+reserve)/cellSize);
+          for (let x=x0; x<=x1; x++) for (let z=z0; z<=z1; z++) {
+            const key = x+','+z;
+            if (!protectedPaths.has(key)) protectedPaths.set(key,[]);
+            protectedPaths.get(key).push(path);
+          }
           if (gradeStart !== null) {
             // Two embedded embankment faces close the gap between the leveled deck and grade.
             for (const j of [0,2]) {
@@ -453,8 +466,8 @@
     district(114.295, 30.540, 8, 9, -20, oldTown);    // 蛇山南麓
     district(114.302, 30.557, 9, 10, -32, oldTown);   // 武昌临江街坊
     district(114.325, 30.538, 10, 9, -8, suburbs, [[114.320, 30.5460, 76, 6.1]]);
-    district(114.358, 30.520, 8, 8, 14, suburbs);
-    district(114.344, 30.598, 9, 8, 26, port);
+    district(114.358, 30.520, 8, 8, 14, suburbs, [], true);
+    district(114.344, 30.598, 9, 8, 26, ['lane','arcade','apartment'], [], true);
     plannedStreets.forEach(([a, b, width]) => pavedLine(a, b, width));
     const localStreets = cityGround.streets.filter(street => !street.group);
     for (const { point, ...route } of routeEnds) {

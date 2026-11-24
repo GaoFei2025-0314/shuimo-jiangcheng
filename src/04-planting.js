@@ -331,6 +331,13 @@
       [-24, -7, 6, 6.4], [-21, 11, 6, 7.2], [23, -5, 8, 9.7], [21, 13, 6, 6.2]
     ], 'cherry');
 
+    const vergeTrees = seeded(0x6e43f8);
+    for (const [i, p] of cityGround.verges.entries()) {
+      if (i % 9 === 5) continue;
+      const spread = .47+vergeTrees()*.26;
+      plant(i % 6 === 2 ? 'willow' : 'broadleaf', p.x, p.z, spread, .52+vergeTrees()*.28, vergeTrees);
+    }
+
     // 连片林冠沿坡脊聚合，林缘以小树断续过渡。
     const priorityHills = ['蛇山', '龟山', '磨山', '珞珈山', '洪山'];
     function dressHill(h, seed, spacing, density, pineRatio) {
