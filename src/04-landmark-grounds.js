@@ -140,10 +140,10 @@
           THREE.MathUtils.lerp(width*xingyin.scale.x,1.51,Math.sin((i+1)/12*Math.PI*.72))))];
         ribbon(name+' · 贴岸石质登陆台','东湖听涛',curb,'BankStone',rows.slice(0,10),
           p=>onLand(p.x,p.z) ? landHeightAt(p)-.12 : -.18);
-        ribbon(name+' · 岸上步径','东湖听涛',stone,'Path',rows.slice(9));
+        const bankPath=ribbon(name+' · 岸上步径','东湖听涛',stone,'Path',rows.slice(9));
         pathRecord(landmarkGrounds.xingyin,rows);
         landmarkGrounds.xingyin.bridges.push({name,endFace:[endRow[0],tip,endRow[1]],land});
-        mouths.push({tip,bank});
+        mouths.push({tip,bank,bankPath});
         landmarkGrounds.xingyin.shade.push(walk.clone().add(V(-4.0,0,2.1)));
       }
     }
@@ -340,6 +340,13 @@
         'vW.y - .03');
       const path=ribbon('听涛 · 连续岸侧步道','东湖听涛',pathInk,'Path',promenade);
       path.geometry.setAttribute('pathAcross',new THREE.Float32BufferAttribute(promenade.flatMap(()=>[-1,1]),1));
+      for (const {bankPath} of mouths) {
+        const rows=bankPath.geometry.attributes.position.count/2;
+        // Feather the branches along the grass while keeping both stone joints solid.
+        const across=Array.from({length:rows},(_,i)=>i===0 || i===rows-1 ? [0,0] : [-1,1]).flat();
+        bankPath.geometry.setAttribute('pathAcross',new THREE.Float32BufferAttribute(across,1));
+        bankPath.material=pathInk;
+      }
       scatterBankPlants(grass,bankSlope);
       function windSurface(name, material, key, plants) {
         const geometry = plants.mesh(material, false).geometry;
