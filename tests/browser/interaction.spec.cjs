@@ -18,6 +18,9 @@ test('reduced motion switches instantly and freezes automatic scenery', async ({
   await page.getByRole('button', { name: '黄鹤楼', exact: true }).click();
   await expect(page.locator('#cardTitle')).toHaveText('黄鹤楼');
   await expect.poll(() => page.evaluate(() => window.__testRenderer.info.render.frame)).toBeGreaterThan(entryFrames);
+  const underline = await page.locator('#nav [aria-pressed="true"]').evaluate(button =>
+    getComputedStyle(button, '::after').transitionDuration);
+  expect(underline).toBe('0s');
   const first = await motion(page);
   expect(first.tweens).toBe(0);
   await page.waitForTimeout(150);

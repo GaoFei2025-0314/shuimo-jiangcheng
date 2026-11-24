@@ -13,7 +13,7 @@
     core:    orbit(geo(114.2855, 30.5528), 32, 440, 22, 30),
     tower:   orbit(AT.tower, terrainTop(AT.tower.x, AT.tower.z) + 13, 100, -68, 11),
     bridge:  orbit(AT.bridge, 6.2, 174, -71, 16),
-    qc:      orbit(qc.position, qc.position.y + 7, 112, 71, 22),
+    qc:      orbit(qc.position, qc.position.y + 7, 112, 65, 8),
     tv:      orbit(AT.tv, 82, 350, 104, 10),
     customs: orbit(AT.customs, 18, 115, 92, 17),
     wuda:    orbit(wudaAt, terrainTop(wudaAt.x, wudaAt.z) + 6, 112, 152, 26),
@@ -23,7 +23,7 @@
     hongshan:   orbit(AT.hongshan, terrainTop(AT.hongshan.x, AT.hongshan.z) + 11, 125, 18, 18),
     watertower: orbit(AT.watertower, 12, 95, 38, 15),
     museum:     orbit(AT.museum, 6, 150, 146, 20),
-    honglou:    orbit(AT.honglou, terrainTop(AT.honglou.x, AT.honglou.z) + 7, 120, 8, 17),
+    honglou:    orbit(AT.honglou, terrainTop(AT.honglou.x, AT.honglou.z) + 7, 120, 17, 26),
     yingwuzhou: orbit(AT.yingwuzhou, 14, 300, -24, 11),
     guiyuan:    orbit(AT.guiyuan, 5, 135, 18, 22),
     qintai:     orbit(AT.qintai, 4, 110, 25, 23)
@@ -90,12 +90,23 @@
     let base = VIEWS[key];
     if (W < H && key === 'core') base = orbit(geo(114.2855, 30.5528), 32, 440, 55, 30);
     if (W < H && key === 'home') base = orbit({ x: 245, z: -105 }, 16, 1100, 49, 38);
-    if (W < H && key === 'bridge') base = orbit(AT.bridge, 6.2, 174, 94, 17);
+    if (W < H && key === 'bridge') base = orbit(AT.bridge, 6.2, 174, -88, 16);
     if (!isFramed(key)) return base;
-    const bounds = key === 'bridge' ? bridgeBounds : viewBounds[key];
-    const fill = key === 'museum' ? .97 : !layout.compact && (key === 'tower' || key === 'bridge') ? .97 :
-      layout.compact && ['home','bridge'].includes(key) ? .92 : .8;
-    return fittedView(base, bounds, safeRect, W, H, camera.fov, fill);
+    const redChamberContext = key === 'honglou' && !layout.compact;
+    const bounds = key === 'bridge' ? bridgeBounds :
+      redChamberContext ? [viewBounds.honglou, viewBounds.tower] : viewBounds[key];
+    let fill = .8;
+    if (redChamberContext) fill = 1;
+    if (key === 'qc') fill = layout.compact ? .97 : 1.13;
+    if (key === 'museum' || key === 'tower' || (key === 'bridge' && !layout.compact)) fill = .97;
+    if (layout.compact && (key === 'home' || key === 'bridge')) fill = .92;
+    const view = fittedView(base, bounds, safeRect, W, H, camera.fov, fill);
+    if (key === 'qc') {
+      // Along the river, keep the pavilion and gate framed below the Guishan podium.
+      view.pos.y -= 3.0;
+      view.target.y -= 3.0;
+    }
+    return view;
   }
   function stopFlight() {
     if (flight) { flight.kill(); flight = null; }
