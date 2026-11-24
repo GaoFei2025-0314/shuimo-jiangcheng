@@ -52,7 +52,7 @@ def paint(name, hexcolor):
     shader = mat.node_tree.nodes.get("Principled BSDF")
     shader.inputs["Roughness"].default_value = .93
     shader.inputs["Base Color"].default_value = mat.diffuse_color
-    if name in ("Water", "Land", "Hills", "BankGrass", "BankStone", "Path"):
+    if name in ("Water", "Land", "Hills", "BankGrass", "BankStone", "WetBank", "ShoreStone", "Path"):
         # A broad tonal wash run through physical scene coordinates, consistent across the banks.
         nodes, links = mat.node_tree.nodes, mat.node_tree.links
         coords = nodes.new("ShaderNodeNewGeometry")
@@ -102,7 +102,7 @@ def imported_mesh(item, mat, dest):
     data = bpy.data.meshes.new(item["name"])
     data.from_pydata(points.tolist(), [], indices.tolist())
     data.materials.append(mat)
-    if item["material"] in ("Hills", "BankGrass", "DistantRidge"):
+    if item["material"] in ("Hills", "BankGrass", "WetBank", "DistantRidge"):
         data.polygons.foreach_set("use_smooth", np.ones(len(indices), dtype=bool))
     data.update()
     obj = bpy.data.objects.new(item["name"], data)
@@ -378,6 +378,7 @@ def build():
     try:
         mats = {k: paint(k, v) for k,v in {
             "Land":"e4dcc9", "Hills":"a4af91", "BankGrass":"9da887",
+            "WetBank":"8c9c86", "ShoreStone":"979d8d", "Reeds":"687e65",
             "BankStone":"b4a88d", "Path":"d1c3a7", "Slate":"677872",
             "Masonry":"c4b9a2", "Ink":"4b5049", "Paper":"d4cfc2",
             "DistantRidge":"c5c6b5", "Greenway":"909c89", "Water":"9ab7b2", "Ripples":"c4d1c4", "Streets":"c6c1af", "ApproachPaving":"98998b", "Boat":"aa9980"}.items()}

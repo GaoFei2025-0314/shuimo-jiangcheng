@@ -30,7 +30,24 @@ test('footbridges, museum approach and hillside stairs meet their ground surface
         const landing = height(stone, base.clone().addScaledVector(towardLand, .025), .105);
         return Math.abs(deck - landing) / width;
       });
-      return { land: onLand(land.x, land.z), gap: Math.max(...gaps) };
+      const bank = ['听涛 · 两桥间落岸草坡', '听涛 · 近水草土缓坡'].map(label => scene.getObjectByName(label));
+      // Check the middle of the apron as well as the joint at the bridge deck.
+      const centerline = landmarkGrounds.xingyin.paths[i];
+      const segments = stone.geometry.getAttribute('position').count / 4 - 1;
+      let cover = 0;
+      for (let j = 0; j < segments; j++) {
+        const a = centerline[j], b = centerline[j + 1];
+        const samples = Math.ceil(a.distanceTo(b) / .26);
+        for (let k = 0; k < samples; k++) {
+          const point = a.clone().lerp(b, (k + .5) / samples);
+          ray.set(point.clone().addScaledVector(down, -.4), down);
+          const apron = ray.intersectObject(stone)[0];
+          if (!apron) throw new Error('Missing landing surface on ' + name);
+          const ground = ray.intersectObjects(bank)[0];
+          if (ground) cover = Math.max(cover, ground.point.y - apron.point.y);
+        }
+      }
+      return { land: onLand(land.x, land.z), gap: Math.max(...gaps), cover };
     });
 
     const museum = byKey('museum'), plaza = scene.getObjectByName('省博北馆 · 中轴石铺前庭');
@@ -54,6 +71,7 @@ test('footbridges, museum approach and hillside stairs meet their ground surface
   for (const bridge of result.bridges) {
     expect(bridge.land).toBe(true);
     expect(bridge.gap).toBeLessThan(.05);
+    expect(bridge.cover).toBeLessThan(.025);
   }
   for (const gap of result.forecourt) expect(gap).toBeLessThan(.5 * 4.02 / 13);
   expect(result.slopes).toHaveLength(6);

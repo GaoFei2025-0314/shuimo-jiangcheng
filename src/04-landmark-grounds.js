@@ -77,14 +77,24 @@
     }
 
     const mouths = [];
-    const shoreX = z => nearestShore(V(xingyin.position.x-8,LAND_Y,z)).x;
-    const lakesideWalk = z => V(shoreX(z)-4.75-.22*Math.sin((z+174)*.18),LAND_Y+.147,z);
+    function shoreX(z) {
+      const near = xingyin.position.x-8;
+      let closest = Infinity;
+      for (let i=1;i<LAKE.length;i++) {
+        const [ax,az]=LAKE[i-1], [bx,bz]=LAKE[i];
+        if ((az>z)===(bz>z)) continue;
+        const x=ax+(bx-ax)*(z-az)/(bz-az);
+        if (Math.abs(x-near)<Math.abs(closest-near)) closest=x;
+      }
+      return Number.isFinite(closest) ? closest : nearestShore(V(near,LAND_Y,z)).x;
+    }
+    const lakesideWalk = z => V(shoreX(z)-4.75-.22*Math.sin((z+174)*.18),LAND_Y+.14,z);
 
     // Coordinates of the model's last two deck stations, in its local X/Y/Z frame.
     function connectFootbridges() {
-      for (const [name,start,end,width] of [
-        ['荷风桥',[-.49,1.05,31.45],[-.65,.91,35.7],3.58],
-        ['落羽桥',[-16.08,1.01,-21.55],[-21.55,.90,-26.48],2.93]
+      for (const [name,start,end,width,landingLift] of [
+        ['荷风桥',[-.49,1.05,31.45],[-.65,.91,35.7],3.58,[.020,.043,.020,.004]],
+        ['落羽桥',[-16.08,1.01,-21.55],[-21.55,.90,-26.48],2.93,[.032,.066,.027,.006]]
       ]) {
         const previous = local(xingyin,...start), tip = local(xingyin,...end);
         const bank = nearestShore(tip);
@@ -96,9 +106,12 @@
         const land = bank.clone().addScaledVector(inward,1.82);
         land.y = landHeightAt(land)+.129;
         const walk = lakesideWalk(land.z+(name==='荷风桥' ? .9 : -.9));
-        walk.x+=.58;
+        walk.x+=.37;
+        walk.y-=.011;
         const controls = [tip,throat,lip,land,walk];
         const nodes = new THREE.CatmullRomCurve3(controls).getPoints(12);
+        // Grade only the four intermediate stations that cross the grass lip.
+        for (const [i,lift] of landingLift.entries()) nodes[i+4].y+=lift;
         const endRow = section(previous,tip,tip,width*xingyin.scale.x);
         const rows = [endRow,...nodes.slice(1).map((p,i)=>section(nodes[i],nodes[Math.min(i+2,nodes.length-1)],p,
           THREE.MathUtils.lerp(width*xingyin.scale.x,1.51,Math.sin((i+1)/12*Math.PI*.72))))];
@@ -107,43 +120,92 @@
         ribbon(name+' · 岸上步径','东湖听涛',stone,'Path',rows.slice(9));
         pathRecord(landmarkGrounds.xingyin,rows);
         landmarkGrounds.xingyin.bridges.push({name,endFace:[endRow[0],tip,endRow[1]],land});
-        mouths.push({tip, bank});
+        mouths.push({tip,bank});
         landmarkGrounds.xingyin.shade.push(walk.clone().add(V(-4.0,0,2.1)));
       }
     }
     connectFootbridges();
     function plantLakeBank() {
-      // A shallow, scalloped bank connects the two landings without filling the channel.
+      const wetBank=inkMat(.21,false,['#66786b','#a3ad95']);
+      const toeStone=inkMat(.23,false,['#788074','#b2b5a0']);
+      const reedInk=inkMat(.25,false,['#536b59','#88977b']);
       const middle = (mouths[0].bank.z+mouths[1].bank.z)/2;
       const margin = Math.abs(mouths[0].bank.z-mouths[1].bank.z)/2+10.5;
-      const points=[], indices=[], foot=[], promenade=[], tufts=new Acc();
-      for (let i=0;i<=40;i++) {
-        const z=middle+margin*(i/20-1), bank=shoreX(z);
-        const blend=1-THREE.MathUtils.smoothstep(Math.abs(z-middle),margin-5.8,margin);
-        const scallop=Math.max(...mouths.map(({tip,bank})=>Math.max(0,tip.x-bank.x-.72)*
-          (1-THREE.MathUtils.smoothstep(Math.abs(z-tip.z),.3,5.8))));
-        const edge=bank+scallop+.32*blend*Math.sin((z-middle)*.32);
-        points.push(V(bank-5.4-(7.55+1.90*Math.sin(z*.27))*blend,LAND_Y-.027,z),
-                    V(bank-5.1-3.65*blend,LAND_Y+.063*blend,z), V(bank-4.75,LAND_Y+.113*blend,z),
-                    V(bank-.40,LAND_Y+.085*blend,z), V(edge,LAND_Y-.21*blend,z));
-        foot.push([V(edge-.02,LAND_Y-.20*blend,z),V(edge+.33,LAND_Y-.55*blend,z)]);
-        if(i) for(let c=0;c<4;c++) {
-          const a=(i-1)*5+c,b=a+1,d=a+5,e=d+1;
-          indices.push(a,d,b,b,d,e);
+      const lane=scene.children.find(node=>node.userData.lakeGreenway)?.geometry.attributes.position;
+      function meetGreenway(p,tail) {
+        if (!lane || tail>=5.8) return;
+        let closest, distance=Infinity;
+        for (let i=0;i<lane.count;i++) {
+          const j=(i+1)%lane.count, az=lane.getZ(i), bz=lane.getZ(j);
+          if ((az>p.z)===(bz>p.z)) continue;
+          const t=(p.z-az)/(bz-az), x=THREE.MathUtils.lerp(lane.getX(i),lane.getX(j),t);
+          if (Math.abs(x-p.x)>=distance) continue;
+          distance=Math.abs(x-p.x);
+          closest=V(x,THREE.MathUtils.lerp(lane.getY(i),lane.getY(j),t)+.003,p.z);
         }
+        if (closest) p.lerp(closest,1-THREE.MathUtils.smoothstep(tail,0,5.8));
+      }
+      function softenEnds(mat, base, span) {
+        const softened=mat.clone(), fog='col = mix(col, uFog, smoothstep(uNear, uFar, vD));';
+        // The wet edge fades into the lake wash and the path into the dry paper.
+        const tail=`${margin.toFixed(4)} - abs(vW.z - (${middle.toFixed(4)}))`;
+        softened.uniforms=mat.uniforms;
+        softened.fragmentShader=mat.fragmentShader.replace(fog,
+          `col = mix(${base}, col, smoothstep(.18, ${span.toFixed(2)}, ${tail})); ${fog}`);
+        return softened;
+      }
+      const lawn=[], slope=[], foot=[], promenade=[], tufts=new Acc(), rocks=new Acc(), reeds=new Acc();
+      for (let i=0;i<=80;i++) {
+        const z=middle+margin*(i/40-1), bank=shoreX(z);
+        const tail=margin-Math.abs(z-middle);
+        const blend=THREE.MathUtils.smoothstep(tail,0,5.8);
+        const mouth=Math.min(...mouths.map(({bank})=>Math.abs(z-bank.z)));
+        const stoneNose=.59*(1-THREE.MathUtils.smoothstep(mouth,.7,4.2));
+        const edge=bank+.075+blend*(.32+.17*Math.sin((z-middle)*.45)+stoneNose);
+        const crest=V(edge,LAND_Y+.044*blend+.008,z);
+        const shoulder=V(edge+.13+.59*blend,LAND_Y-.32,z);
+        const lower=V(edge+.29+1.05*blend,LAND_Y-.60,z);
+        const toe=V(edge+.47+1.32*blend,LAND_Y-.755,z);
+        lawn.push([V(bank-5.4-(7.55+1.90*Math.sin(z*.27))*blend,LAND_Y-.027,z),
+                   V(bank-5.1-3.65*blend,LAND_Y+.063*blend,z), V(bank-4.75,LAND_Y+.113*blend,z),
+                   V(bank-.54,LAND_Y+.090*blend,z),crest]);
+        slope.push([crest,shoulder,lower]);
+        foot.push([lower,toe]);
         const p=lakesideWalk(z);
-        p.y=LAND_Y+.113*blend+.027;
-        const w=1.30*THREE.MathUtils.lerp(.25,1,blend);
+        meetGreenway(p,tail);
+        const w=.09+1.21*THREE.MathUtils.smoothstep(tail,0,5.4);
         promenade.push([V(p.x-w/2,p.y,z),V(p.x+w/2,p.y,z)]);
-        if (i%4===1 && blend>.56) {
+        if (i%8===2 && blend>.56) {
           const x=bank-8.1-.55*Math.sin(z*.69);
           for (const offset of [-.24,.19]) tufts.place(tuftShape,x+offset,LAND_Y+.14*blend,z+offset*.58,.27,.19,.22,z);
         }
+        if (blend>.9 && i%4===2) {
+          const scale=.24+.12*Math.sin(i*1.9)+.17*stoneNose;
+          rocks.place(tuftShape,lower.x-.18,lower.y+.024,z,scale*1.3,scale*.58,scale*1.6,z);
+        }
+        if (blend>.85 && i%11===4 && mouth>2.2) {
+          for (const d of [-.24,-.10,.06,.22]) {
+            const stem=V(lower.x-.14+d*.28,lower.y-.06,z+d);
+            reeds.beam(stem,stem.clone().add(V(.15+d*.48,.43+d*.52,.11+d*.30)),.035);
+          }
+        }
       }
-      faces('听涛 · 两桥间落岸草坡','东湖听涛',shoreGrass,'BankGrass',points,indices);
-      ribbon('听涛 · 岸脚浅石','东湖听涛',curb,'BankStone',foot,p=>p.y-.30);
-      ribbon('听涛 · 连续岸侧步道','东湖听涛',stone,'Path',promenade);
+      function strip(name,mat,key,rows) {
+        const columns=rows[0].length, indices=[];
+        for (let i=1;i<rows.length;i++) for (let c=0;c<columns-1;c++) {
+          const a=(i-1)*columns+c, d=a+columns;
+          indices.push(a,d,a+1,a+1,d,d+1);
+        }
+        faces(name,'东湖听涛',mat,key,rows.flat(),indices);
+      }
+      const waterWash='mix(mix(uFog, vec3(.43, .59, .56), .22), uFog * .937, smoothstep(.05, .77, vW.y))';
+      strip('听涛 · 两桥间落岸草坡',shoreGrass,'BankGrass',lawn);
+      strip('听涛 · 近水草土缓坡',softenEnds(wetBank,waterWash,6.3),'WetBank',slope);
+      ribbon('听涛 · 岸脚浅石','东湖听涛',softenEnds(toeStone,waterWash,6.3),'ShoreStone',foot);
+      ribbon('听涛 · 连续岸侧步道','东湖听涛',softenEnds(stone,'mix(uInk, uPaper, .70)',4.5),'Path',promenade);
       surface('听涛 · 岸草','东湖听涛',lakesideGrass,'BankGrass',tufts.mesh(lakesideGrass,false).geometry);
+      surface('听涛 · 登陆口散石','东湖听涛',toeStone,'ShoreStone',rocks.mesh(toeStone,false).geometry);
+      surface('听涛 · 岸脚疏芦','东湖听涛',reedInk,'Reeds',reeds.mesh(reedInk,false).geometry);
       pathRecord(landmarkGrounds.xingyin,promenade);
       for (const z of [-193,-183,-173,-161,-153]) {
         const p=lakesideWalk(z); p.x-=4.7;
