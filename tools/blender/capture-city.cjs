@@ -26,7 +26,10 @@ function capture() {
       index: geo.index ? pack(Uint32Array.from(geo.index.array)) : null };
   }
   function copy(node, group, name, material) {
-    meshes.push({ group, name, material, ...geometryOf(node), matrix: node.matrixWorld.toArray() });
+    const item = { group, name, material, ...geometryOf(node), matrix: node.matrixWorld.toArray() };
+    const pigment = node.geometry.getAttribute('deckPigment');
+    if (pigment) item.deckPigment = pack(pigment.array);
+    meshes.push(item);
   }
   function placements(node) {
     const m = new THREE.Matrix4(), transforms = [];

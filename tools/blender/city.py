@@ -102,6 +102,10 @@ def imported_mesh(item, mat, dest):
     data = bpy.data.meshes.new(item["name"])
     data.from_pydata(points.tolist(), [], indices.tolist())
     data.materials.append(mat)
+    if "deckPigment" in item:
+        pigment = np.frombuffer(base64.b64decode(item["deckPigment"]), dtype="<f4")
+        layer = data.attributes.new(name="Deck pigment", type='FLOAT', domain='POINT')
+        layer.data.foreach_set("value", pigment)
     if item["material"] in ("Hills", "BankGrass", "WetBank", "DistantRidge"):
         data.polygons.foreach_set("use_smooth", np.ones(len(indices), dtype=bool))
     data.update()
@@ -382,6 +386,16 @@ def build():
             "BankStone":"b4a88d", "Path":"d1c3a7", "Slate":"677872",
             "Masonry":"c4b9a2", "Ink":"4b5049", "Paper":"d4cfc2",
             "DistantRidge":"c5c6b5", "Greenway":"909c89", "Water":"9ab7b2", "Ripples":"c4d1c4", "Streets":"c6c1af", "ApproachPaving":"98998b", "Boat":"aa9980"}.items()}
+        if any("deckPigment" in item for item in capture["meshes"]):
+            # The apron begins in deck asphalt and ends in the receiving street's paving.
+            tree = mats["ApproachPaving"].node_tree
+            pigment = tree.nodes.new("ShaderNodeAttribute")
+            pigment.attribute_name = "Deck pigment"
+            mix = tree.nodes.new("ShaderNodeMixRGB")
+            mix.inputs[1].default_value = mats["Path"].diffuse_color
+            mix.inputs[2].default_value = mesh.material("deck").diffuse_color
+            tree.links.new(pigment.outputs["Fac"], mix.inputs[0])
+            tree.links.new(mix.outputs["Color"], tree.nodes.get("Principled BSDF").inputs["Base Color"])
         groups = {}
         def group(name):
             if name not in groups:

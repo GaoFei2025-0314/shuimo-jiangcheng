@@ -13,17 +13,30 @@
   const bridge  = place(builtLandmark('bridge'), AT.bridge, bridgeScale, bridgeAngle, '武汉长江大桥', 'bridge', 0);
   bridge.scale.z = bridgeScale * bridgeLengthRatio;
   {
-    const material = inkMat(.28, false, ['#75766d', '#b8b2a2']);
+    const material = inkMat(.36, false, ['#827d70', '#d6cfb8']);
+    material.uniforms.deckInk = { value: new THREE.Color('#646961') };
+    material.uniforms.deckPaper = { value: new THREE.Color('#ada99b') };
+    material.vertexShader = 'attribute float deckPigment; varying float vDeckPigment;\n'+material.vertexShader
+      .replace('vW = w.xyz;', 'vDeckPigment = deckPigment; vW = w.xyz;');
+    material.fragmentShader = 'varying float vDeckPigment; uniform vec3 deckInk, deckPaper;\n'+material.fragmentShader
+      .replace('1., uTone),', '1., mix(uTone, .04, vDeckPigment)),')
+      .replace('vec3 col = mix(uInk, uPaper, tone);',
+        'vec3 col = mix(mix(uInk, uPaper, tone), mix(deckInk, deckPaper, tone), vDeckPigment);');
     for (const [side, rows] of approachLinks.entries()) {
-      const vertices = [], indices = [];
+      const { width, next } = bridgeStreetEntries[side];
+      const vertices = [], indices = [], pigment = [];
       for (let i = 0; i < rows.length; i++) {
         const p = rows[i];
-        const a = i === 0 ? approachRoads[side][bridgeDeckEnd-73] : rows[i-1];
-        const b = i === 0 ? rows[0] : rows[Math.min(rows.length-1,i+1)];
+        const a = i === 0 ? approachRoads[side][bridgeDeckEnd-73] : (i === rows.length-1 ? p : rows[i-1]);
+        const b = i === 0 ? rows[0] : rows[i+1] || next;
         const dx = b.x-a.x, dz = b.z-a.z, length = Math.hypot(dx,dz);
-        const half = THREE.MathUtils.lerp(approachHalfWidth, 1.23, i/(rows.length-1));
-        for (const direction of [-1,1])
+        const t = i/(rows.length-1);
+        const narrowing = THREE.MathUtils.smoothstep(t,0,side === 0 ? .57 : .76);
+        const half = THREE.MathUtils.lerp(approachHalfWidth, width/2, narrowing);
+        for (const direction of [-1,1]) {
           vertices.push(p.x+direction*dz/length*half, p.y, p.z-direction*dx/length*half);
+          pigment.push(1-THREE.MathUtils.smoothstep(t,.04,.77));
+        }
         if (i) {
           const k = i*2;
           indices.push(k-2,k,k-1,k-1,k,k+1);
@@ -31,6 +44,7 @@
       }
       const geometry = new THREE.BufferGeometry();
       geometry.setAttribute('position', new THREE.Float32BufferAttribute(vertices,3));
+      geometry.setAttribute('deckPigment', new THREE.Float32BufferAttribute(pigment,1));
       geometry.setIndex(indices); geometry.computeVertexNormals();
       const road = new THREE.Mesh(geometry, material);
       road.name = side === 0 ? '武昌引道 · 接地铺装' : '汉阳引道 · 接地铺装';
@@ -382,7 +396,7 @@
     const oldTown = ['lane', 'lane', 'arcade', 'apartment'];
     const port = ['wharf', 'wharf', 'lane', 'arcade'];
     const suburbs = ['lane', 'apartment', 'apartment'];
-    function districtRoute({ name, group, points, width, material = 'Path', terrace = false, earthy = false, connect = false, gradeStart = null, plain = false }) {
+    function districtRoute({ name, group, points, width, material = 'Path', terrace = false, earthy = false, connect = false, gradeStart = null, entryHeight = null, plain = false }) {
       const vertices = [], indices = [];
       const rows = [];
       for (let i = 0; i < points.length-1; i++) {
@@ -402,7 +416,8 @@
           const floor = plantingSurface(x,z);
           const surface = (floor ?? 0)+(terrace ? .112 : .068);
           const u = i/(rows.length-1);
-          const height = gradeStart === null ? surface : THREE.MathUtils.lerp(gradeStart,surface,u);
+          let height = gradeStart === null ? surface : THREE.MathUtils.lerp(gradeStart,surface,u);
+          if (i === 0 && entryHeight !== null) height = entryHeight;
           return [x, height, z];
         });
       });

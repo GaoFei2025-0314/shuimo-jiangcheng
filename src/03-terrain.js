@@ -85,14 +85,19 @@
     return 1.24*(12*t**3*(1-.5*t)+Math.max(0,d-12));
   }
   // Continue the bridge surface into the adjacent street grid at their landward ends.
+  const bridgeStreetEntries = [
+    { width: 2.55, next: { x: -31.7, z: 27.88 } },
+    { width: 2.30, next: { x: -252.7, z: -20.3 } }
+  ];
   const approachLinks = [
-    [[0,-154],[.8,-159],[3.9,-163],[9,-164],[14,-161],[17.8,-156],[20.9,-150.8]],
+    [...[[0,-154],[.8,-159],[3.9,-163],[9,-164]].map(([u,s]) => bridgeLocal(u,0,s)),
+      V(-32.22,0,21.34),V(-35.5,0,22.29),V(-37,0,24.10),V(-36.15,0,26.29),V(-33.7,0,27.15)],
     [[hanyangOffset(154),154],[87.3,159.4],[94.5,163.9],[102.1,167.3],
-      [110,170],[119,172.5],[128,174.7],[136,176]]
+      [110,170],[119,172.5],[128,174.7],[136,176]].map(([u,s]) => bridgeLocal(u,0,s))
   ].map(link => {
-    const controls = link.map(([u,s],i) => {
+    const controls = link.map(({x,z},i) => {
       const t = i/(link.length-1), y = THREE.MathUtils.lerp(deckGrade(bridgeDeckEnd),LAND_Y+.058,t);
-      return bridgeLocal(u,y,s);
+      return V(x,y,z);
     });
     return new THREE.CatmullRomCurve3(controls).getPoints((controls.length-1)*3);
   });

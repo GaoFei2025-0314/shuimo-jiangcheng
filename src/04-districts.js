@@ -88,8 +88,8 @@
 
     const wuchang = '武昌古城';
     const bridgeExit = approachLinks[0].at(-1);
-    route({ name: '蛇山脚坡街与首义街口', group: wuchang, width: 2.55, connect: true,
-      points: [bridgeExit, ...points([-29,27],[-19,34],[-9,37],[8,38],[25,39],[45,45],[71,50])] });
+    route({ name: '蛇山脚坡街与首义街口', group: wuchang, width: bridgeStreetEntries[0].width, connect: true, entryHeight:bridgeExit.y,
+      points: [bridgeExit, bridgeStreetEntries[0].next, ...points([-29,27],[-19,34],[-9,37],[8,38],[25,39],[45,45],[71,50])] });
     route({ name: '蛇山东麓土径', group: wuchang, width: 1.04, earthy: true,
       points: points([-29,27],[-32,14],[-34,2],[-31,-12],[-24,-25],[-13,-36],[-1,-42],[17,-43],[27,-53]) });
     for (const [x,z,yaw,kind] of [[-23,30,.15,'arcade'],[-12,29,.22,'lane'],[4,36,.25,'lane'],
@@ -103,8 +103,9 @@
       points: points([-127,-127],[-134,-135],[-143,-140],[-155,-142],[-166,-144]) });
     route({ name: '晴川阁与铁门关沿台石径', group: '晴川阁', width: 1.38, material: 'BankStone',
       points: local(qc,[0,10.6],[1,11.8],[7,10.2],[13,10.1],[18,11.75],[22,13.6]) });
-    route({ name: '汉阳桥头至翠微巷', group: hanyang, width: 2.3,
-      points: [approachLinks[1].at(-1), ...points([-265,-22],[-282,-19],[-297,-12],[-297,4],[-309,12])] });
+    route({ name: '汉阳桥头至翠微巷', group: hanyang, width: bridgeStreetEntries[1].width, entryHeight:approachLinks[1].at(-1).y,
+      points: [approachLinks[1].at(-1), bridgeStreetEntries[1].next,
+        ...points([-257,-19.8],[-265,-22],[-282,-19],[-297,-12],[-297,4],[-309,12])] });
     route({ name: '归元禅寺山门前庭', group: '归元禅寺', width: 6.4, material: 'BankStone',
       points: local(guiyuan,[0,29],[0,33],[0,40]) });
     route({ name: '翠微山门接乡路', group: hanyang, width: 2.6, connect: true,
