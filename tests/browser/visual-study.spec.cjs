@@ -95,6 +95,36 @@ test('each atlas plate opens for its own model, with two architectural detail vi
   await expect(page.locator('#atlas-open')).toBeFocused();
 });
 
+test('the sun stays above the map horizon while orbiting and fades in overhead views', async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await ready(page);
+  for (const [width,height] of [[1456,788],[390,844],[844,390]]) {
+    await page.setViewportSize({width,height});
+    await page.locator('#b-qc').click();
+    const samples = await page.evaluate(async () => {
+      const camera = window.__testCamera, controls = window.__testControls;
+      controls.dispatchEvent({type:'start'});
+      const sun = document.getElementById('sun'), ray = new THREE.Raycaster();
+      const results = [];
+      for (const [pitch,yaw,distance] of [[6,-30,130],[11,70,580],[14,-130,330],[55,50,750],[6,135,560]]) {
+        const direction = new THREE.Vector3().setFromSphericalCoords(distance,
+          THREE.MathUtils.degToRad(90-pitch), THREE.MathUtils.degToRad(yaw));
+        camera.position.copy(controls.target).add(direction);
+        controls.update();
+        await new Promise(done => requestAnimationFrame(() => requestAnimationFrame(done)));
+        const {x,width,bottom} = sun.getBoundingClientRect();
+        ray.setFromCamera(new THREE.Vector2((x+width/2)/innerWidth*2-1, 1-bottom/innerHeight*2),camera);
+        results.push({alpha:Number(getComputedStyle(sun).opacity), bottomRayY:ray.ray.direction.y});
+      }
+      return results;
+    });
+    expect(samples[0].alpha).toBeGreaterThan(.45);
+    for (const sample of samples.filter(s=>s.alpha>0)) expect(sample.bottomRayY).toBeGreaterThan(0);
+    expect(samples[3].alpha).toBe(0);
+    expect(samples[4].alpha).toBeGreaterThan(.45);
+  }
+});
+
 test('street trees and tower groups follow the same ground and corridors as the exported landscape', async ({ page }) => {
   await page.emulateMedia({ reducedMotion: 'reduce' });
   await page.goto('/?debug');

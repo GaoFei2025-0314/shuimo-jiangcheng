@@ -232,6 +232,16 @@
 
   /* ═════════ 十五、循环 ═════════ */
   let W = 1, H = 1;
+  const sun = document.getElementById('sun');
+  let sunExtent = 1;
+  function fitSunToSky() {
+    // Project a horizontal sightline using the same off-centre lens as the map.
+    const lens = camera.projectionMatrix.elements;
+    const pitch = Math.PI / 2 - controls.getPolarAngle();
+    const horizonY = H * .5 * (1 + lens[9] - lens[5] * Math.tan(pitch));
+    const fit = THREE.MathUtils.clamp((horizonY - 8) / sunExtent, 0, 1);
+    sun.style.setProperty('--sky-fit', fit.toFixed(4));
+  }
   function refreshLayout(refit = true) {
     const measured = layout.measure(W, H);
     safeRect = measured.rect; uiBlocks = measured.blocks; layoutDirty = false;
@@ -258,6 +268,7 @@
   function resize() {
     if (app.state === 'failed') return;
     W = stage.clientWidth || window.innerWidth; H = stage.clientHeight || window.innerHeight;
+    sunExtent = sun.offsetTop + sun.offsetHeight;
     renderer.setSize(W, H, false);
     camera.aspect = W / H; camera.fov = W / H < .9 ? 52 : 38;
     camera.updateProjectionMatrix();
@@ -403,6 +414,7 @@
     controls.update();
     // Reduced motion freezes the water, boats and birds. Repaint the geometry on a
     // camera or layout change; keyboard focus and labels still update independently.
+    if (sceneDirty) fitSunToSky();
     if (!reduce || sceneDirty) {
       updateLandscapeVisibility();
       renderer.render(scene, camera);
