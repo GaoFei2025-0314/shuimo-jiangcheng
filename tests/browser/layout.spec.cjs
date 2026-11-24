@@ -60,6 +60,38 @@ for (const [width, height] of [[390, 844], [360, 640], [844, 390]]) {
   });
 }
 
+test('the portrait East Lake view gives its shoreline room and separates the banks in depth', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await page.goto('/?debug');
+  await page.waitForFunction(() => window.__ready && window.__dbg);
+  await page.locator('#b-lake').click();
+  // Let the reduced-motion render apply the new lens and camera world matrix.
+  await page.evaluate(() => new Promise(done => requestAnimationFrame(() => requestAnimationFrame(done))));
+  const result = await page.evaluate(() => {
+    const { camera, LAKES, LAND_Y } = window.__dbg;
+    const gl = window.__testRenderer.getContext();
+    const levels = 2 ** gl.getParameter(gl.DEPTH_BITS) - 1;
+    const pixels = new THREE.Box2();
+    let separation = Infinity;
+    for (const [x,z] of LAKES[0]) {
+      const shore = new THREE.Vector3(x, 0, z);
+      const water = shore.clone().project(camera);
+      pixels.expandByPoint(new THREE.Vector2(water.x, water.y));
+      // Sample the bank and water on the same sightline, measured in depth buffer steps.
+      const bank = shore.lerp(camera.position, LAND_Y / camera.position.y).project(camera);
+      separation = Math.min(separation, (water.z - bank.z) * .5 * levels);
+    }
+    const safeHeight = document.querySelector('#dock').getBoundingClientRect().top
+                     - document.querySelector('#title').getBoundingClientRect().bottom;
+    return { fill: (pixels.max.y-pixels.min.y)*innerHeight/(2*safeHeight), separation };
+  });
+  expect(result.fill).toBeGreaterThan(.36);
+  expect(result.separation).toBeGreaterThan(4);
+  await expect(page.getByRole('button', { name: '移至行吟阁' })).toBeVisible();
+  await expect(page.getByRole('button', { name: '移至楚天台' })).toBeVisible();
+});
+
 test('compact text panels are mutually exclusive, bounded and keyboard operable', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.emulateMedia({ reducedMotion: 'reduce' });

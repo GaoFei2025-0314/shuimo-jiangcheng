@@ -79,32 +79,41 @@
     tvPodium.min.y = tv.position.y;
     tvPodium.max.y = tv.position.y + tv.scale.y * 4.22;
     const projectedTower = new THREE.Box3(), projection = new THREE.Matrix4();
+    const coreSubjects = new Set(['tower', 'tv', 'bridge', 'qc']);
+    const lakeSubjects = new Set(['chutian', 'xingyin']);
+    const lakeOrder = [...MARKS].sort((a,b) => Number(lakeSubjects.has(b.key)) - Number(lakeSubjects.has(a.key)));
+    function projectedRect(bounds, w, h) {
+      projection.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
+      const { min, max } = projectedTower.copy(bounds).applyMatrix4(projection);
+      if (min.z <= -1 || max.z >= 1) return null;
+      return { left: (1+min.x)*w/2, right: (1+max.x)*w/2,
+        top: (1-max.y)*h/2, bottom: (1-min.y)*h/2 };
+    }
     function drawMarks(w, h, activeView, blocks, farScale) {
       const placed = [];
       let towerRect = null;
-      if (w < h && (activeView === 'core' || activeView === 'tv')) {
-        projection.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
-        projectedTower.copy(activeView === 'tv' ? tvPodium : towerSilhouette).applyMatrix4(projection);
-        const { min, max } = projectedTower;
-        if (min.z > -1 && max.z < 1) towerRect = {
-          left: (1+min.x)*w/2, right: (1+max.x)*w/2, top: (1-max.y)*h/2, bottom: (1-min.y)*h/2
-        };
-      }
+      if (activeView === 'bridge' || (w < h && activeView === 'tv')) towerRect = projectedRect(tvPodium, w, h);
+      if (w < h && activeView === 'core') towerRect = projectedRect(towerSilhouette, w, h);
       const focused = MARKS.find(m => m.el === document.activeElement);
-      const ordered = focused ? [focused, ...MARKS.filter(m => m !== focused)] : MARKS;
+      const priority = activeView === 'lake' ? lakeOrder : MARKS;
+      const ordered = focused ? [focused, ...priority.filter(m => m !== focused)] : priority;
       ordered.forEach(m => {
-        const r = screenRect(m, false), d = camera.position.distanceTo(m.v), far = FAR[m.tier];
+        const lakeSubject = activeView === 'lake' && lakeSubjects.has(m.key);
+        const r = screenRect(m, false), d = camera.position.distanceTo(m.v), far = FAR[lakeSubject ? 1 : m.tier];
         // 远端按层级淡出，再随紧凑取景拉远的全城距离等比放宽，两级之比不变：全城视角下二级牌仍隐去
         const o = THREE.MathUtils.smoothstep(d, 90, 170) * (1 - THREE.MathUtils.smoothstep(d, far[0] * farScale, far[1] * farScale));
         const visible = o > .35 && m.key !== activeView && r.inDepth && within(r, w, h)
-          && !(towerRect && (activeView === 'tv' ? m.key === 'qc' : m.tier > 1 && m !== focused)
+          && !(towerRect && (activeView === 'core' ? m.tier > 1 && m !== focused : m.key === 'qc')
             && collides(r, towerRect))
           && ![...blocks, ...placed].some(block => collides(r, block));
         setMarkVisibility(m, visible, o);
         if (!visible) return;
+        m.el.classList.toggle('quiet', activeView === 'lake' ? !lakeSubject : m.tier > 1 || (activeView === 'core' && !coreSubjects.has(m.key)));
         m.el.style.transform = `translate(-50%,-100%) translate(${r.x}px,${r.y}px)`;
         placed.push(r);
       });
+      // Reserve the real tower base for the painting when laying out bridge-view inscriptions.
+      if (activeView === 'bridge' && towerRect) placed.push(towerRect);
       return placed;
     }
     function drawLabels(w, h, marks, blocks, activeView) {

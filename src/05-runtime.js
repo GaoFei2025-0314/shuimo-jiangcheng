@@ -90,19 +90,36 @@
     let base = VIEWS[key];
     if (W < H && key === 'core') base = orbit(geo(114.2855, 30.5528), 32, 440, 55, 30);
     if (W < H && key === 'home') base = orbit({ x: 245, z: -105 }, 16, 1100, 49, 38);
+    // Look east across the full lake: its long axis fills the vertical page.
+    const portraitLake = W < H && key === 'lake';
+    if (portraitLake) base = orbit(lakeC, 3, 560, 266, 59);
     if (W < H && key === 'tower') base = orbit(AT.tower, VIEWS.tower.target.y, 100, -66, 29);
     const portraitBridge = key === 'bridge' && W < H;
+    const landscapeBridge = key === 'bridge' && !layout.compact && W >= H;
+    if (landscapeBridge) base = orbit(AT.bridge, 6.2, 174, 140, 10);
     if (portraitBridge) base = orbit(AT.bridge, 6.2, 174, -100, 11);
     if (!isFramed(key)) return base;
     const redChamberContext = key === 'honglou' && !layout.compact;
     const bounds = key === 'tower' ? [viewBounds.tower, ...towerPark.assetBounds] : key === 'bridge' ? bridgeBounds :
       redChamberContext ? [viewBounds.honglou, viewBounds.tower] : viewBounds[key];
     let fill = .8;
+    if (portraitLake) fill = .96;
     if (redChamberContext) fill = 1;
     if (key === 'qc') fill = layout.compact ? .97 : 1.13;
     if (key === 'museum' || key === 'tower' || (key === 'bridge' && !layout.compact)) fill = .97;
     if (layout.compact && (key === 'home' || key === 'bridge')) fill = portraitBridge ? .99 : .92;
     const view = fittedView(base, bounds, safeRect, W, H, camera.fov, fill);
+    if (landscapeBridge) {
+      // Frame the truss against the river, with Yellow Crane Tower at the left bank.
+      const back = view.pos.clone().sub(view.target).normalize();
+      const offset = V(0, 1, 0).cross(back).normalize().multiplyScalar(-58);
+      offset.y = 13;
+      view.pos.add(offset);
+      view.target.add(offset);
+      // On narrower desktops leave room for the approach on the right.
+      const extra = 28 * (1 - THREE.MathUtils.smoothstep(W/H, 1.14, 1.55));
+      view.pos.addScaledVector(back, extra);
+    }
     if (key === 'qc') {
       // Along the river, keep the pavilion and gate framed below the Guishan podium.
       view.pos.y -= 3.0;
@@ -389,6 +406,13 @@
     if (camera.position.y < floorY) camera.position.y = floorY;
 
     const dist = camera.position.distanceTo(controls.target);
+    // A high aerial view needs enough depth precision to separate the water and low banks.
+    // Limit the near plane by both height and viewing distance when descending or zooming in.
+    const clipNear = THREE.MathUtils.clamp(.01 * Math.min(camera.position.y - floorY, dist), .5, 12);
+    if (Math.abs(camera.near - clipNear) > .04) {
+      camera.near = clipNear;
+      camera.updateProjectionMatrix();
+    }
     const near = Math.max(55, dist * .45);
     fogU.uNear.value = near; fogU.uFar.value = near + Math.max(420, dist * 2.3);
     scene.fog.near = near; scene.fog.far = fogU.uFar.value;

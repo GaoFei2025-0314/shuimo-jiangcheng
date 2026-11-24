@@ -72,12 +72,15 @@
   .mark .plate {
     display: flex; flex-direction: column; align-items: center;
     padding: 6px 4px 7px; background: var(--paper); color: inherit;
-    border: 1px solid var(--ink-faint); border-top: 3px solid var(--cinnabar);
+    border: 1px solid #a29e90; border-top: 3px solid var(--cinnabar);
     font-size: 15px; line-height: 1.22;
     transition: background .2s, color .2s, border-color .2s;
   }
   .mark .stem { width: 1px; height: 20px; background: var(--ink-faint); }
   .mark .dot { width: 5px; height: 5px; margin-top: -3px; border-radius: 50%; background: var(--cinnabar); }
+  .mark.quiet .plate { color: var(--ink-soft); border-color: #c3bdae; border-top-color: #aaa290; }
+  .mark.quiet .stem { background: #aaa595; }
+  .mark.quiet .dot { background: #918775; }
   .mark:hover .plate, .mark:focus-visible .plate {
     background: var(--cinnabar); color: var(--paper); border-color: var(--cinnabar);
   }
@@ -127,7 +130,9 @@
   }
   #poem::before {
     content: ""; position: absolute; z-index: -1; pointer-events: none; inset: -16px -17px;
-    background: radial-gradient(ellipse at center, rgba(242,239,230,.86) 34%, rgba(242,239,230,.70) 59%, transparent 78%);
+    background:
+      radial-gradient(ellipse at 17% 83%, rgba(242,239,230,.88) 6%, transparent 34%),
+      radial-gradient(ellipse at 56% 48%, rgba(242,239,230,.95) 32%, rgba(242,239,230,.78) 60%, transparent 80%);
   }
   #poem .seal { align-self: flex-end; margin-bottom: .15em; margin-right: .45em; }
   .seal {
