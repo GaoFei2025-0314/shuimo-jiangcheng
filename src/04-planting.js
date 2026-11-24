@@ -266,6 +266,7 @@
       transform.scale.set(spread, height, spread * (.90 + rng() * .19));
       transform.updateMatrix();
       model.instances.push(transform.matrix.clone());
+      groundContacts.push({x,z, rx:.55+radius*.44, rz:.45+radius*.25,c:.78,s:.626,tree:true});
       const key = keyAt(cx, cz);
       if (!trunks.has(key)) trunks.set(key, []);
       trunks.get(key).push({ x, z, radius });
@@ -467,9 +468,9 @@
     // Color stores sRGB floats for the standalone map and the Blender capture.
     const plantMaterial = new THREE.ShaderMaterial({
       vertexColors: true,
-      uniforms: { ...fogU, uLight: sharedInk.uLight },
+      uniforms: { ...fogU, uLight: sharedInk.uLight, uCanopy: { value: 1 } },
       vertexShader: `
-        varying vec3 vTint, vNormal, vWorld;
+        varying vec3 vTint, vNormal, vWorld, vSprig;
         varying float vDistance;
         void main() {
           vec4 w = modelMatrix * instanceMatrix * vec4(position, 1.0);
@@ -478,28 +479,45 @@
           vNormal = normalize(mat3(modelMatrix) * basis * scaled);
           vTint = color;
           vWorld = w.xyz;
+          vSprig = position;
           vec4 view = viewMatrix * w;
           vDistance = -view.z;
           gl_Position = projectionMatrix * view;
         }`,
-      fragmentShader: `
+      fragmentShader: NOISE + `
         uniform vec3 uLight, uFog;
-        uniform float uNear, uFar;
-        varying vec3 vTint, vNormal, vWorld;
+        uniform float uNear, uFar, uCanopy;
+        varying vec3 vTint, vNormal, vWorld, vSprig;
         varying float vDistance;
         void main() {
-          float light = dot(normalize(vNormal), normalize(uLight)) * .5 + .5;
-          float strata = smoothstep(.24, .38, light) * .27 + smoothstep(.46, .60, light) * .37
-                       + smoothstep(.66, .82, light) * .36;
-          float grain = fract(sin(dot(floor(vWorld * 6.3), vec3(127.1, 113.7, 311.7))) * 43758.5453) - .5;
-          vec3 pigment = vTint * (.68 + .35 * strata) + (.035 * strata + grain * .025);
-          gl_FragColor = vec4(mix(pigment, uFog, smoothstep(uNear, uFar, vDistance)), 1.0);
+          float light = dot(normalize(vNormal),normalize(uLight))*.5+.5;
+          float depth = smoothstep(.23,.73,light);
+          vec3 pigment = vTint*(.67+.38*depth);
+          if(uCanopy>.5){
+            float nearCrown = 1.-smoothstep(140.,480.,vDistance);
+            float bloom = smoothstep(.035,.22,vTint.r-vTint.g);
+            vec3 shadowInk = mix(vec3(.105,.25,.184),vec3(.34,.205,.19),bloom);
+            vec3 shadow = mix(vTint*.76,shadowInk,.54);
+            vec3 middle = vTint*.94;
+            vec3 sunlit = vTint*1.025+mix(vec3(.126,.102,.052),vec3(.112,.074,.045),bloom);
+            float broad = vnoise(vWorld.xz*.33+vSprig.y*.59);
+            float band = light+(broad-.5)*.20*nearCrown;
+            pigment = mix(shadow,middle,smoothstep(.26,.57,band));
+            pigment = mix(pigment,sunlit,smoothstep(.59,.87,band));
+            if(nearCrown>.001){
+              float tips = vnoise(vSprig.xz*2.3+vWorld.xz*.92+vSprig.y);
+              pigment += vec3(.092,.080,.044)*nearCrown*smoothstep(.55,.86,band)*smoothstep(.47,.79,tips);
+            }
+          }
+          gl_FragColor = vec4(mix(pigment,uFog,smoothstep(uNear,uFar,vDistance)),1.);
         }`
     });
+    const barkMaterial = plantMaterial.clone();
+    barkMaterial.uniforms = { ...plantMaterial.uniforms, uCanopy: { value: 0 } };
     for (const [species, model] of Object.entries(treeTypes)) {
       for (const [part, geometry] of Object.entries(model.assets)) {
         if (!model.instances.length) continue;
-        const mesh = new THREE.InstancedMesh(geometry, plantMaterial, model.instances.length);
+        const mesh = new THREE.InstancedMesh(geometry, part === 'wood' ? barkMaterial : plantMaterial, model.instances.length);
         mesh.name = `Vegetation / ${species} / ${part}`;
         mesh.userData.vegetation = { species, part, material: part === 'wood' ? 'plantBark' : model.material };
         mesh.userData.farGeometry = model.farAssets[part];
@@ -510,3 +528,46 @@
     }
   }
   buildVegetation();
+
+
+  // Bake each building footprint and tree root into the paper and slope materials once.
+  function bakeGroundContact() {
+    const size = 1024, extent = new THREE.Box2();
+    const point = new THREE.Vector2();
+    for (const mark of groundContacts) {
+      const radius = Math.hypot(mark.rx, mark.rz) + 5;
+      extent.expandByPoint(point.set(mark.x-radius, mark.z-radius));
+      extent.expandByPoint(point.set(mark.x+radius, mark.z+radius));
+    }
+    const pixel = extent.getSize(new THREE.Vector2()).divideScalar(size);
+    const xmin = extent.min.x, zmin = extent.min.y;
+    const bytes = new Uint8Array(size*size);
+    for (const {x, z, rx, rz, c, s, tree} of groundContacts) {
+      const feather = tree ? 1.72 : 2.85;
+      const radius = Math.hypot(rx, rz) + feather + 2;
+      const left = Math.max(0, Math.floor((x-radius-xmin)/pixel.x));
+      const right = Math.min(size-1, Math.ceil((x+radius-xmin)/pixel.x));
+      const top = Math.max(0, Math.floor((z-radius-zmin)/pixel.y));
+      const bottom = Math.min(size-1, Math.ceil((z+radius-zmin)/pixel.y));
+      for (let row = top; row <= bottom; row++) for (let col = left; col <= right; col++) {
+        const dx = xmin+(col+.5)*pixel.x-x-.7, dz = zmin+(row+.5)*pixel.y-z+.53;
+        const u = c*dx-s*dz, v = s*dx+c*dz;
+        const falloff = tree ? Math.hypot(u/(rx+feather), v/(rz+feather*.7))
+          : Math.hypot(Math.max(0, Math.abs(u)-rx), Math.max(0, Math.abs(v)-rz))/feather;
+        const wash = 1 - THREE.MathUtils.smoothstep(falloff, tree ? .14 : 0, 1);
+        const index = row*size+col;
+        bytes[index] = Math.max(bytes[index], Math.round(wash*(tree ? 71 : 89)));
+      }
+    }
+    const format = renderer.capabilities.isWebGL2 ? THREE.RedFormat : THREE.LuminanceFormat;
+    const field = new THREE.DataTexture(bytes, size, size, format);
+    field.magFilter = THREE.LinearFilter;
+    field.minFilter = THREE.LinearMipmapLinearFilter;
+    field.generateMipmaps = true;
+    field.needsUpdate = true;
+    contactU.uContact.value = field;
+    contactU.uContactRect.value.set(xmin, zmin, pixel.x*size, pixel.y*size);
+    groundContacts.length = 0;
+    app.cleanups.push(() => field.dispose());
+  }
+  bakeGroundContact();

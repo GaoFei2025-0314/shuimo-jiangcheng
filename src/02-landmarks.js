@@ -4,19 +4,29 @@
   // Blender meshes are embedded in the HTML so file:// and offline model loading share one path.
   const architectureTints = {
     stone: ['#766e63', '#ded5c4'], plaster: ['#9a8466', '#f1e4c8'],
-    timber: ['#55372e', '#a96e52'], vermilion: ['#683d32', '#af7058'],
-    roofGold: ['#795632', '#ceaf73'], bronze: ['#685336', '#d0ae6e'],
+    timber: ['#473831', '#a16f55'], vermilion: ['#623d34', '#b0785e'],
+    roofGold: ['#78502e', '#dbb878'], bronze: ['#685336', '#d0ae6e'],
     ink: ['#28312c', '#50564b'], shadow: ['#373b34', '#666452'],
-    steel: ['#344b49', '#798d82'], deck: ['#646961', '#ada99b'],
+    steel: ['#263e3e', '#7b9389'], deck: ['#646961', '#ada99b'],
     plaqueBlue: ['#10242e', '#345968'], plaqueGold: ['#c09650', '#f3d88d'],
     suspensionOrange: ['#864432', '#dc895d'],
     glaze: ['#42574e', '#8c9a87'],
     cityWall: ['#a19788', '#ddd6c6'], cityRoof: ['#65736c', '#aaafa0'],
     cityBrick: ['#978275', '#c9b6a0'], cityShade: ['#7f8075', '#b0ac9c']
   };
+  const shelteredInk = { timber:.34, vermilion:.24, roofGold:.29, shadow:.18, steel:.33, glaze:.21 };
+  const distantCityWash = { cityWall:.27, cityRoof:.68, cityBrick:.43, cityShade:.80 };
   const architectureMaterials = Object.fromEntries(Object.entries(architectureTints).map(([key, tint]) => {
     const material = inkMat(.04, true, tint, key.startsWith('city') ? [16, 42] : null);
     material.defines = { ARCHITECTURE_AO: 1 };
+    if (shelteredInk[key]) {
+      material.defines.ARCHITECTURE_SHADOW = 1;
+      material.uniforms.uArchShadow = { value: shelteredInk[key] };
+    }
+    if (distantCityWash[key]) {
+      material.defines.ARCHITECTURE_WASH = 1;
+      material.uniforms.uCityWash = { value: distantCityWash[key] };
+    }
     return [key, material];
   }));
   function decodeWords(data, Type) {

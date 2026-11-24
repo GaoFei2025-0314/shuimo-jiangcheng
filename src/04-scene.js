@@ -635,12 +635,29 @@
     }
     for (const [kind, matrices] of Object.entries(lots)) {
       if (!matrices.length) continue;
+      const footprint = new THREE.Box2();
+      const corner = new THREE.Vector2();
       for (const { geometry, material } of architectureParts(kind)) {
+        const positions = geometry.attributes.position;
+        for (let i = 0; i < positions.count; i++) {
+          if (positions.getY(i) < .43) footprint.expandByPoint(corner.set(positions.getX(i), positions.getZ(i)));
+        }
         const block = new THREE.InstancedMesh(geometry, material, matrices.length);
         block.name = 'City / ' + kind;
         matrices.forEach((matrix, i) => block.setMatrixAt(i, matrix));
         block.instanceMatrix.needsUpdate = true;
         scene.add(block);
+      }
+      if (!footprint.isEmpty()) {
+        const center = footprint.getCenter(new THREE.Vector2());
+        const half = footprint.getSize(new THREE.Vector2()).multiplyScalar(.5);
+        for (const {elements: e} of matrices) {
+          const scale = Math.hypot(e[0], e[2]);
+          const x = e[12] + center.x*e[0] + center.y*e[8];
+          const z = e[14] + center.x*e[2] + center.y*e[10];
+          groundContacts.push({x, z, rx: half.x*scale, rz: half.y*Math.hypot(e[8], e[10]),
+            c: e[0]/scale, s: -e[2]/scale, tree: false});
+        }
       }
     }
   }

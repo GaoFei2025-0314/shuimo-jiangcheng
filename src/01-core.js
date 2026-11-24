@@ -54,6 +54,8 @@
     float fbm(vec2 p){ float a = .5, s = 0.; for(int i=0;i<4;i++){ s += a*vnoise(p); p *= 2.03; a *= .5; } return s; }
   `;
   const fogU = { uFog: { value: PAPER }, uNear: { value: 300 }, uFar: { value: 1800 } };
+  const groundContacts = [];
+  const contactU = { uContact: { value: null }, uContactRect: { value: new THREE.Vector4() } };
   const camU = { uCam: { value: new THREE.Vector3() } };        // 逐帧同步镜头位置
   const sharedInk = { uInk: { value: new THREE.Color('#29332f') }, uPaper: { value: PAPER }, uLight: { value: new THREE.Vector3(-.45, .85, .5) } };
 
@@ -84,6 +86,16 @@
   const inkFrag = NOISE + `
     #ifdef ARCHITECTURE_AO
       varying float vSky;
+      #ifdef ARCHITECTURE_SHADOW
+        uniform float uArchShadow;
+      #endif
+      #ifdef ARCHITECTURE_WASH
+        uniform float uCityWash;
+      #endif
+    #endif
+    #ifdef GROUND_CONTACT
+      uniform sampler2D uContact;
+      uniform vec4 uContactRect;
     #endif
     uniform vec3 uFog, uInk, uPaper, uLight, uCam;
     uniform float uNear, uFar, uTone, uRim, uCun, uFoot; uniform vec2 uFade;
@@ -105,17 +117,27 @@
       tone = clamp(mix(clamp(tone, 0., 1.), 1., uTone), 0., 1.);
       tone = mix(1., tone, .18 + .82 * near);
 
-      if(uCun > .5){                                      // 随坡向的短皴，远处留山势和墨色
+      if(uCun > .5){                                      // 短皴顺坡分组，远处只余山势
         vec2 p = vW.xz;
-        vec2 slope = n.xz / max(length(n.xz), .02);
-        vec2 across = vec2(-slope.y, slope.x);
-        float steep = smoothstep(.07, .64, length(n.xz));
-        float nearHill = 1. - smoothstep(145., 570., vD);
-        float wash = fbm(p * .058);
-        float strokes = sin(dot(p, across) * .74 + fbm(p * .12) * 8.0);
-        float clumps = smoothstep(.34, .64, fbm(vec2(dot(p, across)*.16, dot(p, slope)*.10)));
-        tone -= steep * (.08 + wash * .14) + nearHill * steep * clumps * smoothstep(.32, .86, strokes) * .21;
-        tone = clamp(tone + (fbm(p * .021) - .5) * .22, 0., 1.);
+        float grade = length(n.xz);
+        vec2 downhill = n.xz / max(grade, .02);
+        float steep = smoothstep(.12,.72,grade);
+        float rise = smoothstep(3.,13.,vW.y);
+        float nearHill = 1.-smoothstep(145.,540.,vD);
+        float wash = fbm(p*.053);
+        float body = smoothstep(.27,.69,wash);
+        tone -= steep*(.045+.12*body)*(.48+.52*rise);
+        if(nearHill > .001){
+          // Sample ahead and behind each point instead of drawing unbroken periodic lines.
+          vec2 q = p*.19+vec2(vW.y*.025);
+          vec2 reach = downhill*.69;
+          float trail = (vnoise(q-reach)+2.*vnoise(q)+vnoise(q+reach))*.25;
+          float group = smoothstep(.31,.65,fbm(p*.082+vec2(14.,7.)));
+          float brush = group*smoothstep(.42,.74,trail);
+          float lift = smoothstep(.58,.88,d)*(1.-body);
+          tone += nearHill*steep*rise*(.095*lift-.36*brush-.12*body);
+        }
+        tone = clamp(tone+(fbm(p*.027)-.5)*.15,0.,1.);
       }
       if(uRim > .5){                                      // 廓：侧影处落墨，代替硬描边
         float rim = pow(1.0 - abs(dot(n, normalize(uCam - vW))), 1.9);
@@ -126,9 +148,28 @@
       }
 
       vec3 col = mix(uInk, uPaper, tone);
+      #ifdef GROUND_CONTACT
+        vec2 uv = (vW.xz-uContactRect.xy)/uContactRect.zw;
+        float field = texture2D(uContact,uv).r;
+        float nearContact = 1.-smoothstep(220.,720.,vD);
+        float foot = field * nearContact * smoothstep(.08,.32,n.y);
+        col = mix(col,mix(vec3(.46,.43,.36),vec3(.26,.34,.275),uCun),foot);
+      #endif
       if(uCun > .5) col = mix(uFog * .948, col, smoothstep(.74, 4.3, vW.y));
       #ifdef ARCHITECTURE_AO
         col *= mix(.62, 1., vSky);
+        #ifdef ARCHITECTURE_SHADOW
+          float sheltered = 1. - smoothstep(.40, .83, vSky);
+          float underside = smoothstep(.10, .85, -n.y);
+          col = mix(col, uInk, uArchShadow * sheltered * (.70 + .30 * underside));
+        #endif
+        #ifdef ARCHITECTURE_WASH
+          vec3 luminance = vec3(.24, .65, .11);
+          float brightness = dot(col, luminance);
+          vec3 neutralPaper = mix(uFog, vec3(dot(uFog, luminance)), .72);
+          vec3 wash = mix(vec3(brightness), neutralPaper, .55);
+          col = mix(col, wash, uCityWash * smoothstep(86., 425., vD));
+        #endif
       #endif
       col = mix(col, uFog, smoothstep(uNear, uFar, vD));
       gl_FragColor = vec4(col, 1.);
@@ -153,6 +194,10 @@
     pine: inkMat(-.08, false, null, [12, 46]),
     sakura: inkMat(.60, false, ['#7f5a55', '#f0dcd6'])
   };
+  for (const ground of [M.land, M.hill]) {
+    ground.defines = { GROUND_CONTACT: 1 };
+    Object.assign(ground.uniforms, contactU);
+  }
   const lineMat  = new THREE.LineBasicMaterial({ color: 0x343d36, fog: true, transparent: true, opacity: .72 });
   const lineMat2 = new THREE.LineBasicMaterial({ color: 0x5a5851, fog: true, transparent: true, opacity: .18 });
   const lineSoft = new THREE.LineBasicMaterial({ color: 0x6b6960, fog: true, transparent: true, opacity: .6 });
