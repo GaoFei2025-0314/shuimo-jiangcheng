@@ -151,15 +151,12 @@
 
   /* ── 东湖绿道：沿岸一圈淡墨 ── */
   {
-    // 沿岸线向湖内收：真实湖岸有凹有凸，不能再按湖心等比缩。收进量本应固定 4，但岸线
-    // 打结处（局部转弯半径小于收进量）会把偏移折线收出自交的小环，所以按局部曲率限一
-    // 限：半径取相邻 ±3 点的外接圆估计，只在岸线朝收进方向弯曲（外心在收进一侧，说明
-    // 再收下去会穿过去）时收紧到 0.8 倍半径，其余仍收 4；万一还剩打结，直接切掉夹在
-    // 中间的那一小环。
-    const n = LAKE.length, sg = LAKE.reduce((s, p, i) => s + p[0] * LAKE[(i + 1) % n][1] - LAKE[(i + 1) % n][0] * p[1], 0) > 0 ? 1 : -1;
-    const normal = i => {                                 // 该点的内收方向（单位向量）
-      const a = LAKE[(i + n - 1) % n], b = LAKE[(i + 1) % n], tx = b[0] - a[0], tz = b[1] - a[1], L = Math.hypot(tx, tz) || 1;
-      return [-sg * tz / L, sg * tx / L];
+    // 绿道沿陆侧绕行。凹湾按曲率缩短偏移，尖角处裁掉自交的小环。
+    const shore = LAKE.slice(0, -1); // Closed Catmull-Rom samples repeat their first point.
+    const n = shore.length, sg = shore.reduce((s, p, i) => s + p[0] * shore[(i + 1) % n][1] - shore[(i + 1) % n][0] * p[1], 0) > 0 ? 1 : -1;
+    const normal = i => {                                 // 岸边朝陆地的单位向量
+      const a = shore[(i + n - 1) % n], b = shore[(i + 1) % n], tx = b[0] - a[0], tz = b[1] - a[1], L = Math.hypot(tx, tz) || 1;
+      return [sg * tz / L, -sg * tx / L];
     };
     const circumcenter = (a, b, c) => {                   // 三点外接圆心，共线则无解
       const d = 2 * (a[0] * (b[1] - c[1]) + b[0] * (c[1] - a[1]) + c[0] * (a[1] - b[1]));
@@ -168,13 +165,18 @@
       return [(a2 * (b[1] - c[1]) + b2 * (c[1] - a[1]) + c2 * (a[1] - b[1])) / d,
               (a2 * (c[0] - b[0]) + b2 * (a[0] - c[0]) + c2 * (b[0] - a[0])) / d];
     };
-    const insets = LAKE.map((p, i) => {
-      const cc = circumcenter(LAKE[(i - 3 + n) % n], p, LAKE[(i + 3) % n]);
+    const insets = shore.map((p, i) => {
+      const cc = circumcenter(shore[(i - 3 + n) % n], p, shore[(i + 3) % n]);
       if (!cc) return 4;
       const [ox, oz] = normal(i), R = Math.hypot(cc[0] - p[0], cc[1] - p[1]);
       return (cc[0] - p[0]) * ox + (cc[1] - p[1]) * oz > 0 ? Math.min(4, Math.max(.5, .8 * R)) : 4;
     });
-    let pts = LAKE.map((p, i) => { const [ox, oz] = normal(i); return [p[0] + ox * insets[i], p[1] + oz * insets[i]]; });
+    let pts = shore.map((p, i) => {
+      const [ox, oz] = normal(i);
+      let setback = insets[i];
+      while (setback > .03 && !onLand(p[0] + ox * setback, p[1] + oz * setback)) setback *= .5;
+      return [p[0] + ox * setback, p[1] + oz * setback];
+    });
 
     const segX = (a1, a2, b1, b2) => {                    // 严格线段相交，返回交点或 null
       const dax = a2[0] - a1[0], daz = a2[1] - a1[1], dbx = b2[0] - b1[0], dbz = b2[1] - b1[1];
@@ -188,13 +190,36 @@
       for (let i = 0; i < m; i++) for (let j = i + 2; j < m; j++) {
         if (i === 0 && j === m - 1) continue;             // 首尾相邻，不算相交
         const P = segX(pts[i], pts[(i + 1) % m], pts[j], pts[(j + 1) % m]);
-        if (P && (!hit || j - i < hit.j - hit.i)) hit = { i, j, P };
+        const removed = Math.min(j-i, m-j+i);
+        if (P && (!hit || removed < hit.removed)) hit = { i, j, P, removed };
       }
       if (!hit) break;
-      pts = pts.slice(0, hit.i + 1).concat([hit.P], pts.slice(hit.j + 1));   // 用交点取代夹在中间的一段，切掉小环
+      pts = hit.j-hit.i <= m/2
+        ? pts.slice(0,hit.i+1).concat([hit.P],pts.slice(hit.j+1))
+        : [hit.P,...pts.slice(hit.i+1,hit.j+1)];
     }
 
-    const road = new THREE.LineLoop(new THREE.BufferGeometry().setFromPoints(pts.map(p => new THREE.Vector3(p[0], LAND_Y + .12, p[1]))), lineSoft);
+    const knots = [];
+    const groundPoint = (x,z) => V(x,(plantingSurface(x,z) ?? LAND_Y)+.025,z);
+    function followGround(a, b, depth) {
+      const mid = groundPoint((a.x+b.x)/2, (a.z+b.z)/2);
+      if (depth < 5 && Math.abs(mid.y-(a.y+b.y)/2) > .025) {
+        followGround(a, mid, depth+1);
+        followGround(mid, b, depth+1);
+      } else knots.push(a);
+    }
+    for (let i = 0; i < pts.length; i++) {
+      const [ax, az] = pts[i], [bx, bz] = pts[(i + 1) % pts.length];
+      const count = Math.ceil(Math.hypot(bx-ax,bz-az)/2);
+      let point = groundPoint(ax,az);
+      for (let j = 1; j <= count; j++) {
+        const next = groundPoint(ax+(bx-ax)*j/count,az+(bz-az)*j/count);
+        followGround(point,next,0);
+        point = next;
+      }
+    }
+    const road = new THREE.LineLoop(new THREE.BufferGeometry().setFromPoints(knots), lineSoft);
+    road.userData.lakeGreenway = true;
     road.raycast = function () {}; scene.add(road);
   }
 
@@ -473,6 +498,7 @@
     });
     mistMats.push(mat);
     const m = new THREE.Mesh(new THREE.PlaneGeometry(w, d), mat);
+    m.userData.mistStrength = alpha;
     m.rotation.x = -Math.PI / 2; m.position.set(x, y, z); m.renderOrder = 3;
     m.raycast = function () {}; scene.add(m);
   }

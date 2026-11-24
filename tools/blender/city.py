@@ -102,7 +102,7 @@ def imported_mesh(item, mat, dest):
     data = bpy.data.meshes.new(item["name"])
     data.from_pydata(points.tolist(), [], indices.tolist())
     data.materials.append(mat)
-    if item["material"] in ("Hills", "BankGrass"):
+    if item["material"] in ("Hills", "BankGrass", "DistantRidge"):
         data.polygons.foreach_set("use_smooth", np.ones(len(indices), dtype=bool))
     data.update()
     obj = bpy.data.objects.new(item["name"], data)
@@ -223,6 +223,95 @@ def water(rivers, materials, dest):
         dest.objects.link(bpy.data.objects.new(data.name, data))
 
 
+def lake_greenway(points, mat, dest):
+    route = bpy.data.curves.new("东湖绿道", 'CURVE')
+    route.dimensions = '3D'
+    route.bevel_depth = .17
+    route.bevel_resolution = 1
+    branch = route.splines.new('POLY')
+    branch.points.add(len(points) - 1)
+    for knot, point in zip(branch.points, points):
+        knot.co = (*point, 1)
+    branch.use_cyclic_u = True
+    route.materials.append(mat)
+    dest.objects.link(bpy.data.objects.new(route.name, route))
+
+
+def lake_strokes(outline, mat, dest):
+    # The same concave shoreline used by the web water shader clips these quiet wavelets.
+    edges = list(zip(outline, outline[1:] + outline[:1]))
+    def inside(x, y):
+        return sum((ay > y) != (by > y) and x < ax + (bx-ax)*(y-ay)/(by-ay)
+                   for (ax, ay), (bx, by) in edges) % 2
+
+    rng = random.Random(1948)
+    xs, ys = zip(*outline)
+    bounds = (min(xs), max(xs)), (min(ys), max(ys))
+    verts, faces = [], []
+    for _ in range(640):
+        x, y = (rng.uniform(*limits) for limits in bounds)
+        length, half = rng.uniform(1.4, 4.2), rng.uniform(.08, .20)
+        curve = [(x-length, y), (x, y+half*1.5), (x+length, y+half*.8), (x, y-half)]
+        if all(inside(px, py) for px, py in curve):
+            offset = len(verts)
+            verts.extend((px, py, .035) for px, py in curve)
+            faces.append((offset+3, offset+2, offset+1, offset))
+    data = bpy.data.meshes.new("东湖 · 风纹")
+    data.from_pydata(verts, [], faces)
+    data.materials.append(mat)
+    dest.objects.link(bpy.data.objects.new(data.name, data))
+
+
+def mist_layers(layers, dest):
+    # Camera-only ink wash. UV falloff gives each bank of mist a soft edge.
+    mat = bpy.data.materials.new("远岸 · 薄雾")
+    mat.use_nodes = True
+    nodes, links = mat.node_tree.nodes, mat.node_tree.links
+    uv = nodes.new("ShaderNodeTexCoord").outputs["UV"]
+    noise = nodes.new("ShaderNodeTexNoise")
+    noise.inputs["Scale"].default_value = 4.2
+    links.new(uv, noise.inputs["Vector"])
+    distance = nodes.new("ShaderNodeVectorMath")
+    distance.operation = 'DISTANCE'
+    distance.inputs[1].default_value = (.5, .5, 0)
+    links.new(uv, distance.inputs[0])
+    fade = nodes.new("ShaderNodeMapRange")
+    fade.interpolation_type = 'SMOOTHERSTEP'
+    fade.inputs["From Min"].default_value = .12
+    fade.inputs["From Max"].default_value = .50
+    fade.inputs["To Min"].default_value = 1
+    fade.inputs["To Max"].default_value = 0
+    links.new(distance.outputs["Value"], fade.inputs["Value"])
+    opacity = nodes.new("ShaderNodeMath")
+    opacity.operation = 'MULTIPLY'
+    links.new(noise.outputs["Fac"], opacity.inputs[0])
+    links.new(fade.outputs[0], opacity.inputs[1])
+    strength = nodes.new("ShaderNodeMath")
+    strength.operation = 'MULTIPLY'
+    links.new(nodes.new("ShaderNodeObjectInfo").outputs["Alpha"], strength.inputs[0])
+    links.new(opacity.outputs[0], strength.inputs[1])
+    wash = nodes.new("ShaderNodeEmission")
+    wash.inputs["Color"].default_value = (.82, .80, .73, 1)
+    mix = nodes.new("ShaderNodeMixShader")
+    links.new(strength.outputs[0], mix.inputs[0])
+    links.new(nodes.new("ShaderNodeBsdfTransparent").outputs[0], mix.inputs[1])
+    links.new(wash.outputs[0], mix.inputs[2])
+    links.new(mix.outputs[0], nodes.get("Material Output").inputs["Surface"])
+    for i, layer in enumerate(layers, 1):
+        w, h = layer["width"] / 2, layer["depth"] / 2
+        data = bpy.data.meshes.new(f"雾带 {i}")
+        # The source plane's local Three XY axes become Blender XZ before placement.
+        data.from_pydata([(-w, 0, -h), (w, 0, -h), (w, 0, h), (-w, 0, h)], [], [(0, 1, 2, 3)])
+        uvs = data.uv_layers.new(name="雾边")
+        uvs.data.foreach_set("uv", [0, 0, 1, 0, 1, 1, 0, 1])
+        data.materials.append(mat)
+        obj = bpy.data.objects.new(data.name, data)
+        dest.objects.link(obj)
+        obj.matrix_world = placement(layer["matrix"])
+        obj.color = (1, 1, 1, layer["strength"])
+        obj.visible_shadow = obj.visible_diffuse = obj.visible_glossy = False
+
+
 def lighting(scene, camera_group):
     target = Vector((-86, 85, 8))
     direction = Vector((.15, -1, .77)).normalized()
@@ -291,7 +380,7 @@ def build():
             "Land":"e4dcc9", "Hills":"a4af91", "BankGrass":"9da887",
             "BankStone":"b4a88d", "Path":"d1c3a7", "Slate":"677872",
             "Masonry":"c4b9a2", "Ink":"4b5049", "Paper":"d4cfc2",
-            "Water":"9ab7b2", "Ripples":"c4d1c4", "Streets":"c6c1af", "ApproachPaving":"98998b", "Boat":"aa9980"}.items()}
+            "DistantRidge":"c5c6b5", "Greenway":"909c89", "Water":"9ab7b2", "Ripples":"c4d1c4", "Streets":"c6c1af", "ApproachPaving":"98998b", "Boat":"aa9980"}.items()}
         groups = {}
         def group(name):
             if name not in groups:
@@ -300,6 +389,12 @@ def build():
         for item in capture["meshes"]:
             imported_mesh(item, mats[item["material"]], group(item["group"]))
         water(capture["rivers"], mats, group("两江水墨"))
+        if capture.get("greenway"):
+            lake_greenway(capture["greenway"], mats["Greenway"], group("东湖岸线"))
+        if capture.get("eastLake"):
+            lake_strokes(capture["eastLake"], mats["Ripples"], group("东湖岸线"))
+        if capture.get("atmosphere"):
+            mist_layers(capture["atmosphere"], group("远岸烟波"))
         city_blocks(scene, capture["lots"], group("武汉街坊"))
         city_trees(capture["vegetation"], group("武汉草木"))
         for key, record in capture["landmarks"].items():

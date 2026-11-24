@@ -263,6 +263,12 @@
           }
 
           vec3 base = uPaper * mix(1.0, .99 - fbm(p * .004) * .018, wet);
+          // A dilute celadon wash separates a lake inlet from its paper-coloured bank.
+          float littoral = (1. - smoothstep(.0, .32, band)) * lake * wet;
+          float lakeWash = lake * wet * (.105 + .065 * fbm(p * .021)) + .14 * littoral;
+          base = mix(base, vec3(.43, .59, .56), lakeWash);
+          float shoreRipples = smoothstep(.86, .99, sin(p.y * 2.2 + warp + uTime * .25));
+          ink += .12 * littoral * shoreRipples * smoothstep(.32, .70, fbm(p * .075));
           vec3 col = mix(base, uInk, clamp(ink, 0., 1.));
           col = mix(col, uFog, smoothstep(uNear, uFar, vD));
           gl_FragColor = vec4(col, 1.);
@@ -421,6 +427,8 @@
     const mat = inkMat(.82 + Lr.tone * .15, false, null, null, { foot: 1 });
     for (let i = 0; i < Lr.n; i++) {
       const x = (i - (Lr.n - 1) / 2) * Lr.w * .95 + (rnd() - .5) * 200 + 200;
-      scene.add(ellipsoid(Lr.w * (.6 + rnd() * .5), Lr.h * (.55 + rnd() * .7), Lr.w * .35, x, -6, Lr.z + (rnd() - .5) * 160, mat, 20));
+      const ridge = ellipsoid(Lr.w * (.6 + rnd() * .5), Lr.h * (.55 + rnd() * .7), Lr.w * .35, x, -6, Lr.z + (rnd() - .5) * 160, mat, 20);
+      ridge.userData.landscapeSurface = { group: '远山', name: '远岭 ' + Lr.z + ' · ' + (i+1), material: 'DistantRidge' };
+      scene.add(ridge);
     }
   });

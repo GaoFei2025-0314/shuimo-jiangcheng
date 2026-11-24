@@ -208,3 +208,26 @@ test('both approach carriageways stay above the terrain through the bridgeheads 
   });
   expect(failures).toEqual([]);
 });
+
+test('the East Lake greenway follows land around the full lake', async ({ page }) => {
+  await page.goto('/?debug');
+  await page.waitForFunction(() => window.__ready && window.__dbg);
+  const result = await page.evaluate(() => {
+    const { scene, LAKES, onLand, plantingSurface } = window.__dbg;
+    const points = scene.children.find(node => node.userData.lakeGreenway).geometry.attributes.position;
+    const lake = new THREE.Box2().setFromPoints(LAKES[0].map(([x,z]) => new THREE.Vector2(x,z)));
+    const route = new THREE.Box2();
+    let wet = 0, error = 0;
+    for (let i = 0; i < points.count; i++) {
+      const j = (i+1) % points.count;
+      const x = (points.getX(i)+points.getX(j))/2, z = (points.getZ(i)+points.getZ(j))/2;
+      if (!onLand(x,z)) wet++;
+      else error = Math.max(error, Math.abs((points.getY(i)+points.getY(j))/2-plantingSurface(x,z)));
+      route.expandByPoint(new THREE.Vector2(x,z));
+    }
+    return { wet, error, extent: route.getSize(new THREE.Vector2()).divide(lake.getSize(new THREE.Vector2())).toArray() };
+  });
+  expect(result.wet).toBe(0);
+  expect(result.error).toBeLessThan(.09);
+  for (const size of result.extent) expect(size).toBeGreaterThan(.95);
+});

@@ -9,9 +9,9 @@ const root = path.resolve(__dirname, '../..');
 const out = path.join(root, 'output/architecture');
 
 function capture() {
-  const { scene, YZ, HAN } = window.__dbg;
+  const { scene, YZ, HAN, LAKES } = window.__dbg;
   scene.updateMatrixWorld(true);
-  const lots = {}, landmarks = {}, vegetation = {}, meshes = [];
+  const lots = {}, landmarks = {}, vegetation = {}, meshes = [], atmosphere = [], greenway = [];
   const boats = scene.children.find(o => o.material?.uniforms?.uBoats).material.uniforms.uBoats.value;
   const pack = array => {
     const bytes = new Uint8Array(array.buffer, array.byteOffset, array.byteLength);
@@ -47,6 +47,15 @@ function capture() {
       const trees = vegetation[species] ||= { matrices: placements(node), parts: {} };
       if (trees.matrices.length * 16 !== node.userData.authoredMatrices.length || trees.parts[part]) throw new Error('Inconsistent planting batch: '+species);
       trees.parts[part] = { ...geometryOf(node), material, colors: pack(node.geometry.getAttribute('color').array) };
+    } else if (node.userData.lakeGreenway) {
+      const positions = node.geometry.getAttribute('position'), point = new THREE.Vector3();
+      for (let i = 0; i < positions.count; i++) {
+        point.fromBufferAttribute(positions, i).applyMatrix4(node.matrixWorld);
+        greenway.push([point.x, -point.z, point.y]);
+      }
+    } else if (node.userData.mistStrength !== undefined) {
+      atmosphere.push({ matrix: node.matrixWorld.toArray(), width: node.geometry.parameters.width,
+        depth: node.geometry.parameters.height, strength: node.userData.mistStrength });
     } else if (node.userData.landscapeSurface) {
       const { group, name, material } = node.userData.landscapeSurface;
       copy(node, group, name, material);
@@ -65,7 +74,8 @@ function capture() {
   }
   const rivers = [YZ, HAN].map(river => river.s
     .map(s => [s.p.x, -s.p.z, s.d.z, s.d.x, s.w]));
-  return { lots, landmarks, vegetation, meshes, rivers };
+  const eastLake = LAKES[0].map(([x, z]) => [x, -z]);
+  return { lots, landmarks, vegetation, meshes, rivers, greenway, eastLake, atmosphere };
 }
 
 (async () => {
@@ -84,6 +94,8 @@ function capture() {
     if (Object.keys(city.lots).length !== 7 || Object.keys(city.vegetation).length !== 4 || Object.keys(city.landmarks).length !== 15 || !city.landmarks.lake ||
         city.meshes.filter(m => m.material === 'Land').length !== 3)
       throw new Error('Missing landmarks, districts or banks. Rebuild dist/index.html before capture.');
+    if (city.greenway.length < city.eastLake.length / 2 || !city.atmosphere.length || !city.meshes.some(m => m.material === 'DistantRidge'))
+      throw new Error('Missing lake greenway, mist or distant ridges in the captured map.');
     console.log(Object.fromEntries(Object.entries(city.lots).map(([kind, lots]) => [kind, lots.length])));
     for (const [kind, trees] of Object.entries(city.vegetation)) {
       if (!trees.parts.wood || !trees.parts.foliage) throw new Error('Incomplete tree prototype: '+kind);
