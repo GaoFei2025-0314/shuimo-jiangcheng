@@ -299,6 +299,35 @@
     model('park_pavilion','西区 · 南侧游亭',-14.97,7.30,upper,.52,-Math.PI/2);
     result.axis={entry:at(-44.1,-19.2,lower),gate:at(-26.6,-14.49,middle),pool:at(-16.55,-1.22,upper),tower:at(-12.4,0,upper)};
 
+    // Two loose colonies on the pool embankment leave the stairs and the view axis open.
+    const undergrowth = [
+      [[-21.72,-2.76,.70,1.04],[-21.24,-1.64,.45,.65],[-22.08,-1.34,.56,.82],[-21.77,-.35,.53,.72],[-21.50,1.05,.42,.52]],
+      [[-19.36,4.45,.56,.68],[-19.02,5.73,.73,1.17],[-18.72,6.72,.47,.58],[-18.90,7.64,.56,.80],[-18.05,8.19,.61,.95]]
+    ];
+    const leaf = new THREE.IcosahedronGeometry(1,1), foliage = new Acc(), shadedFoliage = new Acc();
+    const leafWash = inkMat(.26,false,['#51634d','#879879']);
+    const shadeWash = inkMat(.18,false,['#455744','#75896d']);
+    const parkStreets = cityGround.streets.filter(s=>s.group===group ||
+      (!s.group && s.a.x>-32 && s.a.x<15 && Math.abs(s.a.z)<28));
+    function distanceFrom(p,a,b) {
+      const dx=b.x-a.x,dz=b.z-a.z, t=THREE.MathUtils.clamp(((p.x-a.x)*dx+(p.z-a.z)*dz)/(dx*dx+dz*dz || 1),0,1);
+      return Math.hypot(p.x-a.x-t*dx,p.z-a.z-t*dz);
+    }
+    for (const [side,colony] of undergrowth.entries()) for (const [i,[x,z,spread,height]] of colony.entries()) {
+      const p=at(x,z);
+      if (!ownsLand(p) || BRIDGES.some(([a,b])=>distanceFrom(p,a,b)<12+spread) ||
+          (roadAt(p.x,p.z)?.distance ?? Infinity)<approachHalfWidth+spread+.45 ||
+          parkStreets.some(({a,b,width})=>distanceFrom(p,a,b)<width*.5+spread+.28)) continue;
+      const angle=side*.31+i*1.53;
+      for (const [k,[dx,dz,size,lift]] of [[0,0,1,.34],[-.35,.18,.68,.30],[.23,-.31,.69,.44],[.18,.23,.52,.65]].entries()) {
+        const q=at(x+spread*(Math.cos(angle)*dx-Math.sin(angle)*dz),z+spread*(Math.sin(angle)*dx+Math.cos(angle)*dz));
+        const mass=(i+k+side)%3===0 ? shadedFoliage : foliage;
+        mass.place(leaf,q.x,q.y+height*lift,q.z,spread*size,height*(k===0?.39:.31),spread*size*.76,angle+k*.29);
+      }
+    }
+    surface('西区 · 池院坡腰浅叶灌丛','BankGrass',leafWash,foliage.mesh(leafWash,false).geometry,false);
+    surface('西区 · 池院坡腰背荫叶丛','Reeds',shadeWash,shadedFoliage.mesh(shadeWash,false).geometry,false);
+
     for (const [x,z,spread,height,species='broadleaf'] of [
       [-48.1,-24.7,.59,.58],[-45.9,-25.7,.77,.73,'pine'],[-42.1,-25.0,.68,.62],[-39.1,-23.1,.72,.69],
       [-35.9,-23.9,.69,.68],[-35.7,-21.8,.56,.51],[-31.1,-24.3,.73,.77,'pine'],[-29.7,-20.9,.79,.72,'pine'],
@@ -306,7 +335,7 @@
       [-23.4,-2.7,.55,.48],[-21.8,2.0,.51,.48],[-22.1,5.9,.68,.63,'pine'],[-20.5,10.3,.71,.63],
       [-20.0,13.5,.84,.78],[-16.4,13.0,.65,.63,'pine'],[-13.2,14.1,.58,.56],[-17.5,-22.2,.72,.73,'pine'],
       [-32,-11,.48,.49],[-28,-5,.59,.60],[-25.9,-3,.48,.51],[-24,-1,.55,.54,'pine'],[-22,7,.56,.57],
-      [-24.6,11.8,.52,.45],[-21,20,.68,.62],[-17,20,.57,.61,'pine'],[-38,-21,.59,.57],[-34,-21,.51,.50],[-20,-22,.60,.66],
+      [-24.6,11.8,.52,.45],[-21,20,.68,.62],[-17,20,.57,.61,'pine'],[-38.22,-21.55,.46,.46],[-34,-21,.51,.50],[-20,-22,.60,.66],
       [-50,-27,.77,.81,'pine'],[-39.8,-26.8,.85,.87],[-38,-25,.49,.41],[-36,-27,.70,.75,'pine'],[-32.4,-27,.51,.52],
       [-28.2,.75,.61,.66],[-25.8,3.15,.44,.37],[-23.8,5.14,.55,.53,'pine'],[-23,14,.68,.65],[-22.9,17.9,.56,.48],[-19,22,.44,.45]
     ]) {
