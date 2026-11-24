@@ -57,8 +57,35 @@
   const tv      = place(builtLandmark('tv'), AT.tv, 1.5, 0, '龟山电视塔', 'tv');
   tv.scale.x = tv.scale.z = 1.13;
   // Keep the exaggerated architectural footprints on the surveyed land side of the bank.
-  const qc      = place(builtLandmark('qc'), {x:AT.qc.x-4,z:AT.qc.z-2}, .92, Math.PI / 2, '晴川阁', 'qc', terrainTop(AT.qc.x,AT.qc.z)+.16);
+  const qc      = place(builtLandmark('qc'), {x:AT.qc.x-7,z:AT.qc.z-5}, .92, Math.PI / 2, '晴川阁', 'qc', terrainTop(AT.qc.x,AT.qc.z)+2.18);
   qc.scale.set(.85,.92,.60);
+  {
+    // Tie the main plinth and the gate into a single dressed river-side retaining course.
+    const footing = new Acc();
+    footing.box(46.4, 4.0, 18.95, 4.0, -2.0, 2.43);
+    footing.box(46.7, .20, 19.23, 4.0, -.072, 2.43);
+    const apron = footing.mesh(M.bankStone, false);
+    apron.name = '晴川阁 · 禹功矶石台驳岸';
+    apron.userData.landscapeSurface = { group: '晴川阁', name: apron.name, material: 'BankStone' };
+    qc.updateMatrixWorld(true);
+    apron.applyMatrix4(qc.matrixWorld);
+    scene.add(apron);
+
+    // Begin inside the apron coping and end on the sampled bank at the foot of the gate.
+    const steps = new Acc(), gateX = 20, first = 12, run = .79, count = 10;
+    const toe = qc.localToWorld(V(gateX, 0, first + run * count));
+    const grade = (terrainTop(toe.x, toe.z) - qc.position.y) / qc.scale.y;
+    const bottom = grade - .15;
+    for (let i = 0; i < count; i++) {
+      const top = THREE.MathUtils.lerp(.028, grade + .09, i / (count - 1));
+      steps.box(3.65, top - bottom, run, gateX, (top + bottom) / 2, first + (i + .5) * run);
+    }
+    const stair = steps.mesh(M.bankStone, false);
+    stair.name = '铁门关 · 接岸石阶';
+    stair.userData.landscapeSurface = { group: '晴川阁', name: stair.name, material: 'BankStone' };
+    stair.applyMatrix4(qc.matrixWorld);
+    scene.add(stair);
+  }
   const customs = place(builtLandmark('customs'), {x:AT.customs.x-2,z:AT.customs.z}, .98, Math.PI / 2, '江汉关', 'customs');
   // The three archways face downhill; their toe meets the graded campus apron.
   const wuda    = place(builtLandmark('wuda'), AT.wuda, .74, Math.PI-.08, '武大 · 老斋舍', 'wuda');
@@ -112,7 +139,6 @@
     scene.add(bank);
   }
   summitGround(tv, 9.5, 10.8, 9.5, 15.5, -.34);
-  summitGround(qc, 26, 8.7, 11.6, 4.4, -.24);
   summitGround(chutian, 14.5, 26.7, 14.3, 16.2, -.38);
   const hongshan   = place(builtLandmark('hongshan'), AT.hongshan, .74, 0, '洪山宝塔 · 宝通禅寺', 'hongshan');
   summitGround(hongshan, 13.2, 14, 25.4, 11.3, -.43);

@@ -55,6 +55,8 @@ src/
   architecture-plates.gen.js  由同次渲染生成，包含建筑图录和两个细部镜头的 JPEG
   02-landmarks.js    加载景点网格与材质，构建江上舟船
   03-terrain.js      两江河道、湖、山体（读 geodata.gen.js）与由此推出的三镇陆块、水纹图与江面 Shader
+  04-districts.js    三镇街廊、街旁房舍与景点连接线
+  04-landmark-grounds.js  听涛两桥、北馆前庭与蛇山登楼石阶
   04-scene.js        景点落位、山顶台地、街区与道路、舟船、飞鸟、烟波
   04-planting.js     山林、滨水与街旁植栽的树型、避让和实例布局
   05-layout.js       紧凑面板、可用画幅与包围盒取景

@@ -90,7 +90,8 @@
     let base = VIEWS[key];
     if (W < H && key === 'core') base = orbit(geo(114.2855, 30.5528), 32, 440, 55, 30);
     if (W < H && key === 'home') base = orbit({ x: 245, z: -105 }, 16, 1100, 49, 38);
-    if (W < H && key === 'bridge') base = orbit(AT.bridge, 6.2, 174, -88, 16);
+    const portraitBridge = key === 'bridge' && W < H;
+    if (portraitBridge) base = orbit(AT.bridge, 6.2, 174, -100, 11);
     if (!isFramed(key)) return base;
     const redChamberContext = key === 'honglou' && !layout.compact;
     const bounds = key === 'bridge' ? bridgeBounds :
@@ -99,7 +100,7 @@
     if (redChamberContext) fill = 1;
     if (key === 'qc') fill = layout.compact ? .97 : 1.13;
     if (key === 'museum' || key === 'tower' || (key === 'bridge' && !layout.compact)) fill = .97;
-    if (layout.compact && (key === 'home' || key === 'bridge')) fill = .92;
+    if (layout.compact && (key === 'home' || key === 'bridge')) fill = portraitBridge ? .99 : .92;
     const view = fittedView(base, bounds, safeRect, W, H, camera.fov, fill);
     if (key === 'qc') {
       // Along the river, keep the pavilion and gate framed below the Guishan podium.
