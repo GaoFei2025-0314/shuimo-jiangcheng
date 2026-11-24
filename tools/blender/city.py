@@ -375,6 +375,35 @@ def lighting(scene, camera_group):
     return overview, hillside
 
 
+def bridgehead_views(scene, camera_group):
+    """Frame each approach and its receiving street from the river side."""
+    views = []
+    for prefix, suffix, file_prefix in (("", "接地铺装", "wuhan"), ("鹦鹉洲", "车行面", "yingwuzhou")):
+        for bank, file_bank in (("武昌", "wuchang"), ("汉阳", "hanyang")):
+            road = scene.objects.get(f"{prefix}{bank}引道 · {suffix}")
+            if road is None:
+                continue
+            vertices = road.data.vertices
+            ends = [road.matrix_world @ ((vertices[i].co + vertices[i+1].co) / 2)
+                    for i in (0, len(vertices)-2)]
+            along = ends[1] - ends[0]
+            along.z = 0
+            length = along.length
+            along.normalize()
+            side = Vector((-along.y, along.x, 0))
+            back = (-.47 * along + .74 * side + Vector((0,0,1.15))).normalized()
+            target = ends[0].lerp(ends[1], .75) + along * 4
+            camera = scene.camera.copy()
+            camera.data = camera.data.copy()
+            camera.name = camera.data.name = (prefix or "武汉长江大桥") + " · " + bank + "桥头"
+            camera_group.objects.link(camera)
+            camera.location = target + back * 170
+            camera.rotation_euler = (-back).to_track_quat('-Z', 'Y').to_euler()
+            camera.data.ortho_scale = max(97, length * 1.9)
+            views.append((camera, f"bridge-{file_prefix}-{file_bank}.png"))
+    return views
+
+
 def park_view(scene, park_roots, tower_root, camera_group):
     parts = [part for root in [tower_root, *park_roots] for part in root.children if part.type == 'MESH']
     corners = [part.matrix_world @ Vector(point) for part in parts for point in part.bound_box]
@@ -518,10 +547,16 @@ def build():
         if park_roots:
             camera, corners = park_view(scene, park_roots, landmark_roots["tower"], group("镜头与光"))
             export_park(scene, camera, corners)
+        bridges = bridgehead_views(scene, group("镜头与光"))
         mesh.save_project(scene, OUT / "city.blend")
         scene.render.filepath = str(OUT / "city.png")
         bpy.ops.render.render(write_still=True, scene=scene.name)
         for camera, filename in ((overview, "city-wide.png"), (hillside, "city-hillside.png")):
+            scene.camera = camera
+            scene.render.filepath = str(OUT / filename)
+            bpy.ops.render.render(write_still=True, scene=scene.name)
+        scene.render.resolution_percentage = 64
+        for camera, filename in bridges:
             scene.camera = camera
             scene.render.filepath = str(OUT / filename)
             bpy.ops.render.render(write_still=True, scene=scene.name)

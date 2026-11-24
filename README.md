@@ -97,7 +97,7 @@ npm run build
 node tools/blender/capture-city.cjs
 ```
 
-使用同一 Blender MCP 调用运行 `tools/blender/city.py`，生成 `output/architecture/city.blend`、两江近景 `city.png`、全城鸟瞰 `city-wide.png` 和蛇山街景 `city-hillside.png`。从工程的「武汉街坊」集合选择一栋屋舍即可独立移动或旋转，同屋型的实例共享几何。十五处建筑均按景点分集合，山林、船只和灯光也可分别编辑。网页版使用实时水墨渲染。全城工程带有四个相机和 Cycles 灯光。
+使用同一 Blender MCP 调用运行 `tools/blender/city.py`，生成 `output/architecture/city.blend`、两江近景 `city.png`、全城鸟瞰 `city-wide.png` 和蛇山街景 `city-hillside.png`。从工程的「武汉街坊」集合选择一栋屋舍即可独立移动或旋转，同屋型的实例共享几何。十五处建筑均按景点分集合，山林、船只和灯光也可分别编辑。网页版使用实时水墨渲染。全城工程的「镜头与光」集合中有八台相机。四台桥头相机分别面向两座大桥的武昌、汉阳落地点，同时输出 `bridge-wuhan-{wuchang,hanyang}.png` 和 `bridge-yingwuzhou-{wuchang,hanyang}.png`，可检查坡道、过街和周边街坊。
 
 同一次运行还会输出蛇山西段独立工程 `output/architecture/tower-park.blend` 和西入口俯视图 `output/architecture/tower-park.png`。可以单独选择胜像宝塔、三楚一楼牌坊、归鹤池铜鹤、两座侧亭与园路，也可以从周边街道转到主楼检查坡地衔接。这些模型与网页共用 `tools/blender/tower_park.py` 的构件以及网页采集的场地坐标。
 
