@@ -86,7 +86,7 @@
     // Species use the same height origin and several deliberately offset canopy lobes.
     const treeTypes = {
       pine: {
-        material: 'plantPine', radius: 2.75,
+        material: 'plantPine', radius: 2.75, wind: .51,
         distantCrown: [
           [-1.51, 3.34, -.48, 1.75, .75, 1.22, '#62785f', .26],
           [1.23, 3.66, .38, 1.9, .72, 1.53, '#5e785f', -.14],
@@ -108,7 +108,7 @@
         ]
       },
       broadleaf: {
-        material: 'plantBroadleaf', radius: 2.60,
+        material: 'plantBroadleaf', radius: 2.60, wind: .66,
         distantCrown: [
           [-1.09, 4.31, -.42, 1.71, 1.36, 1.51, '#687d58', .31],
           [1.04, 4.62, .42, 1.62, 1.46, 1.48, '#748866', -.23],
@@ -130,7 +130,7 @@
         ]
       },
       willow: {
-        material: 'plantWillow', radius: 2.65,
+        material: 'plantWillow', radius: 2.65, wind: 1.18,
         distantCrown: [
           [-1.42, 2.88, .51, 1.29, 2.03, 1.25, '#789164', .24],
           [1.27, 2.66, .21, 1.46, 1.91, 1.31, '#849c70', .10],
@@ -153,7 +153,7 @@
         ]
       },
       cherry: {
-        material: 'plantCherry', radius: 2.80,
+        material: 'plantCherry', radius: 2.80, wind: .92,
         distantCrown: [
           [-1.34, 3.36, -.05, 1.56, 1.01, 1.35, '#cf9e9d', .52],
           [1.35, 3.42, -.26, 1.60, 1.03, 1.35, '#d9aaa3', -.48],
@@ -203,6 +203,10 @@
       farWood.branch(model.trunk[1], model.trunk[3], stem[1], stem[3], 4);
       for (const lobe of model.distantCrown) farLeaves.crown(lobe);
       model.farAssets = { wood: farWood.geometry(), foliage: farLeaves.geometry() };
+      for (const geometry of [...Object.values(model.assets), ...Object.values(model.farAssets)]) {
+        const response = new Float32Array(geometry.attributes.position.count).fill(model.wind);
+        geometry.setAttribute('windResponse', new THREE.BufferAttribute(response, 1));
+      }
       model.instances = [];
     }
 
@@ -468,15 +472,23 @@
     // Color stores sRGB floats for the standalone map and the Blender capture.
     const plantMaterial = new THREE.ShaderMaterial({
       vertexColors: true,
-      uniforms: { ...fogU, uLight: sharedInk.uLight, uCanopy: { value: 1 } },
-      vertexShader: `
+      uniforms: { ...fogU, ...weatherU, uLight: sharedInk.uLight, uCanopy: { value: 1 } },
+      vertexShader: vegetationWind + `
+        attribute float windResponse;
         varying vec3 vTint, vNormal, vWorld, vSprig;
         varying float vDistance;
         void main() {
           vec4 w = modelMatrix * instanceMatrix * vec4(position, 1.0);
           mat3 basis = mat3(instanceMatrix);
           vec3 scaled = normal / vec3(dot(basis[0], basis[0]), dot(basis[1], basis[1]), dot(basis[2], basis[2]));
-          vNormal = normalize(mat3(modelMatrix) * basis * scaled);
+          vec2 root = (modelMatrix * instanceMatrix[3]).xz;
+          // Bark and foliage share a shear so branch tips stay inside their lobes.
+          vec2 wind = windAt(root) * windResponse;
+          float bendHeight = max(position.y - .16, 0.) * .19;
+          w.xz += wind * bendHeight * bendHeight * length(mat3(modelMatrix) * basis[1]);
+          vec3 worldNormal = mat3(modelMatrix) * basis * scaled;
+          worldNormal.y -= dot(worldNormal.xz, wind) * bendHeight * .38;
+          vNormal = normalize(worldNormal);
           vTint = color;
           vWorld = w.xyz;
           vSprig = position;
@@ -512,6 +524,7 @@
           gl_FragColor = vec4(mix(pigment,uFog,smoothstep(uNear,uFar,vDistance)),1.);
         }`
     });
+    plantMaterial.userData.windVegetation = true;
     const barkMaterial = plantMaterial.clone();
     barkMaterial.uniforms = { ...plantMaterial.uniforms, uCanopy: { value: 0 } };
     for (const [species, model] of Object.entries(treeTypes)) {

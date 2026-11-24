@@ -30,6 +30,52 @@ test('reduced motion switches instantly and freezes automatic scenery', async ({
   expect(next.frames).toBe(first.frames);
 });
 
+test('river strokes and windblown planting visibly move at a fixed city camera', async ({ page }) => {
+  await page.setViewportSize({ width: 1080, height: 720 });
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await ready(page);
+  const changed = await page.evaluate(() => {
+    const scene = window.__testScene, renderer = window.__testRenderer, camera = window.__testCamera;
+    const water = scene.children.find(node => node.material?.uniforms?.uBoats).material;
+    const planting = new Set();
+    scene.traverse(node => { if (node.material?.userData?.windVegetation) planting.add(node.material); });
+    // Hold boats, mist and camera still. Render each material group separately at two times.
+    const target = new THREE.WebGLRenderTarget(540, 360);
+    const previous = renderer.getRenderTarget();
+    function frame() {
+      const pixels = new Uint8Array(target.width * target.height * 4);
+      renderer.render(scene, camera);
+      renderer.readRenderTargetPixels(target, 0, 0, target.width, target.height, pixels);
+      return pixels;
+    }
+    function changedPixels(materials) {
+      const saved = materials.map(m => m.uniforms.uTime);
+      try {
+        for (const m of materials) m.uniforms.uTime = { value: 0 };
+        const start = frame();
+        for (const m of materials) m.uniforms.uTime.value = 1.6;
+        const end = frame();
+        let count = 0;
+        for (let i = 0; i < end.length; i += 4) {
+          if (Math.abs(start[i + 1] - end[i + 1]) >= 12) count++;
+        }
+        return count;
+      } finally {
+        materials.forEach((m, i) => { m.uniforms.uTime = saved[i]; });
+      }
+    }
+    try {
+      renderer.setRenderTarget(target);
+      return { river: changedPixels([water]), planting: changedPixels([...planting]) };
+    } finally {
+      renderer.setRenderTarget(previous);
+      target.dispose();
+    }
+  });
+  expect(changed.river).toBeGreaterThan(300);
+  expect(changed.planting).toBeGreaterThan(60);
+});
+
 test('changing the system motion preference stops a running flight', async ({ page }) => {
   await ready(page);
   await page.getByRole('button', { name: '东湖', exact: true }).click();

@@ -274,8 +274,13 @@
 
   const boatU = Array.from({length:6},()=>new THREE.Vector2(9e5,9e5));
   const boatWakeU = Array.from({length:6},()=>new THREE.Vector4(0,0,0,0));
+  // One clock and wind direction keep the lake ripples and shoreline planting in step.
+  const weatherU = {
+    uTime: { value: 0 },
+    uWindDirection: { value: new THREE.Vector2(4.4, 2.8).normalize() }
+  };
   const waterU = Object.assign({
-    uTime: { value: 0 }, uBoats: { value: boatU }, uBoatWake: { value: boatWakeU },
+    ...weatherU, uBoats: { value: boatU }, uBoatWake: { value: boatWakeU },
     uFlow: { value: flowTex }, uDrift: { value: driftTex },
     uRect: { value: new THREE.Vector4(WR.x, WR.z, WR.w, WR.h) }
   }, fogU, camU, sharedInk);
@@ -287,9 +292,20 @@
         void main(){ vec4 w = modelMatrix * vec4(position,1.); vW = w.xyz; vec4 mv = viewMatrix * w; vD = -mv.z; gl_Position = projectionMatrix * mv; }`,
       fragmentShader: NOISE + `
         uniform vec3 uFog, uInk, uPaper; uniform float uNear, uFar, uTime;
-        uniform vec2 uBoats[6]; uniform vec4 uBoatWake[6], uRect;
+        uniform vec2 uWindDirection, uBoats[6]; uniform vec4 uBoatWake[6], uRect;
         uniform sampler2D uFlow, uDrift;
         varying vec3 vW; varying float vD;
+        // Short tapered crests interrupt the long washes when the camera approaches the water.
+        float brokenCrest(vec2 p){
+          vec2 cell = floor(p), local = fract(p)-.5;
+          float seed = hash(cell);
+          float x = (local.x-(hash(cell+3.7)-.5)*.24)/(.14+.20*seed);
+          float taper = 1.-smoothstep(.24,1.,abs(x));
+          float y = local.y-(hash(cell+7.1)-.5)*.44-.034*x*x-.12*(seed-.5)*x;
+          float crest = 1.-smoothstep(.012,.077,abs(y));
+          float echo = (1.-smoothstep(.015,.062,abs(y+.14)))*(1.-smoothstep(.16,.68,abs(x+.14)));
+          return taper*(crest+.36*echo)*smoothstep(.18,.63,seed);
+        }
         void main(){
           vec2 p = vW.xz;
           vec2 uv = (p - uRect.xy) / uRect.zw;
@@ -309,15 +325,27 @@
           }
           vec3 base = uPaper;
           float ink = 0.;
+          float fineDetail = 1.-smoothstep(300.,1050.,vD);
           if(lake<.999){
             vec4 drift = texture2D(uDrift,clamp(uv,.0015,.9985));
             float station = dot(drift.rg,word)*6500.;
             vec2 stream = vec2(station,aw);
+            // Broad brush groups travel along the mapped channel. Warped spacing and
+            // broken ends let the moving strokes read at the scale of the whole city.
+            vec2 current = vec2(station-uTime*13.,aw);
+            float group = vnoise(current*vec2(.021,.051));
+            float phase = aw*.22+4.8*vnoise(current*vec2(.011,.036))+.47*sin(current.x*.033);
+            float strokes = smoothstep(.08,.94,sin(phase))*smoothstep(.31,.77,group);
+            float away = smoothstep(.04,.30,band);
+            vec2 ripples = vec2(current.y+.16*current.x, current.x-.24*current.y)*vec2(.073,.061);
+            float crests = brokenCrest(ripples)*(.46+.54*group)*fineDetail;
+            ink += (strokes*.26+crests*.25)*away*drift.a*(1.-lake);
+
             float knot = fbm(stream*vec2(.025,.14));
-            float driftPhase = aw*.78+knot*.93+uTime*.048;
+            float driftPhase = aw*.78+knot*.93;
             float track = floor(driftPhase/6.28318+.5);
             float across = abs(fract(driftPhase/6.28318+.5)-.5)*6.28318;
-            float advance = station*.071+hash(vec2(track,17.))-uTime*.016;
+            float advance = (station-uTime*9.)*.071+hash(vec2(track,17.));
             float segment = floor(advance);
             float grain = hash(vec2(segment,track));
             float along = (fract(advance)-.5)/mix(.19,.47,grain);
@@ -325,25 +353,27 @@
             float main = (1.-smoothstep(.14,1.,shape))*smoothstep(.16,.69,grain);
             float dryMask = smoothstep(.47,.74,vnoise(stream*vec2(.31,.19)-vec2(uTime*.047,0.)));
             float faint = smoothstep(.92,.999,sin(driftPhase*2.07+knot))*dryMask;
-            float away = smoothstep(.04,.30,band);
-            ink += (main*.25+faint*.095)*away*drift.a*(1.-lake);
+            ink += (main*.17+faint*.065)*fineDetail*away*drift.a*(1.-lake);
 
             vec3 tint = mix(vec3(.64,.66,.56),vec3(.45,.64,.60),drift.b);
             float pigment = (.32+.26*away+.075*fbm(stream*vec2(.013,.043)))*wet*(1.-lake);
             base = mix(base,tint,pigment);
           }
           if(lake>.001){
-            // The lake keeps its own sparse horizontal brush and dilute littoral wash.
-            float warp = fbm(p*.010+uTime*.004)*11.+fbm(p*.035)*3.;
-            float wash = .04+.96*smoothstep(.42,.68,fbm(p*.0068+vec2(uTime*.010,0.)));
-            float vary = .42+.58*fbm(vec2(aw*.035,fbm(p*.0035)*4.));
-            float lakeInk = (smoothstep(.42,.94,sin(aw*.17+warp+uTime*.20))*vary*.24
-              +smoothstep(.80,.99,sin(aw*.51-warp*.5+uTime*.38))*.10)
-              *wash*smoothstep(.02,.26,band)*.34;
+            // Independent wind ripples make sparse, nearly horizontal lake brushwork.
+            vec2 wind = p-uWindDirection*(5.2*uTime);
+            float wash = smoothstep(.29,.76,vnoise(wind*vec2(.018,.038)));
+            float warp = 4.4*vnoise(wind*vec2(.008,.029));
+            float crest = wind.y*.27+wind.x*.017+warp;
+            float lakeInk = (smoothstep(.24,.96,sin(crest))*mix(.08,.22,smoothstep(80.,460.,vD))
+              +smoothstep(.65,.99,sin(crest*1.96-warp))*.065*fineDetail)
+              *wash*smoothstep(.02,.26,band);
+            vec2 ripples = vec2(wind.x+.11*wind.y,wind.y-.08*wind.x)*vec2(.097,.14);
+            lakeInk += brokenCrest(ripples)*(.30+.70*wash)*.23*fineDetail*smoothstep(.018,.21,band);
             float littoral = (1.-smoothstep(.0,.32,band))*lake*wet;
             float lakeWash = lake*wet*(.105+.065*fbm(p*.021))+.14*littoral;
             float shoreRipples = smoothstep(.86,.99,sin(p.y*2.2+warp+uTime*.25));
-            lakeInk += .12*littoral*shoreRipples*smoothstep(.32,.70,fbm(p*.075));
+            lakeInk += .12*littoral*shoreRipples*smoothstep(.32,.70,fbm(p*.075))*fineDetail;
             base *= mix(1.,.99-fbm(p*.004)*.018,lake*wet);
             base = mix(base,vec3(.43,.59,.56),lakeWash);
             ink += lakeInk*lake;

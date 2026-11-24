@@ -384,7 +384,7 @@
     const delta = clock.getDelta();
     if (!reduce) sceneTime += Math.min(delta, .1);
     const t = sceneTime;
-    waterU.uTime.value = t;
+    weatherU.uTime.value = t;
     mistMats.forEach(m => m.uniforms.uTime.value = t);
 
     updateVessels(t);
@@ -418,7 +418,7 @@
     scene.fog.near = near; scene.fog.far = fogU.uFar.value;
 
     controls.update();
-    // Reduced motion freezes the water, boats and birds. Repaint the geometry on a
+    // Reduced motion freezes the water, wind, boats and birds. Repaint the geometry on a
     // camera or layout change; keyboard focus and labels still update independently.
     if (sceneDirty) fitSunToSky();
     if (!reduce || sceneDirty) {
