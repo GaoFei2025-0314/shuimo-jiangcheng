@@ -19,9 +19,10 @@ sys.path.insert(0, str(HERE))
 import mesh
 import landmarks
 import neighborhood
+import tower_park
 
 # Rebuilding in the same Blender MCP session should pick up edited model sources.
-for module in (mesh, landmarks, neighborhood):
+for module in (mesh, landmarks, neighborhood, tower_park):
     importlib.reload(module)
 
 
@@ -153,6 +154,7 @@ def build():
     models = dict(landmarks.BUILDERS)
     for name in ("lane", "arcade", "wharf", "apartment", "highrise", "terrace_tower", "slab_tower"):
         models[name] = getattr(neighborhood, name)
+    models.update(tower_park.BUILDERS)
     window = bpy.context.window
     previous_scene = window.scene
     web, plates = {}, {}
