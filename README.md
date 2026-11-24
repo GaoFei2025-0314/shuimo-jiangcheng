@@ -6,7 +6,7 @@
 图上方位依实测经纬度排布，水平一比一，山与楼塔竖向约放大五倍，使其在全城视角下仍可辨认。
 
 默认从「两江 · 龟蛇锁大江」进入，以龟蛇两山、大桥和黄鹤楼为构图中心；「全城」仍可查看所有地标。
-图上的 15 处景点各有一套 Blender 模型。点「建筑图录」可看各自的相机渲染，再从图录定位到地图。黄鹤楼另有西面匾额特写，武汉长江大桥另有桥头堡与桁架特写。两江沿岸铺有里分、洋行、仓房、住宅与塔楼。前一版构图的同尺寸对照见[历史视觉样板](docs/visual-study.md)。
+点「黄鹤楼」可从西侧同时看见山脚入口、三层院落和山顶主楼；点白塔、牌坊或游亭可回到这一片区。图上的 15 处景点各有一套 Blender 模型。点「建筑图录」可看各自的相机渲染，再从图录定位到地图。黄鹤楼另有西面匾额特写，武汉长江大桥另有桥头堡与桁架特写。两江沿岸铺有里分、洋行、仓房、住宅与塔楼。前一版构图的同尺寸对照见[历史视觉样板](docs/visual-study.md)。
 
 ## 构建
 
@@ -58,6 +58,7 @@ src/
   04-districts.js    三镇街廊、街旁房舍与景点连接线
   04-landmark-grounds.js  听涛两桥、北馆前庭与蛇山登楼石阶
   04-scene.js        景点落位、山顶台地、街区与道路、舟船、飞鸟、烟波
+  04-tower-park.js   黄鹤楼公园西区的台地、池院、建筑与山脚园路
   04-planting.js     山林、滨水与街旁植栽的树型、避让和实例布局
   05-layout.js       紧凑面板、可用画幅与包围盒取景
   05-overlays.js     地名与牌签投影、碰撞避让、尺寸和排版缓存
@@ -95,7 +96,9 @@ npm run build
 node tools/blender/capture-city.cjs
 ```
 
-使用同一 Blender MCP 调用运行 `tools/blender/city.py`，生成 `output/architecture/city.blend`、两江近景 `city.png`、全城鸟瞰 `city-wide.png` 和蛇山街景 `city-hillside.png`。从工程的「武汉街坊」集合选择一栋屋舍即可独立移动或旋转，同屋型的实例共享几何。十五处建筑均按景点分集合，山林、船只和灯光也可分别编辑。网页版使用实时水墨渲染。Blender 工程带有三个相机和 Cycles 灯光。
+使用同一 Blender MCP 调用运行 `tools/blender/city.py`，生成 `output/architecture/city.blend`、两江近景 `city.png`、全城鸟瞰 `city-wide.png` 和蛇山街景 `city-hillside.png`。从工程的「武汉街坊」集合选择一栋屋舍即可独立移动或旋转，同屋型的实例共享几何。十五处建筑均按景点分集合，山林、船只和灯光也可分别编辑。网页版使用实时水墨渲染。全城工程带有四个相机和 Cycles 灯光。
+
+同一次运行还会输出蛇山西段独立工程 `output/architecture/tower-park.blend` 和西入口俯视图 `output/architecture/tower-park.png`。可以单独选择胜像宝塔、三楚一楼牌坊、归鹤池铜鹤、两座侧亭与园路，也可以从周边街道转到主楼检查坡地衔接。这些模型与网页共用 `tools/blender/tower_park.py` 的构件以及网页采集的场地坐标。
 
 ## 坐标系统
 

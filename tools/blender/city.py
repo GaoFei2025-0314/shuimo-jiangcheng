@@ -9,6 +9,7 @@ import sys
 from pathlib import Path
 
 import bpy
+import bmesh
 import numpy as np
 from mathutils import Matrix, Vector
 
@@ -19,8 +20,9 @@ sys.path.insert(0, str(HERE))
 import landmarks
 import mesh
 import neighborhood
+import tower_park
 
-for module in (mesh, landmarks, neighborhood):
+for module in (mesh, landmarks, neighborhood, tower_park):
     importlib.reload(module)
 
 AXES = Matrix.Rotation(math.pi / 2, 4, 'X')  # Three Y-up to Blender Z-up.
@@ -180,9 +182,9 @@ def city_trees(captured, parent):
             obj.matrix_world = placement(matrix)
 
 
-def main_landmark(scene, key, data, dest):
+def place_building(scene, builder, data, dest):
     before = set(scene.objects)
-    landmarks.BUILDERS[key]()
+    builder()
     parts = set(scene.objects) - before
     root = bpy.data.objects.new(data["name"], None)
     dest.objects.link(root)
@@ -190,6 +192,7 @@ def main_landmark(scene, key, data, dest):
     for obj in parts:
         relocate(obj, dest)
         obj.parent = root
+    return root
 
 
 def water(rivers, materials, dest):
@@ -371,6 +374,96 @@ def lighting(scene, camera_group):
     return overview, hillside
 
 
+def park_view(scene, park_roots, tower_root, camera_group):
+    parts = [part for root in [tower_root, *park_roots] for part in root.children if part.type == 'MESH']
+    corners = [part.matrix_world @ Vector(point) for part in parts for point in part.bound_box]
+    direction = Vector((-.81, -.64, .66)).normalized()
+    rotation = (-direction).to_track_quat('-Z', 'Y')
+    axes = [rotation @ Vector(v) for v in ((1,0,0), (0,1,0), (0,0,1))]
+    spans = [(min(p.dot(axis) for p in corners), max(p.dot(axis) for p in corners)) for axis in axes]
+    centre = sum((axis * ((lo+hi)/2) for axis, (lo,hi) in zip(axes, spans)), Vector())
+    camera = scene.camera.copy()
+    camera.data = camera.data.copy()
+    camera.name = camera.data.name = "蛇山西区 · 从胜像塔到黄鹤楼"
+    camera_group.objects.link(camera)
+    camera.location = centre + direction * 360
+    camera.rotation_euler = rotation.to_euler()
+    camera.data.ortho_scale = max(spans[0][1]-spans[0][0], (spans[1][1]-spans[1][0])*5/3) * 1.2
+    return camera, corners
+
+
+def export_park(scene, camera, corners):
+    """A local editable working set with the actual city relief, street edges and planting."""
+    region = bpy.data.scenes.new("黄鹤楼公园 · 蛇山西区")
+    region.world = scene.world
+    region.render.engine = 'CYCLES'
+    region.cycles.samples = scene.cycles.samples
+    region.cycles.use_denoising = True
+    region.render.resolution_x, region.render.resolution_y = scene.render.resolution_x, scene.render.resolution_y
+    region.render.resolution_percentage = 100
+    region.render.filepath = "//tower-park.png"
+    region.collection.objects.link(camera)
+    region.camera = camera
+    for light in (obj for obj in scene.objects if obj.type == 'LIGHT'):
+        region.collection.objects.link(light)
+    # Include enough surrounding street for the perspective from the west gate and for orbiting.
+    bpy.context.view_layer.update()
+    direction = camera.matrix_world.to_quaternion() @ Vector((0,0,-1))
+    frame = [camera.matrix_world @ p for p in camera.data.view_frame(scene=region)]
+    ground_frame = [p - direction*(p.z/direction.z) for p in frame]
+    limits = [(min(min(p[i] for p in corners)-50, min(p[i] for p in ground_frame)-9),
+               max(max(p[i] for p in corners)+50, max(p[i] for p in ground_frame)+9)) for i in (0,1)]
+    context = collection(region.collection, "蛇山西段 · 周边实景")
+    copies = []
+    try:
+        for group in scene.collection.children:
+            if group.name in ("黄鹤楼", "黄鹤楼公园西区", "蛇山"):
+                region.collection.children.link(group)
+                continue
+            for original in group.all_objects:
+                if original.type != 'MESH' or group.name in ("远山", "远岸烟波"):
+                    continue
+                matrix = original.matrix_world.copy()
+                box = [matrix @ Vector(p) for p in original.bound_box]
+                ranges = [(min(p[i] for p in box), max(p[i] for p in box)) for i in (0,1)]
+                if any(b < left or a > right for (a,b),(left,right) in zip(ranges,limits)):
+                    continue
+                obj = original.copy()
+                obj.parent = None
+                obj.matrix_world = matrix
+                if any(a < left or b > right for (a,b),(left,right) in zip(ranges,limits)):
+                    bm = bmesh.new()
+                    bm.from_mesh(original.data)
+                    bm.transform(matrix)
+                    for axis,(left,right) in enumerate(limits):
+                        for edge,sign in ((left,1),(right,-1)):
+                            point,normal = Vector(), Vector()
+                            point[axis],normal[axis] = edge,sign
+                            bmesh.ops.bisect_plane(bm, geom=[*bm.verts,*bm.edges,*bm.faces], dist=.0001,
+                                                   plane_co=point, plane_no=normal, clear_inner=True)
+                    if not bm.faces:
+                        bm.free()
+                        bpy.data.objects.remove(obj)
+                        continue
+                    bm.transform(matrix.inverted_safe())
+                    obj.data = original.data.copy()
+                    bm.to_mesh(obj.data)
+                    bm.free()
+                context.objects.link(obj)
+                copies.append(obj)
+        bpy.context.window.scene = region
+        bpy.context.view_layer.update()
+        mesh.save_project(region, OUT / "tower-park.blend")
+        region.render.filepath = str(OUT / "tower-park.png")
+        bpy.ops.render.render(write_still=True, scene=region.name)
+    finally:
+        bpy.context.window.scene = scene
+        bpy.context.view_layer.update()
+        for obj in copies:
+            bpy.data.objects.remove(obj, do_unlink=True)
+        bpy.data.scenes.remove(region)
+
+
 def build():
     with gzip.open(OUT / "city-capture.json.gz", "rt", encoding="utf-8") as stream:
         capture = json.load(stream)
@@ -412,11 +505,18 @@ def build():
             mist_layers(capture["atmosphere"], group("远岸烟波"))
         city_blocks(scene, capture["lots"], group("武汉街坊"))
         city_trees(capture["vegetation"], group("武汉草木"))
+        landmark_roots = {}
         for key, record in capture["landmarks"].items():
-            main_landmark(scene, key, record, group(record["name"]))
+            landmark_roots[key] = place_building(scene, landmarks.BUILDERS[key], record, group(record["name"]))
+        park_roots = []
+        for record in capture.get("parkAssets", []):
+            park_roots.append(place_building(scene, tower_park.BUILDERS[record["key"]], record, group("黄鹤楼公园西区")))
         bpy.context.view_layer.update()
         overview, hillside = lighting(scene, group("镜头与光"))
         bpy.context.view_layer.update()
+        if park_roots:
+            camera, corners = park_view(scene, park_roots, landmark_roots["tower"], group("镜头与光"))
+            export_park(scene, camera, corners)
         mesh.save_project(scene, OUT / "city.blend")
         scene.render.filepath = str(OUT / "city.png")
         bpy.ops.render.render(write_still=True, scene=scene.name)

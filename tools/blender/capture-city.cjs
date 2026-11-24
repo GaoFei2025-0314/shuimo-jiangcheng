@@ -11,6 +11,7 @@ const out = path.join(root, 'output/architecture');
 function capture() {
   const { scene, YZ, HAN, LAKES } = window.__dbg;
   scene.updateMatrixWorld(true);
+  const parkAssets = [];
   const lots = {}, landmarks = {}, vegetation = {}, meshes = [], atmosphere = [], greenway = [];
   const boats = scene.children.find(o => o.material?.uniforms?.uBoats).material.uniforms.uBoats.value;
   const pack = array => {
@@ -62,6 +63,8 @@ function capture() {
     } else if (node.userData.landscapeSurface) {
       const { group, name, material } = node.userData.landscapeSurface;
       copy(node, group, name, material);
+    } else if (node.userData.parkAsset) {
+      parkAssets.push({ key: node.userData.parkAsset, name: node.userData.name, matrix: node.matrixWorld.toArray() });
     } else if (node.userData.modelKey) {
       landmarks[node.userData.modelKey] = { name: node.userData.name, matrix: node.matrixWorld.toArray() };
     } else if (node.isGroup &&
@@ -78,7 +81,7 @@ function capture() {
   const rivers = [YZ, HAN].map(river => river.s
     .map(s => [s.p.x, -s.p.z, s.d.z, s.d.x, s.w]));
   const eastLake = LAKES[0].map(([x, z]) => [x, -z]);
-  return { lots, landmarks, vegetation, meshes, rivers, greenway, eastLake, atmosphere };
+  return { lots, landmarks, parkAssets, vegetation, meshes, rivers, greenway, eastLake, atmosphere };
 }
 
 (async () => {
@@ -97,6 +100,9 @@ function capture() {
     if (Object.keys(city.lots).length !== 7 || Object.keys(city.vegetation).length !== 4 || Object.keys(city.landmarks).length !== 15 || !city.landmarks.lake ||
         city.meshes.filter(m => m.material === 'Land').length !== 3)
       throw new Error('Missing landmarks, districts or banks. Rebuild dist/index.html before capture.');
+    const parkKeys = city.parkAssets.map(asset => asset.key).sort();
+    if (parkKeys.join(',') !== 'park_cranes,park_paifang,park_pavilion,park_pavilion,park_stupa')
+      throw new Error('Missing architectural groups from the Yellow Crane Tower park.');
     if (city.greenway.length < city.eastLake.length / 2 || !city.atmosphere.length || !city.meshes.some(m => m.material === 'DistantRidge'))
       throw new Error('Missing lake greenway, mist or distant ridges in the captured map.');
     console.log(Object.fromEntries(Object.entries(city.lots).map(([kind, lots]) => [kind, lots.length])));
