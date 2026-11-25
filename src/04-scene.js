@@ -504,7 +504,7 @@
   buildLakeGreenway();
 
   // The planting pass queries the completed street grid and building footprints.
-  const cityGround = { occupied: () => false, streets: [], verges: [] };
+  const cityGround = { occupied: () => false, streets: [], verges: [], bridgeGardens: [] };
 
   /* ═════════ 九、三镇市廛 ═════════ */
   // 以街坊为单位，里分顺巷成排、临江商埠与厂房成带，现代楼群在内街起伏。
@@ -696,7 +696,7 @@
       }
     }
 
-    function districtRoute({ name, group, points, width, widthAt, material = 'Path', terrace = false, earthy = false, connect = false, gradeStart = null, entryHeight = null, plain = false, surfaceLift = 0, junctionLift = 0 }) {
+    function districtRoute({ name, group, points, width, widthAt, planted = false, material = 'Path', terrace = false, earthy = false, connect = false, gradeStart = null, entryHeight = null, plain = false, surfaceLift = 0, junctionLift = 0 }) {
       const vertices = [], indices = [];
       const rows = [];
       for (let i = 0; i < points.length-1; i++) {
@@ -740,7 +740,7 @@
           }
         }
         if (active) {
-          const path = { a: rows[i], b: rows[i+1], width: widths[i], group, name };
+          const path = { a: rows[i], b: rows[i+1], width: widths[i], group, name, planted };
           reservePath(path);
           if (gradeStart !== null) {
             // Two embedded embankment faces close the gap between the leveled deck and grade.

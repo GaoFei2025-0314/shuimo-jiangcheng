@@ -34,6 +34,8 @@ function capture() {
     const item = { group, name, material, ...geometryOf(node), matrix: node.matrixWorld.toArray() };
     const pigment = node.geometry.getAttribute('deckPigment');
     if (pigment) item.deckPigment = pack(pigment.array);
+    const cover = node.geometry.getAttribute('vergeCover');
+    if (cover) item.vergeCover = pack(cover.array);
     meshes.push(item);
   }
   function placements(node) {

@@ -116,6 +116,9 @@ def imported_mesh(item, mat, dest, parent=None):
         layer.data.foreach_set("value", pigment)
     if item["material"] in ("Hills", "BankGrass", "WetBank", "DistantRidge"):
         data.polygons.foreach_set("use_smooth", np.ones(len(indices), dtype=bool))
+    if "vergeCover" in item:
+        cover = data.attributes.new("Verge cover", 'FLOAT', 'POINT')
+        cover.data.foreach_set("value", np.frombuffer(base64.b64decode(item["vergeCover"]), dtype="<f4"))
     data.update()
     obj = bpy.data.objects.new(item["name"], data)
     dest.objects.link(obj)
@@ -728,8 +731,20 @@ def build():
             if name not in groups:
                 groups[name] = collection(scene.collection, name)
             return groups[name]
+        verge_materials = {}
         for item in capture["meshes"]:
-            imported_mesh(item, mats[item["material"]], group(item["group"]))
+            material = mats[item["material"]]
+            if "vergeCover" in item:
+                if material not in verge_materials:
+                    wash = material.copy()
+                    wash.name = material.name + " · 路肩淡边"
+                    nodes = wash.node_tree.nodes
+                    cover = nodes.new("ShaderNodeAttribute")
+                    cover.attribute_name = "Verge cover"
+                    wash.node_tree.links.new(cover.outputs["Fac"], nodes.get("Principled BSDF").inputs["Alpha"])
+                    verge_materials[material] = wash
+                material = verge_materials[material]
+            imported_mesh(item, material, group(item["group"]))
         for vessel in capture.get("vessels", ()):
             place_vessel(vessel, mats, group(vessel["group"]))
         lakes = capture.get("lakes") or ([capture["eastLake"]] if capture.get("eastLake") else ())

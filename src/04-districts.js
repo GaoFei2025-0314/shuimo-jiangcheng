@@ -147,6 +147,87 @@
     for (const [x,z,yaw,kind] of [[-29,46,.17,'lane'],[-20,48,.25,'arcade'],[-10,51,.29,'lane'],
       [10,48,.18,'lane'],[19,50,.25,'arcade']]) lot(kind,{x,z},yaw,.69,.67);
 
+    // Short stone forecourts run from one approach curb to the existing blocks.
+    // Leave the opposite verge open to the hills and the view from the bridge.
+    for (const [side, fraction, group, name, forecourt, house, shade] of [
+      [0,.40,'武昌桥头 · 蛇山脚街坊','武昌桥头石巷',
+        [[-26.9,30.2],[-29.2,32.1],[-32.6,34.9]], [-34,39.4,3.10],
+        [[-29.9,28.4],[-31.7,27.3]]],
+      [1,.39,'汉阳桥头 · 龟山脚街坊','汉阳桥头石巷',
+        [[-238.6,-44.9],[-240.5,-46.8],[-241.8,-49.1]], [-240.1,-53.8,.16],
+        [[-236.7,-51.9],[-234.5,-53.6],[-233.0,-57.3]]],
+    ]) {
+      const stations=wuhanApproachFeatures[side].stations;
+      const curb=stations[Math.round(fraction*(stations.length-1))].edges[0].outer;
+      const [x,z,yaw]=house, scale=.60;
+      const line=[curb,...forecourt.map(([a,b])=>V(a,0,b))];
+      if (lot('lane',{x,z},yaw,scale,.64)) {
+        // The center doorway is offset along the front of the lane house.
+        const front=2.72*scale+.22, door=-.75*scale;
+        line.push(V(x+Math.sin(yaw)*front+Math.cos(yaw)*door,0,
+          z+Math.cos(yaw)*front-Math.sin(yaw)*door));
+      }
+      const curve=new THREE.CatmullRomCurve3(line);
+      const length=curve.getLength();
+      // A narrow lane opens into a small landing in front of the doorway.
+      route({ name, group, width:1.16, widthAt:d=>1.16+.94*THREE.MathUtils.smoothstep(d,length-2.8,length-.65), planted:true, material:'BankStone', gradeStart:curb.y,
+        points:curve.getSpacedPoints(Math.ceil(curve.getLength()/.74)) });
+      cityGround.bridgeGardens.push(...points(...shade));
+    }
+
+    // Two low folds follow the toe of each slope, with short gravel exposures.
+    // Adapt every ring to the existing grade so the edges settle into the ground.
+    const vergeSoil=vergeWash(.30,['#858e7a','#d5d2b6']);
+    const vergeGravel=vergeWash(.34,['#a29b86','#dcd3bb']);
+    const vergeOutline=[.95,1.05,.98,.87,.98,.91,.78,.82,1.06,.99,.90,1.02,.97,.86,.90];
+    function slopeVerge(group,name,material,ink,x,z,yaw,length,width,relief) {
+      const vertices=[], coverage=[], faces=[], sides=vergeOutline.length;
+      function point(u,v,raise) {
+        const px=x+Math.cos(yaw)*u+Math.sin(yaw)*v, pz=z-Math.sin(yaw)*u+Math.cos(yaw)*v;
+        const floor=plantingSurface(px,pz);
+        return [px,(floor ?? LAND_Y)+raise,pz];
+      }
+      vertices.push(point(0,0,relief));
+      coverage.push(.90);
+      for (const [ring,alpha] of [[.36,.82],[.71,.47],[1,0]]) {
+        for (const [i,stretch] of vergeOutline.entries()) {
+          const a=i/sides*Math.PI*2, r=ring*stretch;
+          vertices.push(point(Math.cos(a)*length*r,Math.sin(a)*width*r,
+            .009+relief*(1-ring*ring)));
+          coverage.push(alpha);
+        }
+      }
+      for (let i=0;i<sides;i++) {
+        const j=(i+1)%sides;
+        faces.push([0,1+j,1+i]);
+        for (const base of [1,1+sides]) {
+          const a=base+i,b=base+j,c=a+sides,d=b+sides;
+          faces.push([a,b,c],[b,d,c]);
+        }
+      }
+      const valid=faces.filter(face=>triangleOnLand(...face.map(i=>vertices[i])) &&
+        face.every(i=>(roadAt(vertices[i][0],vertices[i][2])?.distance ?? Infinity)>approachHalfWidth+1.05));
+      if (!valid.length) return;
+      const geometry=new THREE.BufferGeometry();
+      geometry.setAttribute('position',new THREE.Float32BufferAttribute(vertices.flat(),3));
+      geometry.setAttribute('vergeCover',new THREE.Float32BufferAttribute(coverage,1));
+      geometry.setIndex(valid.flat());
+      geometry.computeVertexNormals();
+      const mesh=new THREE.Mesh(geometry,ink);
+      mesh.name=name;
+      mesh.userData.landscapeSurface={group,name,material};
+      scene.add(mesh);
+    }
+    const snakeFoot='武昌桥头 · 蛇山脚街坊', turtleFoot='汉阳桥头 · 龟山脚街坊';
+    for (const [group,name,x,z,yaw,length,width] of [
+      [snakeFoot,'蛇山脚薄草地',-8.6,28.5,.16,4.2,1.34],
+      [snakeFoot,'武昌街坊草土路肩',-30.5,28.3,-.28,3.6,1.2],
+      [turtleFoot,'龟山脚薄草地',-234.6,-55.7,-.48,3.8,1.65],
+      [turtleFoot,'汉阳街坊草土路肩',-235.6,-48.6,-.64,2.8,1.25],
+    ]) slopeVerge(group,name,'BankGrass',vergeSoil,x,z,yaw,length,width,.073);
+    slopeVerge(snakeFoot,'武昌石巷碎石路肩','BankStone',vergeGravel,-27.8,29.9,-.52,1.28,.39,.041);
+    slopeVerge(turtleFoot,'汉阳石巷碎石路肩','BankStone',vergeGravel,-239.9,-49.7,-.76,1.19,.47,.041);
+
     const hanyang = '汉阳滨江';
     route({ name: '龟山东麓至南岸嘴滨江步道', group: hanyang, width: 1.88, earthy: true,
       points: points([-127,-127],[-121,-133],[-115,-139],[-111,-142]) });

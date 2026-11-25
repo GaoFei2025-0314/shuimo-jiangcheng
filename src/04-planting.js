@@ -457,7 +457,8 @@
     // 街坊入口的短树列留出门窗、转角和交叉路口。
     {
       const rng = seeded(0x47f1e6b);
-      for (const { a, b, width } of cityGround.streets) {
+      for (const { a, b, width, planted } of cityGround.streets) {
+        if (planted) continue; // These footpaths have individually placed shade trees.
         if (rng() > .51) continue;
         const dx = b.x - a.x, dz = b.z - a.z, length = Math.hypot(dx, dz);
         if (length < 9) continue;
@@ -490,6 +491,13 @@
             spread,spread*.91,bridgeTrees)) break;
         }
       }
+    }
+
+    // Local additions use their own planting sequence so streets elsewhere retain their composition.
+    const frontageTrees = seeded(0x7f302e);
+    for (const {x,z} of cityGround.bridgeGardens) {
+      const spread = .52+.20*frontageTrees();
+      plant('broadleaf',x,z,spread,spread*.94,frontageTrees);
     }
 
     // Color stores sRGB floats for the standalone map and the Blender capture.

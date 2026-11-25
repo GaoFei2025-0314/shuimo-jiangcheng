@@ -14,6 +14,18 @@
     return asphalt;
   })();
 
+  function vergeWash(tone, colors) {
+    const ink=inkMat(tone,false,colors);
+    ink.vertexShader='attribute float vergeCover; varying float vVergeCover;\n'+
+      ink.vertexShader.replace('vW = w.xyz;','vVergeCover = vergeCover; vW = w.xyz;');
+    ink.fragmentShader='varying float vVergeCover;\n'+
+      ink.fragmentShader.replace('vec4(col, 1.);',`vec4(col, vVergeCover *
+          (.88 + .12 * vnoise(vW.xz * .63))); `);
+    ink.transparent=true;
+    ink.depthWrite=false;
+    return ink;
+  }
+
   /* 鹦鹉洲大桥 · 从现有桥面断面接续两岸车行道与人行道。 */
   function yingwuzhouJunction(side) {
     yingwuzhou.updateMatrixWorld(true);
@@ -29,6 +41,9 @@
     yingwuzhou.updateMatrixWorld(true);
     const group = '鹦鹉洲长江大桥';
     const lanePaint = inkMat(.04, false, ['#c7c0a9', '#eee5d0']);
+    const grassWash = vergeWash(.23,['#798571','#c1c6a8']);
+    const dryWash = vergeWash(.34,['#97896f','#d7ccb3']);
+    const toeStone = inkMat(.18, false, ['#71675a', '#ab9c83']);
     const step = .65, run = 50, count = Math.ceil(run / step);
     const toWorld = (x, z) => yingwuzhou.localToWorld(V(x, 0, z));
     // Match the same 1/128-unit encoding used by the exported bridge mesh.
@@ -83,10 +98,11 @@
         }
         indices.push(last,last+1,last+2,last,last+2,last+3);
       }
-      function show(label, material, ink, vertices, indices, pigment) {
+      function show(label, material, ink, vertices, indices, pigment, cover) {
         const shape = new THREE.BufferGeometry();
         shape.setAttribute('position',new THREE.Float32BufferAttribute(vertices,3));
         if (pigment) shape.setAttribute('deckPigment',new THREE.Float32BufferAttribute(pigment,1));
+        if (cover) shape.setAttribute('vergeCover',new THREE.Float32BufferAttribute(cover,1));
         if (ink.defines?.ARCHITECTURE_AO) {
           shape.setAttribute('skyVisibility',new THREE.BufferAttribute(new Float32Array(vertices.length/3).fill(.92),1));
         }
@@ -99,6 +115,16 @@
       }
 
       const road = [], roadTris = [], base = [], baseTris = [];
+      const grass = [], grassTris = [], earth = [], earthTris = [], edging = [], edgingTris = [];
+      const grassCover = [], earthCover = [];
+      function landOnly(vertices, indices) {
+        const visible = [];
+        for (let i=0;i<indices.length;i+=3) {
+          const face = indices.slice(i,i+3);
+          if (triangleOnLand(...face.map(j => vertices.slice(j*3,j*3+3)))) visible.push(...face);
+        }
+        return visible;
+      }
       strip(pavement,0,count,road,roadTris);
       for (const direction of [-1,1]) {
         // A stone retaining face embeds in sampled land and disappears into the last grade.
@@ -109,6 +135,54 @@
           toe[1] = Math.min(row.y-.03,terrainTop(toe[0],toe[2])-.035);
           return direction < 0 ? [toe,top] : [top,toe];
         },0,count,base,baseTris);
+
+        // Low grass folds climb partway up the retaining slope and thin into sampled ground.
+        const profile = (row, i) => {
+          const edge = point(row,direction*row.half,row.y);
+          const rise = Math.max(0,row.y-terrainTop(edge[0],edge[2]));
+          const toe = row.half+rise*.36;
+          const wave = .52+.28*Math.sin(i*.42+direction*1.4+side)+.18*Math.cos(i*.19-side);
+          const taper = smooth(i,5,16)*(1-smooth(i,count*.67,count*.83));
+          const toGround = (offset, lift) => {
+            const p = point(row,direction*offset,row.y);
+            p[1] = terrainTop(p[0],p[2])+lift;
+            return p;
+          };
+          const inner = toGround(toe-rise*(.07+.10*wave)*taper,.04);
+          inner[1] += rise*(.20+.32*wave)*taper;
+          const hump = toGround(toe+(.85+.62*wave)*taper,.025+.22*taper);
+          const fringe = toe+(2.1+1.30*wave)*taper;
+          const verge = toGround(fringe,.025);
+          const bare = toGround(fringe+(.55+.33*Math.sin(i*.24+side*direction))*taper,.017);
+          return { inner,hump,verge,bare };
+        };
+        const heels = rows.map(profile);
+        const pair = (a,b) => direction < 0 ? [b,a] : [a,b];
+        const edgeStart = Math.floor(count*.25), edgeEnd = Math.floor(count*.78);
+        const banking = heels.slice(6,edgeEnd+1);
+        function washBand(from,to,innerCover,outerCover,positions,indices,coverage) {
+          const sections = banking.map((p,i) => {
+            const endFade = smooth(Math.min(i,banking.length-1-i),0,4);
+            coverage.push(...pair(innerCover*endFade,outerCover*endFade));
+            return pair(p[from],p[to]);
+          });
+          ribbon(sections,positions,indices);
+        }
+        washBand('inner','hump',.97,.95,grass,grassTris,grassCover);
+        washBand('hump','verge',.95,.41,grass,grassTris,grassCover);
+        washBand('verge','bare',.41,0,earth,earthTris,earthCover);
+        for (let first=edgeStart+(direction===side ? 4 : 0);first<edgeEnd;first+=13) {
+          const ledge = heels.slice(first,Math.min(first+5,edgeEnd)+1);
+          if (ledge.length < 3) continue;
+          ribbon(ledge.map(({hump,verge},i) => {
+            const raised = i>0 && i<ledge.length-1;
+            const inner = V(...hump).lerp(V(...verge),raised ? .62 : .85);
+            const outer = V(...hump).lerp(V(...verge),raised ? .96 : .92);
+            inner.y += raised ? .13 : .025;
+            outer.y += raised ? .065 : .015;
+            return pair(inner.toArray(),outer.toArray());
+          }),edging,edgingTris);
+        }
       }
       const pigment = rows.flatMap(row => {
         const ink = 1 - smooth(row.z,100,150);
@@ -116,6 +190,9 @@
       });
       show('车行面','ApproachPaving',approachPaving,road,roadTris,pigment);
       show('坡脚挡面','BankStone',M.bankStone,base,baseTris);
+      show('坡脚草土','BankGrass',grassWash,grass,landOnly(grass,grassTris),null,grassCover);
+      show('坡脚露土','Path',dryWash,earth,landOnly(earth,earthTris),null,earthCover);
+      show('坡脚石缘','BankStone',toeStone,edging,landOnly(edging,edgingTris));
 
       // A short abutment closes the exposed end of the two retaining faces below the deck.
       const abutment=[], abutmentTris=[];
@@ -279,24 +356,48 @@
       lane.push(innerJunction);
       route({ name:bank+'桥头里巷', group:streetGroup, width:3.25, entryHeight:junctionY, junctionLift:.016, points:lane });
 
+      // The cross street feeds a low sidewalk alongside the receiving street and shopfront courts.
+      const footway = new THREE.CatmullRomCurve3(
+        [[8.4,150],[7.3,155],[7.8,166],[8.8,177],[8.7,184],[6.9,188]].map(([x,z])=>street(x,z)));
+      route({name:bank+'桥头步道',group:bank+'桥头步行环境',planted:true,width:1.34,material:'BankStone',surfaceLift:.014,
+        points:footway.getSpacedPoints(Math.ceil(footway.getLength()/1.2))});
+      const court=[], courtTris=[];
+      function forecourt(x,z) {
+        const stations = [-2.35,-1.15,0,1.15,2.35].map((along,i) => {
+          const inset = i===0 || i===4 ? .38 : 0;
+          const near = street(x-2.6+inset,z+along);
+          const far = street(x+1.68-inset,z+along);
+          const section = [near,far].map(p => [p.x,terrainTop(p.x,p.z)+.088,p.z]);
+          return side < 0 ? section.reverse() : section;
+        });
+        ribbon(stations,court,courtTris);
+      }
+
       // Staggered shopfronts leave open sightlines toward the deck and mark the smaller street.
       const fronts = side < 0 ? [
-        [-15,118],[-13,130],[14,139],[10,159],[12,174],[-10,162],[-12,176],
-        [-29,156],[-32,169],[-29,183],[-18,201],[11,190]
+        [-15,118],[-13,130],[14,139],[10,159],[15,174,10.8],[-10,162],[-12,176],
+        [-29,156],[-32,169],[-29,183],[-18,201],[11,190],[-9,185]
       ] : [
-        [-14,111],[13,117],[-16,126],[16,130],[-15,139],[16,140],[12,159],
-        [13,173],[14,187],[-11,161],[-13,176],[-8,184],[-29,156],
-        [-33,169],[-28,184],[-21,197],[-10,206],[13,207]
+        [-14,111],[13,117],[-16,126],[16,130],[-15,139],[16,140],[14,159,9.9],
+        [15,173,10.7],[14,187],[-11,161],[-13,176],[-8,184],[-29,156],
+        [-33,169],[-28,184],[-21,197],[-10,206],[13,207],[-12,193]
       ];
-      for (const [i,[x,z]] of fronts.entries()) {
+      for (const [i,[x,z,yardX]] of fronts.entries()) {
         const p = street(x,z);
         const toward = street(x + (x < 0 ? 1 : -1),z);
         const yaw = Math.atan2(toward.x-p.x,toward.z-p.z);
-        const scale = .67 + .10 * (1 + Math.sin(i*2.3));
-        const height = (side < 0 ? .47 : .52) + .14 * (1 + Math.sin(i*1.77));
-        lot(i%5===3 ? 'arcade' : 'lane',p,yaw,scale,height);
+        const scale = yardX ? .60 : .67 + .10 * (1 + Math.sin(i*2.3));
+        const height = (yardX ? .45 : side < 0 ? .47 : .52) + .14 * (1 + Math.sin(i*1.77));
+        if (lot(i%5===3 ? 'arcade' : 'lane',p,yaw,scale,height) && yardX) {
+          forecourt(yardX,z);
+        }
       }
+      // The existing Hanyang wharf warehouse also opens onto this sidewalk.
+      if (side < 0) forecourt(10.1,161.3);
+      show('房前院落','Path',M.bankPath,court,landOnly(court,courtTris));
       for (const [x,z] of [[-11,119],[11,126],[-10,140],[9,145],[10,155],[-9,162],[9,180],
         [-27,160],[-27,175],[-20,192]]) cityGround.verges.push(street(x,z));
+      for (const [x,z] of [[-12,117],[-12,123],[12.1,130],[10,143],[11,146],[10.6,153],
+        [-9.6,168],[11.3,180],[11.6,183]]) cityGround.bridgeGardens.push(street(x,z));
     }
   }
