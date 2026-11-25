@@ -2,6 +2,7 @@
 
 from math import cos, hypot, pi, sin, tau
 
+import bmesh
 import bpy
 
 from mesh import Part
@@ -91,14 +92,18 @@ def side_plate(part, x, outline, depth):
 def build_trusses_and_rail():
     truss = Part("Three continuous steel truss units", "steel")
     plates = Part("Gussets and chord flanges", "shadow")
-    railbed = Part("Lower railway bed and stringers", "deck")
-    rails = Part("Two tracks and cross ties", "ink")
-    deck_ribbon(railbed, 0, 8.56, (-107, 107), 0, .49, height=lambda _: 5.345)
+    railbed = Part("Lower railway bed and timber cross ties", "deck")
+    rails = Part("Twin railway tracks and longitudinal stringers", "ink")
+    deck_ribbon(railbed, 0, 7.78, (-107, 107), 0, .33, height=lambda _: 5.32)
+    for side in (-1, 1):
+        deck_ribbon(rails, side * 3.8, .29, (-107, 107), 0, .39, height=lambda _: 5.32)
     for track in (-2.02, 2.02):
         for offset in (-.72, .72):
-            deck_ribbon(rails, track + offset, .15, (-107, 107), 0, .19, height=lambda _: 5.635)
+            for width, top, thickness in ((.065, 5.59, .17), (.14, 5.635, .058)):
+                deck_ribbon(rails, track + offset, width, (-107, 107), 0, thickness,
+                            height=lambda _, z=top: z)
         for y in range(-106, 107, 2):
-            rails.box((track, y, 5.39), (2.24, .33, .14))
+            railbed.box((track, y, 5.38), (2.43, .37, .15))
     # Each continuous unit covers three spans. Tiny joints separate the flanges.
     for start in (-72, -24, 24):
         for side in (-1, 1):
@@ -112,18 +117,23 @@ def build_trusses_and_rail():
                 high_a = (x, y, UPPER_CHORD)
                 low_b = (x, y + 8, LOWER_CHORD)
                 high_b = (x, y + 8, UPPER_CHORD)
-                truss.beam(low_a, high_b, .40, .34)
-                truss.beam(high_a, low_b, .31, .29)
-                # Cover the lapped X joint with a distinct octagonal gusset and rivets.
+                for a, b in ((low_a, high_b), (high_a, low_b)):
+                    truss.beam(a, b, .42, .30)
+                    # A flange follows each edge of the diagonal web.
+                    for edge in (-1, 1):
+                        dy = edge * (b[2]-a[2]) / 52
+                        dz = edge * (a[1]-b[1]) / 52
+                        truss.beam((x, a[1]+dy, a[2]+dz), (x, b[1]+dy, b[2]+dz), .62, .10)
+                # Cover the lapped X joint with a raised gusset and four rivet heads.
                 middle = (LOWER_CHORD + UPPER_CHORD) / 2
-                side_plate(plates, x + side * .19,
-                           [(y + 4 + .67*cos(i*tau/8), middle + .61*sin(i*tau/8))
-                            for i in range(8)], .08)
-                for dy in (-.25, .25):
-                    for dz in (-.22, .22):
-                        side_plate(truss, x + side * .235,
-                                   [(y + 4 + dy + .06*cos(k*tau/6), middle + dz + .06*sin(k*tau/6))
-                                    for k in range(6)], .035)
+                side_plate(plates, x + side * .31,
+                           [(y + 4 + .71*cos(i*tau/8), middle + .66*sin(i*tau/8))
+                            for i in range(8)], .11)
+                for dy in (-.27, .27):
+                    for dz in (-.23, .23):
+                        side_plate(truss, x + side * .38,
+                                   [(y + 4 + dy + .08*cos(k*tau/6), middle + dz + .08*sin(k*tau/6))
+                                    for k in range(6)], .065)
     for y in range(-72, 73, 8):
         for x in (-4.18, 4.18):
             truss.box((x, y, (LOWER_CHORD + UPPER_CHORD) / 2),
@@ -136,8 +146,10 @@ def build_trusses_and_rail():
         truss.box((0, y, LOWER_CHORD - .07), (8.76, .42, .42))
         truss.box((0, y, UPPER_CHORD + .15), (12.1, .42, .47))
         if y < MAIN_END:
-            truss.beam((-4.1, y, LOWER_CHORD - .23),
-                       (4.1, y + 8, LOWER_CHORD - .23), .17)
+            # Opposing lateral braces stiffen the floor grids of the two decks.
+            direction = (-1) ** ((y + MAIN_END) // 8)
+            for z in (LOWER_CHORD - .23, UPPER_CHORD + .03):
+                truss.beam((-direction * 4.1, y, z), (direction * 4.1, y + 8, z), .23)
     for part in (truss, plates, railbed, rails):
         part.finish()
 
@@ -311,6 +323,7 @@ def build_towers():
     glass = Part("Arched ironwork gallery windows", "shadow")
     tracery = Part("Copper casements and diamond tracery", "steel")
     roof = Part("Twin stone eaves on four bridgehead pavilions", "stone")
+    plinth = Part("Granite tower bases and gallery apron", "stone")
     finials = Part("Red pearl finials", "vermilion")
     for cy in (-82, 82):
         road_z = road_height(cy)
@@ -319,8 +332,21 @@ def build_towers():
             loft(body, [octagonal_ring(cx, cy, r, cut, h) for h, r, cut in
                         [(-1.2, 2.78, .38), (.52, 2.78, .38), (.82, 2.53, .31),
                          (road_z-.89, 2.53, .31), (road_z-.53, 2.86, .36), (road_z+.07, 2.89, .42)]])
+            loft(plinth, [octagonal_ring(cx, cy, r, .45, h) for h, r in
+                          [(.13, 2.87), (.49, 2.87), (.71, 2.67), (.84, 2.55)]])
             loft(trim, [octagonal_ring(cx, cy, r, .45, h) for h, r in
                         [(road_z-.13, 2.86), (road_z+.08, 3.20), (road_z+.22, 3.20)]])
+            for side in (-1, 1):
+                for u in (-1.81, 0, 1.81):
+                    trim.beam((cx+side*2.52, cy+u, road_z-.94),
+                              (cx+side*3.10, cy+u, road_z+.04), .23, .28)
+                y = cy + side * 2.52
+                plinth.box((cx, y, road_z+1.75), (1.66, .21, 2.56))
+                glass.box((cx, y+side*.12, road_z+1.94), (1.37, .08, 1.92))
+                for u in (-.46, 0, .46):
+                    tracery.box((cx+u, y+side*.17, road_z+1.94), (.08, .08, 1.92))
+                for z in (1.20, 1.68, 2.16, 2.64):
+                    tracery.box((cx, y+side*.17, road_z+z), (1.37, .08, .074))
             for dx in (-2.14, 2.14):
                 for dy in (-2.14, 2.14):
                     body.box((cx+dx, cy+dy, road_z+1.75), (.68, .68, 3.24))
@@ -362,14 +388,23 @@ def build_towers():
                         tracery.beam(point(u, 2.58, z+.49), point(u+.18, 2.58, z+.25), .051)
                         tracery.beam(point(u+.18, 2.58, z+.25), point(u, 2.58, z+.01), .051)
                         tracery.beam(point(u, 2.58, z+.01), point(u-.18, 2.58, z+.25), .051)
-                trim.box(point(0, 2.76, bottom-.08), (1.94, .71, .22), a)
-                trim.box(point(0, 2.60, bottom-.30), (1.49, .46, .26), a)
-                for u in (-.66, 0, .66):
-                    trim.beam(point(u, 2.52, bottom-.56), point(u, 3.01, bottom-.16), .23, .22)
-                    trim.beam(point(u, 2.46, road_z-.99), point(u, 2.91, road_z-.55), .30, .25)
-                for u in (-.84, -.42, 0, .42, .84):
-                    trim.box(point(u, 3.05, bottom+.11), (.08, .10, .22), a)
-                trim.box(point(0, 3.05, bottom+.24), (1.85, .16, .10), a)
+                # The long window ends in a half-round lotus balcony cut into the shaft.
+                for z, radius, depth, thickness in ((-.63, .39, .24, .13), (-.46, .64, .44, .23),
+                                                      (-.22, .95, .71, .25), (-.02, 1.06, .79, .16)):
+                    outline = [point(radius*cos(i*pi/10), 2.52+depth*sin(i*pi/10), bottom+z)[:2]
+                               for i in range(11)]
+                    trim.prism(outline, bottom+z-thickness/2, bottom+z+thickness/2)
+                for i in range(11):
+                    angle = i*pi/10
+                    c, s = cos(angle), sin(angle)
+                    u, v = 1.02*c, 2.52+.77*s
+                    trim.box(point(u, v, bottom+.20), (.09, .09, .29), a)
+                    trim.beam(point(.62*c, 2.52+.43*s, bottom-.49),
+                              point(.94*c, 2.52+.71*s, bottom-.21), .095)
+                    if i < 10:
+                        next_angle = (i+1)*pi/10
+                        trim.beam(point(u, v, bottom+.36),
+                                  point(1.02*cos(next_angle), 2.52+.77*sin(next_angle), bottom+.36), .101)
                 for u in (-2.39, -1.6, -.8, 0, .8, 1.6, 2.39):
                     trim.box(point(u, 3.10, road_z+.52), (.094, .105, .65), a)
                 for z in (road_z+.30, road_z+.84):
@@ -391,7 +426,127 @@ def build_towers():
                      for i in range(12)] for z, r in ((top+.21, .15), (top+.32, .28),
                                                        (top+.52, .34), (top+.70, .24), (top+.78, .06))]
             loft(finials, bead)
-    for part in (body, trim, glass, tracery, roof, finials):
+    for part in (body, trim, glass, tracery, roof, plinth, finials):
+        part.finish()
+
+
+# Simplified-Chinese outlines from LXGW WenKai Medium, © 2024 The LXGW WenKai Project Authors.
+# https://github.com/lxgw/LxgwWenKai — SIL Open Font License 1.1, see docs/wenkai-license.txt.
+NAME_GLYPHS = {
+    '武': (
+        '891,-104 853,-93 810,-61 764,-8 695,96 638,214 601,328 587,389 570,470 159,448 123,450 104,455 82,479 '
+        '70,506 82,520 98,518 126,515 138,515 166,517 212,519 273,523 351,527 446,532 557,538 542,629 532,704 '
+        '525,756 520,780 508,800 501,814 519,829 562,825 586,812 594,795 600,761 631,541 717,546 780,550 820,554 '
+        '837,556 860,560 884,550 906,526 915,506 907,492 883,486 644,473 678,328 730,193 763,129 796,78 826,38 '
+        '850,11 867,-5 874,-10 877,-3 884,18 894,52 920,162 932,198 947,210 960,200 964,169 940,-47 930,-79 '
+        '914,-98',
+        '788,577 772,585 748,608 708,646 646,695 630,719 641,742 662,756 683,748 720,724 774,685 813,648 826,625 '
+        '812,594',
+        '259,596 221,603 204,620 189,655 202,667 219,664 260,661 333,666 387,670 421,673 436,676 457,679 482,668 '
+        '501,648 507,633 499,617 475,610',
+        '148,-51 120,-38 97,-10 89,11 108,25 204,40 199,277 190,308 182,329 199,339 230,334 260,322 270,301 '
+        '274,56 342,74 337,382 328,414 320,434 337,444 368,439 398,427 409,406 410,305 464,310 492,315 513,319 '
+        '534,309 556,287 564,267 556,254 532,249 411,240 413,93 494,118 547,136 580,146 599,150 616,135 608,119 '
+        '585,104 445,42 320,-6 211,-38 170,-48',
+    ),
+    '汉': (
+        '147,-29 116,-22 87,-2 78,13 94,30 125,59 227,198 306,321 324,344 339,351 350,346 353,330 348,310 332,272 '
+        '306,216 193,15 171,-16',
+        '207,389 79,492 63,513 72,538 92,555 121,543 220,477 259,443 272,421 258,390 233,375',
+        '321,571 295,587 244,643 177,709 163,733 174,756 197,769 230,754 252,734 292,696 348,639 361,617 355,598 '
+        '338,578',
+        '289,-55 278,-38 284,-23 303,-4 455,139 583,301 503,429 446,542 433,576 429,594 446,614 475,620 497,600 '
+        '562,470 625,365 681,466 723,561 752,651 448,632 420,634 404,642 383,669 373,694 387,706 434,702 447,702 '
+        '478,704 527,706 595,710 681,714 786,720 800,721 825,714 841,695 847,677 842,662 836,653 766,471 669,303 '
+        '806,147 963,16 977,-3 972,-16 956,-32 919,-49 896,-41 753,94 626,242 518,114 404,13 326,-38 301,-51',
+    ),
+    '长': (
+        '58,404 62,414 72,418 86,416 111,413 277,421 277,722 261,770 255,785 271,797 298,794 335,780 353,752 '
+        '352,425 481,432 590,437 682,442 754,446 858,453 877,456 898,448 926,426 935,404 927,388 903,381 518,362 '
+        '570,291 632,221 728,138 831,72 941,23 961,12 968,0 956,-22 929,-48 904,-57 901,-57 787,0 667,84 539,210 '
+        '433,358 352,354 351,50 417,80 468,106 506,127 535,138 538,138 553,124 540,98 496,62 415,7 345,-36 '
+        '290,-66 256,-83 220,-94 196,-85 168,-57 153,-28 160,-19 185,-14 219,-6 271,15 276,17 276,351 116,344 '
+        '88,351 66,377',
+        '383,469 369,483 369,485 376,497 393,508 505,572 604,644 655,690 688,727 703,756 710,772 721,777 746,764 '
+        '766,736 773,714 762,692 685,616 602,556 515,510 427,477 399,471',
+    ),
+    '江': (
+        '156,700 140,721 144,736 158,757 174,764 193,757 226,736 272,702 331,653 346,629 332,600 306,580 287,590 '
+        '254,618',
+        '351,12 320,18 300,46 285,77 302,91 358,85 590,93 595,558 445,549 423,550 412,555 378,610 392,623 434,618 '
+        '447,619 477,620 524,623 589,627 671,632 770,638 810,646 830,651 853,641 882,616 891,594 884,580 861,574 '
+        '671,562 668,95 747,98 810,100 856,102 885,104 898,105 915,108 936,98 961,74 972,50 965,37 944,31',
+        '228,368 209,377 176,404 80,476 62,500 73,526 93,541 106,537 130,524 166,501 213,467 253,435 266,416 '
+        '253,386',
+        '136,-66 80,-47 62,-23 78,-8 108,20 212,174 305,325 319,344 334,351 347,336 341,311 325,267 296,203 '
+        '249,104 208,28 177,-24 162,-52',
+    ),
+    '大': (
+        '45,-79 27,-65 33,-51 52,-36 159,38 249,121 321,213 374,315 410,425 331,421 267,417 217,415 183,413 '
+        '163,412 127,424 103,458 97,480 111,491 159,486 174,487 208,488 261,491 333,496 425,501 437,604 441,721 '
+        '427,768 422,784 441,796 477,788 514,769 527,737 520,611 509,505 793,522 824,528 843,533 865,523 895,498 '
+        '905,475 897,457 872,450 539,432 608,313 690,206 784,113 864,52 951,2 967,-8 972,-18 958,-40 928,-65 '
+        '906,-73 894,-68 870,-55 784,4 694,86 578,224 485,382 452,285 403,195 338,112 248,29 148,-35 101,-59 '
+        '67,-74',
+    ),
+    '桥': (
+        '772,-106 750,-98 726,-78 716,-56 720,-25 721,-11 721,18 722,63 723,124 723,201 723,294 713,328 703,348 '
+        '708,358 724,362 760,354 788,337 794,314 795,-74 789,-98',
+        '378,-88 366,-75 386,-46 451,26 498,103 526,185 535,271 533,311 528,324 526,314 489,270 441,225 404,196 '
+        '381,187 365,191 360,203 374,226 482,367 518,431 538,476 460,472 428,483 404,515 403,518 382,510 300,503 '
+        '299,447 300,447 319,440 344,420 376,386 416,337 429,308 412,284 384,271 358,290 326,337 298,373 293,-71 '
+        '287,-94 269,-101 227,-82 214,-60 218,-26 223,22 223,124 223,206 224,267 224,308 225,329 207,292 172,237 '
+        '118,163 85,121 60,95 44,87 32,103 43,131 138,304 222,495 166,490 130,487 112,486 93,491 75,507 58,540 '
+        '72,556 104,553 124,554 229,563 231,740 222,770 214,788 219,798 235,802 270,794 297,780 303,758 301,570 '
+        '326,573 340,576 355,579 375,571 398,553 408,535 415,536 454,532 559,540 581,609 590,657 537,648 498,642 '
+        '473,640 449,644 441,655 453,670 488,682 586,707 596,713 604,712 678,737 732,762 766,786 780,792 800,780 '
+        '821,754 830,733 825,720 800,706 770,695 720,684 688,677 668,672 660,671 667,650 664,629 655,594 639,546 '
+        '718,552 780,557 826,561 856,564 869,566 891,569 914,559 933,538 940,520 933,509 912,503 771,494 858,380 '
+        '973,284 986,269 978,249 956,223 936,214 901,232 830,294 763,380 700,489 617,482 558,358 595,343 607,320 '
+        '606,264 604,232 599,202 588,150 571,90 542,40 482,-27 412,-74 390,-84',
+    ),
+}
+
+
+def build_nameplates():
+    """Mount model wayfinding plaques on the outward face of the tower gallery apron."""
+    frame = Part("Bridgehead nameplate frames", "bronze")
+    board = Part("Bridgehead enamel nameplates", "plaqueBlue")
+    gold = Part("武汉长江大桥 · raised lettering", "plaqueGold")
+    relief = bpy.data.curves.new("Wuhan Yangtze River Bridge inscription", 'CURVE')
+    relief.dimensions = '2D'
+    relief.fill_mode = 'BOTH'
+    relief.extrude = .019
+    for i, char in enumerate('武汉长江大桥'):
+        for contour in NAME_GLYPHS[char]:
+            points = [tuple(map(int, coord.split(','))) for coord in contour.split()]
+            loop = relief.splines.new('POLY')
+            loop.points.add(len(points) - 1)
+            for point, (u, z) in zip(loop.points, points):
+                point.co = ((i-2.5)*.682+(u-500)*.00066, (z-365)*.00065, 0, 1)
+            loop.use_cyclic_u = True
+    cutter = bpy.data.objects.new(relief.name, relief)
+    bpy.context.collection.objects.link(cutter)
+    evaluated = cutter.evaluated_get(bpy.context.evaluated_depsgraph_get())
+    lettering = evaluated.to_mesh()
+    welded = bmesh.new()
+    try:
+        welded.from_mesh(lettering)
+        bmesh.ops.remove_doubles(welded, verts=list(welded.verts), dist=1e-6)
+        welded.to_mesh(lettering)
+        for y in (-82, 82):
+            z = road_height(y) - .44
+            frame.box((11.46, y, z), (.55, 4.70, .89))
+            frame.box((11.84, y, z), (.22, 4.62, .89))
+            board.box((11.952, y, z), (.046, 4.46, .74))
+            gold.solid([(11.981+v.co.z, y+v.co.x, z+v.co.y) for v in lettering.vertices],
+                       [poly.vertices for poly in lettering.polygons])
+    finally:
+        welded.free()
+        evaluated.to_mesh_clear()
+        bpy.data.objects.remove(cutter, do_unlink=True)
+        bpy.data.curves.remove(relief)
+    for part in (frame, board, gold):
         part.finish()
 
 
@@ -403,3 +558,4 @@ def build():
     build_approaches()
     bend_hanyang(set(bpy.context.scene.objects) - original)
     build_towers()
+    build_nameplates()

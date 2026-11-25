@@ -11,7 +11,7 @@ from mathutils import Vector
 
 # Base colours for the editable Blender file. The web shader uses the same material IDs.
 PALETTE = {
-    "stone": "c2b6a0", "plaster": "edddbd", "timber": "8a4c38", "roofGold": "b78846",
+    "stone": "c2b6a0", "plaster": "edddbd", "enamelWhite": "f1e9da", "timber": "8a4c38", "roofGold": "b78846",
     "glaze": "57736c", "ink": "363c37", "bronze": "c19a56", "shadow": "4b4840",
     "vermilion": "a4513e", "steel": "526e6c", "deck": "88877e",
     "plaqueBlue": "193440", "plaqueGold": "e8c774", "suspensionOrange": "c86542",

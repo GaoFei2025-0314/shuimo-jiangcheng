@@ -4,6 +4,7 @@
   // Blender meshes are embedded in the HTML so file:// and offline model loading share one path.
   const architectureTints = {
     stone: ['#766e63', '#ded5c4'], plaster: ['#9a8466', '#f1e4c8'],
+    enamelWhite: ['#e4d9c6', '#fff7e6'],
     timber: ['#473831', '#a16f55'], vermilion: ['#623d34', '#b0785e'],
     roofGold: ['#78502e', '#dbb878'], bronze: ['#685336', '#d0ae6e'],
     ink: ['#28312c', '#50564b'], shadow: ['#373b34', '#666452'],

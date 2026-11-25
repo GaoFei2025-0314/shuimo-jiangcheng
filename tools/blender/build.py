@@ -149,40 +149,54 @@ def plate(scene, name):
         return base64.b64encode(jpeg.read_bytes()).decode("ascii")
 
 
+def bake_model(name, create):
+    window = bpy.context.window
+    previous_scene = window.scene
+    scene = bpy.data.scenes.new("Wuhan / " + name)
+    window.scene = scene
+    try:
+        create()
+        bpy.context.view_layer.update()
+        web = encode_scene(scene)
+        plates = {}
+        if name in landmarks.BUILDERS:
+            studio(scene, name)
+            details = []
+            if name == "tower":
+                details.append(("tower-plaque", viewpoint(scene, "西面五层匾额",
+                                (-5.15, 0, 26.56), (-1, -.07, .015), 7.3)))
+            elif name == "bridge":
+                details.append(("bridge-detail", viewpoint(scene, "桥头堡与钢梁",
+                                (0, -57, 9), (1.65, -1.2, .56), 75)))
+                details.append(("bridge-name", viewpoint(scene, "武昌桥头游览铭牌",
+                                (11.65, 82, 10.19), (1, -.10, .10), 10)))
+            elif name == "yingwuzhou":
+                details.append(("yingwuzhou-detail", viewpoint(scene, "中央主塔横梁桥名",
+                                (0, -1.09, 33.45), (.12, -1, .07), 24)))
+            mesh.save_project(scene, OUTPUT / (name + ".blend"))
+            plates[name] = plate(scene, name)
+            for key, camera in details:
+                scene.camera = camera
+                scene.render.resolution_x, scene.render.resolution_y = 1120, 680
+                plates[key] = plate(scene, key)
+        return web, plates
+    finally:
+        window.scene = previous_scene
+        for obj in list(scene.objects):
+            bpy.data.objects.remove(obj, do_unlink=True)
+        bpy.data.scenes.remove(scene)
+
+
 def build():
     OUTPUT.mkdir(parents=True, exist_ok=True)
     models = dict(landmarks.BUILDERS)
     for name in ("lane", "arcade", "wharf", "apartment", "highrise", "terrace_tower", "slab_tower"):
         models[name] = getattr(neighborhood, name)
     models.update(tower_park.BUILDERS)
-    window = bpy.context.window
-    previous_scene = window.scene
     web, plates = {}, {}
     for name, create in models.items():
-        scene = bpy.data.scenes.new("Wuhan / " + name)
-        window.scene = scene
-        try:
-            create()
-            bpy.context.view_layer.update()
-            web[name] = encode_scene(scene)
-            if name in landmarks.BUILDERS:
-                studio(scene, name)
-                detail = None
-                if name == "tower":
-                    detail = ("tower-plaque", viewpoint(scene, "西面五层匾额", (-5.15,0,26.56), (-1,-.07,.015), 7.3))
-                elif name == "bridge":
-                    detail = ("bridge-detail", viewpoint(scene, "桥头堡与钢梁", (0,-57,9), (1.65,-1.2,.56), 75))
-                mesh.save_project(scene, OUTPUT / (name + ".blend"))
-                plates[name] = plate(scene, name)
-                if detail:
-                    key, scene.camera = detail
-                    scene.render.resolution_x, scene.render.resolution_y = 1120, 680
-                    plates[key] = plate(scene, key)
-        finally:
-            window.scene = previous_scene
-            for obj in list(scene.objects):
-                bpy.data.objects.remove(obj, do_unlink=True)
-            bpy.data.scenes.remove(scene)
+        web[name], model_plates = bake_model(name, create)
+        plates.update(model_plates)
     (ROOT / "src" / "architecture-plates.gen.js").write_text(
         "// Cycles studio views, encoded as JPEG for the offline atlas.\nconst LANDMARK_PLATES = "
         + json.dumps(plates, indent=2) + ";\n", encoding="utf-8")
