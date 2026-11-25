@@ -23,6 +23,7 @@ const images = {
   laneWindowImage: 'lane-windows',
   laneEarthImage: 'lane-earth',
   laneFoliageImage: 'lane-foliage',
+  laneMossImage: 'lane-moss',
   riverSkyImage: 'river-sky'
 };
 for (const [name, file] of Object.entries(images)) {

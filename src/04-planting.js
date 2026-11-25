@@ -1076,8 +1076,11 @@
         scene.add(mesh);
       }
     }
+    const mossInk=new THREE.MeshBasicMaterial({map:laneMoss,color:0xd6dbce,transparent:true,
+      opacity:.82,depthWrite:false,side:THREE.DoubleSide});
     for (const [group,locations] of beds) {
-      const soil=[],alpha=[],blades=[],stalks=[];
+      const soil=[],alpha=[],blades=[],stalks=[],moss=[],mossUV=[];
+      let patch=0;
       for (const [cx,cz,rx,rz,yaw] of locations) {
         const near=paths.filter(({a,b})=>cx>=Math.min(a.x,b.x)-6 && cx<=Math.max(a.x,b.x)+6 &&
           cz>=Math.min(a.z,b.z)-6 && cz<=Math.max(a.z,b.z)+6);
@@ -1114,12 +1117,57 @@
             triangle(b,d,c,inner,outer,outer);
           }
         }
-        for (let i=0,count=Math.min(38,Math.ceil(10+6*rx*rz));i<count;i++) {
-          const a=sample()*Math.PI*2,r=.87*Math.sqrt(sample());
-          const p=point(r*rx*Math.cos(a),r*rz*Math.sin(a));
-          if (!p) continue;
-          for (let j=0,n=2+Math.floor(sample()*4);j<n;j++) {
-            const turn=a+j*2.399+sample(), stalk=j===0 && i%5===0;
+        // Pigment and leaves gather in the same damp pockets. Open paper separates the pockets.
+        const roots=[];
+        const pockets=Math.max(2,Math.min(4,Math.round(rx)));
+        for (let i=0;i<pockets;i++) {
+          const u=((i+.15+.68*sample())/pockets*2-1)*rx*.83;
+          const v=rz*(sample()-.5)*1.18;
+          const center=point(u,v);
+          if (!center) continue;
+          const width=.30+Math.min(rx*.30,.74)*sample(), depth=.20+.24*sample();
+          const rim=[], inner=[];
+          // Follow the actual soil and clip back from paving. Four different paintings share one draw.
+          const tile=patch++%4, grid=[], paintAngle=.62*Math.sin(1.31*patch+cx);
+          const dc=Math.cos(paintAngle), ds=Math.sin(paintAngle);
+          for(let y=0;y<=4;y++) for(let x=0;x<=4;x++){
+            const du=(x/2-1)*width*1.75, dv=(y/2-1)*depth*2.2;
+            const p=point(u+du*dc-dv*ds,v+du*ds+dv*dc);
+            if(p) p.y+=.019;
+            grid.push(p);
+          }
+          for(let y=0;y<4;y++) for(let x=0;x<4;x++){
+            const k=y*5+x;
+            for(const tri of [[k,k+5,k+1],[k+1,k+5,k+6]]){
+              if(tri.some(n=>!grid[n])) continue;
+              for(const n of tri){
+                moss.push(...grid[n].toArray());
+                mossUV.push((tile%2+.012+.976*(n%5)/4)*.5,
+                  (Math.floor(tile/2)+.012+.976*Math.floor(n/5)/4)*.5);
+              }
+            }
+          }
+          for (let k=0;k<12;k++) {
+            const a=k*Math.PI/6, spread=.81+.30*sample();
+            const dx=width*spread*Math.cos(a), dz=depth*spread*Math.sin(a);
+            rim.push(point(u+dx,v+dz));inner.push(point(u+.62*dx,v+.62*dz));
+          }
+          for (let k=0;k<12;k++) {
+            const j=(k+1)%12;
+            triangle(center,inner[j],inner[k],.92,.71,.71);
+            triangle(inner[k],inner[j],rim[k],.71,.71,0);
+            triangle(inner[j],rim[j],rim[k],.71,0,0);
+          }
+          for (let j=0,n=4+Math.floor(5*sample());j<n;j++) {
+            const a=sample()*2*Math.PI,r=.91*Math.sqrt(sample());
+            const p=point(u+r*width*Math.cos(a),v+r*depth*Math.sin(a));
+            if (p) roots.push(p);
+          }
+        }
+        for (const [i,p] of roots.entries()) {
+          const a=sample()*Math.PI*2;
+          for (let j=0,n=2+Math.floor(sample()*3);j<n;j++) {
+            const turn=a+j*2.399+sample(), stalk=j===0 && i%11===0;
             const h=(stalk?.16:.056)+sample()*(stalk?.21:.12);
             const wide=stalk?.009:.022+sample()*.029;
             const side=V(-Math.sin(turn)*wide,0,Math.cos(turn)*wide);
@@ -1141,6 +1189,19 @@
             stroke.push(...left.toArray(),...right.toArray(),...section(1,0)[0].toArray());
           }
         }
+      }
+      if (moss.length) {
+        const geometry=new THREE.BufferGeometry();
+        geometry.setAttribute('position',new THREE.Float32BufferAttribute(moss,3));
+        geometry.setAttribute('uv',new THREE.Float32BufferAttribute(mossUV,2));
+        geometry.computeVertexNormals();
+        const mesh=new THREE.Mesh(geometry,mossInk);
+        mesh.name=group+' · 湿苔与贴地野叶';
+        mesh.userData.landscapeSurface={group,name:mesh.name,material:'GroundMoss'};
+        mesh.userData.detailSize=.63;
+        mesh.userData.vergePlanting=true;
+        mesh.renderOrder=2;
+        scene.add(mesh);
       }
       show(group,'野草土斑','BankGrass',ink,soil,alpha);
       show(group,'墙脚野叶','Reeds',leafInk,blades);
@@ -1264,7 +1325,8 @@
           copies.userData.trace=mesh.name.startsWith('City /');
           casters.add(copies);
         }
-      } else if (!mesh.userData.vergePlanting && /滨水街巷|茶棚后街坊/.test(mesh.userData.landscapeSurface?.group ?? '')) {
+      } else if (!mesh.userData.vergePlanting && (/滨水街巷|茶棚后街坊/.test(mesh.userData.landscapeSurface?.group ?? '') ||
+          /^(汉阳岸上收缆人|武昌石凳上看江人) · /.test(mesh.name))) {
         mesh.geometry.computeBoundingBox();
         if (mesh.geometry.boundingBox.max.y<LAND_Y+.29) return;
         const copy=new THREE.Mesh(mesh.geometry,depth);

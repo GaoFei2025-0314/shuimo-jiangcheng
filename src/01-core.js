@@ -55,9 +55,9 @@
   `;
   const fogU = { uFog: { value: PAPER }, uNear: { value: 300 }, uFar: { value: 1800 } };
   const textureLoader=new THREE.TextureLoader();
-  const [fabricAtlas,windowAtlas,laneEarth,laneFoliage]=await Promise.all([laneMaterialImage,laneWindowImage,laneEarthImage,laneFoliageImage].map(url=>textureLoader.loadAsync(url)));
+  const [fabricAtlas,windowAtlas,laneEarth,laneFoliage,laneMoss]=await Promise.all([laneMaterialImage,laneWindowImage,laneEarthImage,laneFoliageImage,laneMossImage].map(url=>textureLoader.loadAsync(url)));
   laneEarth.wrapS=laneEarth.wrapT=THREE.MirroredRepeatWrapping;
-  for (const atlas of [fabricAtlas,windowAtlas,laneEarth,laneFoliage]) {
+  for (const atlas of [fabricAtlas,windowAtlas,laneEarth,laneFoliage,laneMoss]) {
     atlas.anisotropy=Math.min(4,renderer.capabilities.getMaxAnisotropy());
     app.cleanups.push(()=>atlas.dispose());
   }
