@@ -200,6 +200,7 @@
   #atlas img { display: block; width: 100%; height: min(56vh, 600px); height: min(56dvh, 600px);
     object-fit: contain; background: var(--paper); }
   #atlas footer { flex-wrap: wrap; }
+  #atlas-note { margin: 6px 16px 0; color: var(--ink); font: 400 13px/1.45 var(--song); }
   #atlas select { max-width: 100%; }
   #atlas-locate { margin-left: auto; }
   #atlas button[aria-pressed="true"] { color: var(--paper); background: #824931; }
@@ -381,6 +382,7 @@
 <dialog id="atlas" aria-labelledby="atlas-title">
   <header><h2 id="atlas-title">建筑图录</h2><button id="atlas-close" type="button" aria-label="关闭建筑图录" autofocus>关闭</button></header>
   <img id="atlas-plate" alt="">
+  <p id="atlas-note" hidden>武昌桥头的蓝底金字铭牌为本图游览增设。</p>
   <footer>
     <select id="atlas-site" aria-label="选择景点"></select>
     <button id="atlas-detail" type="button" aria-pressed="false" hidden>细部</button>

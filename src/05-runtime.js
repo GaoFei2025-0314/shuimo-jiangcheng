@@ -168,7 +168,10 @@
     activeView = key; cameraMode = 'preset';
     const navKey = ['chutian','xingyin'].includes(key) ? 'lake' : key;
     buttons.forEach(b => b.setAttribute('aria-pressed', String(b.dataset.view === navKey)));
-    cardTitle.textContent = COPY[key][0]; cardText.textContent = COPY[key][1];
+    cardTitle.textContent = COPY[key][0];
+    cardText.textContent = readingBridgeName && key === 'bridge'
+      ? '桥头堡拱窗上方的六字铭牌为本图游览增设。沿青绿色桁梁望去，上层是公路，下层是双线铁路。'
+      : COPY[key][1];
     refreshLayout(false);
     moveCamera(viewFor(key), true);
     if (layout.compact) buttons.find(b => b.dataset.view === navKey).scrollIntoView({ block: 'nearest', inline: 'nearest' });
@@ -195,6 +198,7 @@
     detailButton.hidden = !detail;
     detailButton.textContent = detailView ? '看全貌' : detail ? detail[1] : '';
     detailButton.setAttribute('aria-pressed', String(detailView));
+    document.getElementById('atlas-note').hidden = !(nameView && key === 'bridge');
     nameButton.hidden = !inscription;
     nameButton.textContent = nameView ? '看全貌' : '看桥名';
     nameButton.setAttribute('aria-pressed', String(nameView));

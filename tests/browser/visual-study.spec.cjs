@@ -104,6 +104,7 @@ test('both inscribed bridge names are legible in the atlas and on the physical m
       await page.locator('#b-'+key).click();
       await page.locator('#atlas-open').click();
       await page.getByRole('button', { name: '看桥名', exact: true }).click();
+      await expect(page.locator('#atlas-note')).toBeVisible({ visible: key === 'bridge' });
       const plate = page.locator('#atlas-plate');
       await expect(plate).toHaveAttribute('alt', name+' · 桥名题字');
       expect(await plate.evaluate(async img => { await img.decode(); return img.naturalWidth; })).toBeGreaterThanOrEqual(1000);
