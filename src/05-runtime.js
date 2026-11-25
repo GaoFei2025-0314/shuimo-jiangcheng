@@ -62,7 +62,7 @@
 
   const cardTitle = document.getElementById('cardTitle'), cardText = document.getElementById('cardText'), card = document.getElementById('card');
   const buttons = Array.from(document.querySelectorAll('#nav button'));
-  let activeView = 'core', cameraMode = 'preset', flight = null;
+  let activeView = 'core', cameraMode = 'preset', flight = null, flightStart=0;
   // Nameplate centers are in the same local axes as the baked Blender meshes.
   const bridgeInscriptions = {
     bridge: { model: bridge, at: V(11.98,10.19,-82), front: V(1,.20,.10), width: 7.4, distance: 13, plate: 'bridge-name' },
@@ -70,7 +70,8 @@
   };
   let readingBridgeName = false;
   let layoutDirty = true, safeRect = null, uiBlocks = [], layoutSignature = '', markFarScale = 1;
-  const layout = createMapLayout(() => { layoutDirty = true; });
+  const walkSelect=document.getElementById('walk-view');
+  const layout = createMapLayout(() => { layoutDirty = true; }, leaveWalk);
   scene.updateMatrixWorld(true);
   const viewBounds = {};
   pickables.forEach(object => { viewBounds[object.userData.focus] = new THREE.Box3().setFromObject(object); });
@@ -153,13 +154,77 @@
       camera.position.copy(view.pos); controls.target.copy(view.target); controls.update();
       return;
     }
-    flight = gsap.timeline({ onUpdate: () => controls.update(), onComplete: () => { flight = null; } });
+    flightStart=performance.now();
+    flight = gsap.timeline({ paused:true, onUpdate: () => controls.update(),
+      onComplete: () => { flight.kill(); flight = null; } });
     flight.to(camera.position, { ...view.pos, duration: 2.6, ease: 'power3.inOut' }, 0)
       .to(controls.target, { ...view.target, duration: 2.6, ease: 'power3.inOut' }, 0)
       .fromTo(card, { opacity: 0, y: 8 }, { opacity: 1, y: 0, duration: .45 }, 0);
   }
+  const walkViews={
+    'hy-in':['汉阳 · 茶棚入巷',[-211,3.1,34],[-222,2.52,31.3]],
+    'hy-door':['汉阳 · 茶棚后院',[-225.9,3,29.0],[-223.3,1.85,23.45]],
+    'hy-court':['汉阳 · 沿巷小院',[-236.05,3,43.4],[-231.2,1.95,43.9]],
+    'hy-out':['汉阳 · 回望武汉长江大桥',[-205.3,3.1,35.1],[-81,2.5,-20]],
+    'wc-in':['武昌 · 从江岸入里分',[-68.2,3,85],[-57.8,3.55,76.6]],
+    'wc-door':['武昌 · 转角公寓',[-47.0,3,77.2],[-40.95,1.88,75.4]],
+    'wc-court':['武昌 · 灰瓦人家',[-32.65,3.05,52.4],[-36.5,1.3,55.65]],
+    'wc-out':['武昌 · 回望鹦鹉洲长江大桥',[-66,3.18,84.4],[-159,17.1,121]],
+  };
+  for (const [key,[label]] of Object.entries(walkViews)) walkSelect.add(new Option(label,key));
+  let walkReturn;
+  function leaveWalk() {
+    if (walkSelect.hidden) return;
+    walkSelect.hidden=true;
+    cameraMode=walkReturn.mode;
+    readingBridgeName=walkReturn.readName;
+    controls.maxPolarAngle=Math.PI*.47;
+    controls.minDistance=walkReturn.minDistance;
+    controls.maxDistance=walkReturn.maxDistance;
+    camera.fov=camera.aspect<.9?52:38;
+    camera.updateProjectionMatrix();
+    if (cameraMode==='manual') moveCamera(walkReturn,false);
+    else layoutSignature=''; // Refit the preset after the dock has been restored.
+    walkReturn=null;
+    sceneDirty=true;
+    if (location.hash.startsWith('#walk=')) history.replaceState(null,'',location.href.split('#')[0]);
+  }
+  function visitWalk(key) {
+    if (!Object.hasOwn(walkViews,key)) return false;
+    if (walkSelect.hidden) walkReturn={
+      mode:cameraMode, readName:readingBridgeName, minDistance:controls.minDistance, maxDistance:controls.maxDistance,
+      pos:camera.position.clone(), target:controls.target.clone()
+    };
+    stopFlight();
+    readingBridgeName=false; cameraMode='manual';
+    controls.maxPolarAngle=Math.PI*.55;
+    controls.minDistance=22;
+    controls.enableDamping=false;
+    controls.update();
+    layout.setPainting(true,false);
+    walkSelect.hidden=false;
+    walkSelect.value=key;
+    refreshLayout(false);
+    const [,eye,look]=walkViews[key], position=new THREE.Vector3(...eye);
+    const target=new THREE.Vector3(...look).sub(position).setLength(24).add(position);
+    moveCamera({pos:position,target},false);
+    controls.enableDamping=!reduce;
+    sceneDirty=true;
+    if (location.hash!=='#walk='+key) history.replaceState(null,'','#walk='+key);
+    return true;
+  }
+  walkSelect.addEventListener('change',()=>visitWalk(walkSelect.value));
+  function restoreWalkFromHash(){
+    const match=/^#walk=([a-z-]+)$/.exec(location.hash);
+    if (match && visitWalk(match[1])) return true;
+    if (!walkSelect.hidden) layout.setPainting(false);
+    return false;
+  }
+  window.addEventListener('hashchange',restoreWalkFromHash);
+  app.cleanups.push(()=>window.removeEventListener('hashchange',restoreWalkFromHash));
   function flyTo(key, readName = false) {
     if (app.state !== 'ready' || !VIEWS[key]) return;
+    if (!walkSelect.hidden) layout.setPainting(false);
     stopFlight();
     // 消除上一次手势的惯性，防止它与新镜头竞争。
     controls.enableDamping = false; controls.update(); controls.enableDamping = !reduce;
@@ -214,8 +279,13 @@
   nameButton.addEventListener('click', () => showPlate(plateMode === 'name' ? 'whole' : 'name'));
   document.getElementById('atlas-close').addEventListener('click', () => atlas.close());
   locateButton.addEventListener('click', () => { atlas.close(); flyTo(atlasView(atlasSite.value), plateMode === 'name'); });
+  document.getElementById('atlas-walk').addEventListener('click',()=>{
+    atlas.close();
+    visitWalk('hy-in');
+    walkSelect.focus({preventScroll:true});
+  });
   atlas.addEventListener('close', () => {
-    if (!atlas.open && app.state === 'ready') atlasTrigger.focus({ preventScroll: true });
+    if (!atlas.open && walkSelect.hidden && app.state === 'ready') atlasTrigger.focus({ preventScroll: true });
   });
   atlas.addEventListener('click', event => { if (event.target === atlas) {
     const rect = atlas.getBoundingClientRect();
@@ -233,6 +303,7 @@
     if (reduce && wasFlying) moveCamera(viewFor(activeView), false);
   });
   function enterScene() {
+    if (restoreWalkFromHash()) return;
     const view = viewFor(activeView);
     moveCamera(view, false);
     if (reduce) return;
@@ -282,14 +353,26 @@
   /* ═════════ 十五、循环 ═════════ */
   let W = 1, H = 1;
   const sun = document.getElementById('sun');
+  const riverSky=document.getElementById('river-sky');
+  riverSky.style.backgroundImage='url('+riverSkyImage+')';
   let sunExtent = 1;
-  function fitSunToSky() {
+  const riverSun=new THREE.Vector3(-1,.20,.42).normalize(), skyPoint=new THREE.Vector3();
+  function fitSunToSky(streetView) {
     // Project a horizontal sightline using the same off-centre lens as the map.
     const lens = camera.projectionMatrix.elements;
     const pitch = Math.PI / 2 - controls.getPolarAngle();
     const horizonY = H * .5 * (1 + lens[9] - lens[5] * Math.tan(pitch));
     const fit = THREE.MathUtils.clamp((horizonY - 8) / sunExtent, 0, 1);
+    skyPoint.copy(camera.position).addScaledVector(riverSun,900).project(camera);
+    const visible=skyPoint.z<1 && skyPoint.z>-1 ? 1.-THREE.MathUtils.smoothstep(Math.abs(skyPoint.x),.88,1.15) : 0;
+    const position=THREE.MathUtils.clamp(50+50*skyPoint.x,-15,115);
+    sun.style.left=THREE.MathUtils.lerp(64,position,streetView).toFixed(2)+'%';
+    sun.style.setProperty('--sun-presence',(1.-streetView*(1.-visible)).toFixed(3));
     sun.style.setProperty('--sky-fit', fit.toFixed(4));
+    // A continuous angle keeps the cloud banks in place through a complete camera orbit.
+    const azimuth=controls.getAzimuthalAngle();
+    riverSky.style.setProperty('--sky-x',(50+43*Math.sin(azimuth)).toFixed(2)+'%');
+    riverSky.style.setProperty('--sky-wash',(fit*(.15+.68*streetView)).toFixed(3));
   }
   function refreshLayout(refit = true) {
     const measured = layout.measure(W, H);
@@ -329,6 +412,11 @@
   const clock = new THREE.Clock();
   const lowViewLanes = cityGround.riverfrontPaths.filter(path =>
     path.name?.endsWith('滨水通街支巷') || path.name?.endsWith('后巷步道'));
+  // The inland Wuchang threshold and its turning alley open onto an existing cross street.
+  const backLaneEnds=lowViewLanes.filter(p=>p.name==='武昌后巷步道').flatMap(p=>[p.a,p.b]);
+  for (const street of cityGround.streets) {
+    if (!street.group && backLaneEnds.some(p=>distanceToPath(p.x,p.z,street)<street.width/2+.16)) lowViewLanes.push(street);
+  }
   let sceneTime = 0;
   let frameId = 0;
   app.cleanups.push(() => {
@@ -341,7 +429,17 @@
   // Keep the authored transforms for native export and share one visible buffer across materials.
   const instanceGroups = new Map(), viewVolume = new THREE.Frustum();
   const clipMatrix = new THREE.Matrix4(), previousClip = new THREE.Matrix4();
+  const projectedDetails = [];
+  let streetContours;
+  function registerProjectedDetail(node) {
+    const { detailSize, detailDepth }=node.userData;
+    node.geometry.computeBoundingSphere();
+    const sphere=node.geometry.boundingSphere.clone().applyMatrix4(node.matrixWorld);
+    projectedDetails.push({node,sphere,detailSize,detailDepth});
+  }
   for (const node of scene.children) {
+    const { detailSize, detailDepth } = node.userData;
+    if (detailSize || detailDepth) registerProjectedDetail(node);
     if (!node.isInstancedMesh) continue;
     const key = node.userData.vegetation?.species || (node.name.startsWith('City / ') && node.name);
     if (!key) continue;
@@ -362,10 +460,11 @@
       group.spheres.push(localSphere.clone().applyMatrix4(transform.premultiply(first.matrixWorld)));
     }
     group.batches = [{ meshes: group.meshes, buffer: group.buffer, count: 0 }];
-    if (first.userData.farGeometry) {
+    for (const [attribute, label] of [['midGeometry', 'Mid-distance '], ['farGeometry', 'Distant ']]) {
+      if (!first.userData[attribute]) continue;
       const distant = group.meshes.map(part => {
-        const mesh = new THREE.InstancedMesh(part.userData.farGeometry, part.material, first.count);
-        mesh.name = 'Distant ' + part.name;
+        const mesh = new THREE.InstancedMesh(part.userData[attribute], part.material, first.count);
+        mesh.name = label + part.name;
         mesh.matrixAutoUpdate = false;
         mesh.matrix.copy(part.matrix);
         scene.add(mesh);
@@ -389,15 +488,23 @@
     previousHeight = H;
     viewVolume.setFromProjectionMatrix(clipMatrix);
     const clip = clipMatrix.elements;
-    // Below an 18 CSS-pixel diameter the crown silhouette carries the detail.
-    const nearScale = H * camera.projectionMatrix.elements[5] / 18;
+    const pixelsPerUnit = H * camera.projectionMatrix.elements[5];
+    // Drop leaf and branch subdivisions before switching to the distant silhouette.
+    const fullTreeScale = pixelsPerUnit / 68, midTreeScale = pixelsPerUnit / 18;
+    const viewDepth = p => clip[3]*p.x + clip[7]*p.y + clip[11]*p.z + clip[15];
+    for (const { node, sphere, detailSize, detailDepth } of projectedDetails) {
+      const depth = viewDepth(sphere.center) - sphere.radius;
+      node.visible = depth <= (detailDepth ?? detailSize * pixelsPerUnit / 2);
+    }
     for (const { batches, spheres, source } of instanceGroups.values()) {
       for (const batch of batches) batch.count = 0;
       for (let i = 0; i < spheres.length; i++) {
         const sphere = spheres[i];
         if (!viewVolume.intersectsSphere(sphere)) continue;
-        const p = sphere.center, depth = clip[3]*p.x + clip[7]*p.y + clip[11]*p.z + clip[15];
-        const batch = batches.length > 1 && depth > sphere.radius * nearScale ? batches[1] : batches[0];
+        const depth = viewDepth(sphere.center);
+        const lod = batches.length === 1 ? 0 : depth <= sphere.radius * fullTreeScale ? 0
+          : depth <= sphere.radius * midTreeScale ? 1 : 2;
+        const batch = batches[lod];
         const offset = batch.count++ * 16;
         for (let k = 0; k < 16; k++) batch.buffer.array[offset + k] = source[i * 16 + k];
       }
@@ -408,13 +515,114 @@
       }
     }
   }
-  function frame() {
+  // Print the interactive street scene onto warm paper. The edge wash comes from the
+  // actual image, so moving leaves, steps and trusses each receive the same ink treatment.
+  function streetPrint() {
+    const Target=renderer.capabilities.isWebGL2 ? THREE.WebGLMultisampleRenderTarget : THREE.WebGLRenderTarget;
+    const target=new Target(1,1,{minFilter:THREE.LinearFilter,magFilter:THREE.LinearFilter});
+    if (target.isWebGLMultisampleRenderTarget) target.samples=Math.min(2,renderer.capabilities.maxSamples);
+    const drawingSize = new THREE.Vector2();
+    const material = new THREE.ShaderMaterial({
+      uniforms:{drawing:{value:target.texture},pixel:{value:new THREE.Vector2()},strength:{value:1}},
+      vertexShader:`varying vec2 where;void main(){where=uv;gl_Position=vec4(position.xy,0.,1.);}`,
+      fragmentShader:`uniform sampler2D drawing;uniform vec2 pixel;uniform float strength;varying vec2 where;
+        float lightness(vec3 color){return dot(color,vec3(.26,.59,.15));}
+        float paperValue(vec2 uv){
+          vec4 sampleColor=texture2D(drawing,uv);
+          return lightness(sampleColor.rgb)+.931*(1.-sampleColor.a);
+        }
+        float grain(vec2 p){
+          vec2 cell=floor(p),f=fract(p);f=f*f*(3.-2.*f);
+          vec4 v=fract(sin(dot(cell,vec2(127.1,311.7))+vec4(0.,127.1,311.7,438.8))*43758.5453);
+          return mix(mix(v.x,v.y,f.x),mix(v.z,v.w,f.x),f.y);
+        }
+        void main(){
+          vec4 original=texture2D(drawing,where);
+          if(original.a<.012){gl_FragColor=vec4(0.);return;}
+          vec3 color=clamp(original.rgb/max(original.a,.01),0.,1.);
+          float l=lightness(color);
+          vec2 x=vec2(pixel.x,0.), y=vec2(0.,pixel.y);
+          float grain1=grain(gl_FragCoord.xy*.19),grain2=grain(gl_FragCoord.xy*.04);
+          float reach=1.05+1.4*grain2;
+          float edge=max(max(paperValue(where+x*reach),paperValue(where-x*reach)),
+            max(paperValue(where+y*reach),paperValue(where-y*reach)))-l;
+          float nib=smoothstep(.035,.23,edge)*(.29+.32*grain1);
+          float lift=smoothstep(.26,.82,l);
+          float tone=clamp(l*.95 + .16*lift-.088*(1.-lift),0.,1.);
+          vec3 ink=vec3(.10,.146,.155), warm=vec3(.958,.943,.905);
+          vec3 shade=mix(ink,vec3(.42,.466,.421),smoothstep(.02,.53,tone));
+          vec3 pigment=mix(shade,warm,smoothstep(.37,.94,tone));
+          float chroma=max(color.r,max(color.g,color.b))-min(color.r,min(color.g,color.b));
+          pigment+=(color-vec3(l))*(.71+.33*smoothstep(.08,.32,chroma));
+          pigment+=vec3(.022,.025,.023)*(grain1-.5)*smoothstep(.06,.29,l)*(1.-smoothstep(.77,.96,l));
+          pigment=mix(pigment,ink,nib*(1.-smoothstep(.74,.94,l)));
+          float amount=strength*(.89-.70*smoothstep(.59,.94,l));
+          color=mix(color,pigment,amount);
+          gl_FragColor=vec4(color*original.a,original.a);
+        }`,
+      depthTest:false,depthWrite:false,blending:THREE.NoBlending
+    });
+    const sheet=new THREE.PlaneGeometry(2,2), page=new THREE.Scene(), lens=new THREE.Camera();
+    const print=new THREE.Mesh(sheet,material);print.frustumCulled=false;page.add(print);
+    app.cleanups.push(()=>{sheet.dispose();material.dispose();target.dispose();});
+    return strength=>{
+      renderer.getDrawingBufferSize(drawingSize);
+      // Keep the four-sample edge wash within a phone-sized GPU memory budget.
+      const ratio=Math.min(1,Math.sqrt(2400000/(drawingSize.x*drawingSize.y)));
+      target.setSize(Math.max(1,Math.round(drawingSize.x*ratio)),Math.max(1,Math.round(drawingSize.y*ratio)));
+      material.uniforms.pixel.value.set(1/target.width,1/target.height);
+      material.uniforms.strength.value=strength;
+      renderer.setRenderTarget(target);
+      try { renderer.render(scene,camera); }
+      finally { renderer.setRenderTarget(null); }
+      renderer.render(page,lens);
+    };
+  }
+  let renderStreetPrint;
+  let renderScale=1, slowFrames=0, fastFrames=0;
+  let lastPaintAt=-Infinity, lastMoveAt=-Infinity, nextPaintAt=-Infinity;
+  let samplePaint=false, lastPaintMoving=false, openingPaintUntil=-Infinity;
+  const fullPixelRatio=()=>Math.min(window.devicePixelRatio||1,2);
+  function paintScale(now,moving) {
+    if (reduce) {
+      samplePaint=false;
+      slowFrames=fastFrames=0;
+      return 1;
+    }
+    if (moving) lastMoveAt=now;
+    if (samplePaint) {
+      const elapsed=now-lastPaintAt;
+      if (lastPaintMoving) {
+        slowFrames=elapsed>80 ? slowFrames+1 : 0;
+        fastFrames=elapsed<34 ? fastFrames+1 : 0;
+        if (slowFrames>=2) {
+          renderScale=Math.max(.35,renderScale*(elapsed>210?.59:.78));
+          slowFrames=0;
+        } else if (fastFrames>=30) {
+          renderScale=Math.min(1,renderScale+.12);
+          fastFrames=0;
+        }
+      }
+      // Let the browser composite and handle input between unusually expensive rasters.
+      nextPaintAt=Math.max(nextPaintAt,elapsed>80 ? now+Math.min(150,elapsed*.29) : now);
+      samplePaint=false;
+    }
+    return moving || now-lastMoveAt<650 ? renderScale : 1;
+  }
+
+  function frame(now = performance.now()) {
     if (app.state === 'failed') return;
-    try { renderFrame(); }
+    try { renderFrame(now); }
     catch (error) { console.error('Map rendering failed:', error); app.fail('三维画面已中断，请重新加载。'); }
   }
-  function renderFrame() {
+  function renderFrame(now) {
+    if (!reduce && now<openingPaintUntil) {
+      frameId=requestAnimationFrame(frame);
+      return;
+    }
     if (layoutDirty) refreshLayout();
+    // Motion follows the wall clock even when WebGL misses multiple display intervals.
+    if (flight) flight.time(Math.max(0,(now-flightStart)/1000));
     const delta = clock.getDelta();
     if (!reduce) sceneTime += Math.min(delta, .1);
     const t = sceneTime;
@@ -453,6 +661,13 @@
     if (camera.position.y < floorY) camera.position.y = floorY;
     // At walking height, keep the opposite facade solid while a wall touching the camera still dissolves.
     const streetView = laneCloseness * (1 - THREE.MathUtils.smoothstep(camera.position.y-ground, 3.8, 7));
+    streetLight.value=1.-THREE.MathUtils.smoothstep(camera.position.y-ground,24,95);
+    if (!streetContours && streetLight.value>.01 &&
+        Math.min(Math.hypot(camera.position.x+218,camera.position.z-36),Math.hypot(camera.position.x+62,camera.position.z-80))<100) {
+      streetContours=bakeLaneShadows();
+      registerProjectedDetail(streetContours);
+    }
+    controls.maxPolarAngle=Math.PI*THREE.MathUtils.lerp(.47,.55,streetView);
     cityCloseFade.value.set(6 - 5.4*streetView, 14 - 11.5*streetView);
     camU.uCam.value.copy(camera.position);
 
@@ -460,7 +675,9 @@
     // A high aerial view needs enough depth precision to separate the water and low banks.
     // Limit the near plane by both height and viewing distance when descending or zooming in.
     const clipNear = THREE.MathUtils.clamp(.01 * Math.min(camera.position.y - floorY, dist), .5, 12);
-    if (Math.abs(camera.near - clipNear) > .04) {
+    const streetFov=THREE.MathUtils.lerp(camera.aspect<.9?52:38,camera.aspect<.9?66:51,streetView*(1.-THREE.MathUtils.smoothstep(dist,32,67)));
+    if (Math.abs(camera.near - clipNear) > .04 || Math.abs(camera.fov-streetFov)>.08) {
+      camera.fov=streetFov;
       camera.near = clipNear;
       camera.updateProjectionMatrix();
     }
@@ -470,17 +687,37 @@
     const courtyard = atRedChamber * (1-THREE.MathUtils.smoothstep(dist, 120, 220));
     const cityNear = Math.max(55, dist * .45);
     const near = THREE.MathUtils.lerp(cityNear, dist * .88, courtyard);
-    fogU.uNear.value = near;
+    fogU.uNear.value = THREE.MathUtils.lerp(near,22,streetView);
     fogU.uFar.value = THREE.MathUtils.lerp(cityNear + Math.max(420, dist * 2.3), dist + 77, courtyard);
-    scene.fog.near = near; scene.fog.far = fogU.uFar.value;
+    fogU.uFar.value = THREE.MathUtils.lerp(fogU.uFar.value,293,streetView);
+    scene.fog.near = fogU.uNear.value; scene.fog.far = fogU.uFar.value;
 
     controls.update();
     // Reduced motion freezes the water, wind, boats and birds. Repaint the geometry on a
     // camera or layout change; keyboard focus and labels still update independently.
-    if (sceneDirty) fitSunToSky();
-    if (!reduce || sceneDirty) {
+    if (sceneDirty) fitSunToSky(streetView);
+    const moving=!!flight || sceneDirty;
+    const firstPaint=!reduce && app.state==='loading';
+    // Present a real opening frame before queuing full-size animated buffers.
+    const scale=firstPaint ? .60 : paintScale(now,moving);
+    const ratio=fullPixelRatio()*scale;
+    const resolutionDirty=renderer.getPixelRatio()!==ratio;
+    // Leave time for pointer/DOM updates on slow rasterizers once the full-size still is restored.
+    const idleInterval=renderScale<.85 && scale===1 ? 1200 : 0;
+    const readyToPaint=now>=nextPaintAt;
+    if (reduce ? sceneDirty || resolutionDirty : readyToPaint &&
+        (moving || resolutionDirty || now-lastPaintAt>=idleInterval)) {
+      if (resolutionDirty) renderer.setDrawingBufferSize(W,H,ratio);
+      prepareBridgeReflections();
       updateLandscapeVisibility();
-      renderer.render(scene, camera);
+      if (streetView>.01 && renderer.getPixelRatio()>=.7) {
+        renderStreetPrint ||= streetPrint();
+        renderStreetPrint(streetView*.68);
+      } else renderer.render(scene, camera);
+      lastPaintAt=now;
+      lastPaintMoving=moving;
+      samplePaint=!firstPaint;
+      if (firstPaint) openingPaintUntil=performance.now()+760;
       sceneDirty = false;
     }
     const focusMarks = layout.compact && !['home','core','lake','bridge','yingwuzhou'].includes(activeView) ? .38 : markFarScale;

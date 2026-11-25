@@ -13,10 +13,13 @@
     const woodColor = '#544b3b';
     const crownProfile = [[-.63, .53], [-.28, .89], [.17, 1], [.65, .64]];
     const distantCrownProfile = [[-.39, .81], [.28, .95]];
+    const sprayProfile = [[-.52,.40],[-.19,.68],[.17,.76],[.51,.53]];
 
-    function prototype(crownSides = 7, crownRings = crownProfile) {
-      const positions = [], indices = [], colors = [];
+    function prototype(crownSides = 7, crownRings = crownProfile, spray = false) {
+      const positions = [], indices = [], colors = [], centers = [];
+      let center=null;
       function add(x, y, z, tint, shade) {
+        if (spray) centers.push(...(center ?? [0,0,0]));
         positions.push(x, y, z);
         colors.push(tint.r * shade, tint.g * shade, tint.b * shade);
       }
@@ -45,6 +48,7 @@
         }
       }
       function crown([x, y, z, w, h, d, hex, yaw]) {
+        center=[x,y,z];
         const offset = positions.length / 3;
         const tint = new THREE.Color(hex), c = Math.cos(yaw), s = Math.sin(yaw);
         const rings = crownRings, n = crownSides;
@@ -52,7 +56,8 @@
         for (const [j, [py, radius]] of rings.entries()) {
           for (let i = 0; i < n; i++) {
             const a = i * Math.PI * 2 / n + (j % 2) * .27;
-            const bud = Math.sin(a * 3 + phase) * .14 + Math.cos(a * 2 - phase + j) * .09;
+            const bud = Math.sin(a * 3 + phase) * (spray ? .085 : .14) +
+              Math.cos(a * 2 - phase + j) * (spray ? .055 : .09);
             const px = Math.cos(a) * (radius + bud) + py * .12;
             const pz = -Math.sin(a) * (radius + bud);
             const lift = py + .13 * Math.cos(a * 2 + phase - j * .5);
@@ -71,16 +76,28 @@
           const next = (i + 1) % n;
           indices.push(floor, offset + next, offset + i, top, last + i, last + next);
         }
+        center=null;
+      }
+      function leaf(p,length,width,yaw,dip,tint,shade) {
+        const along=new THREE.Vector3(Math.cos(yaw),dip,Math.sin(yaw)).normalize();
+        const across=new THREE.Vector3(-Math.sin(yaw),.32*Math.cos(yaw*1.7),Math.cos(yaw)).normalize();
+        const offset=positions.length/3;
+        for (const [u,v,lift] of [[-.58,0,0],[-.05,.47,.01],[.60,0,.09],[-.10,-.40,0],[.06,0,.22]]) {
+          const q=p.clone().addScaledVector(along,length*u).addScaledVector(across,width*v);
+          add(q.x,q.y+width*lift,q.z,tint,shade*(v>.05 ? 1.035 : .97));
+        }
+        for (let i=0;i<4;i++) indices.push(offset+4,offset+(i+1)%4,offset+i);
       }
       function geometry() {
         const mesh = new THREE.BufferGeometry();
         mesh.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
         mesh.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+        if (spray) mesh.setAttribute('crownCenter',new THREE.Float32BufferAttribute(centers,3));
         mesh.setIndex(indices);
         mesh.computeVertexNormals();
         return mesh;
       }
-      return { branch, crown, geometry };
+      return { branch, crown, leaf, geometry };
     }
 
     // Species use the same height origin and several deliberately offset canopy lobes.
@@ -177,8 +194,10 @@
       }
     };
 
-    for (const [i, model] of Object.values(treeTypes).entries()) {
-      const wood = prototype(), leaves = prototype();
+    for (const [i, [species,model]] of Object.entries(treeTypes).entries()) {
+      const wood=prototype(), leaves=prototype(7,sprayProfile,true);
+      const midLeaves=prototype(5,distantCrownProfile,true);
+      const rng=seeded(0xa10b39+i*9137), weeping=species==='willow';
       // Broadening the first tube into the root flare keeps the trunk on irregular ground.
       const stem = [.34, .21, .135, .054];
       for (const [j, point] of model.trunk.slice(1).entries())
@@ -195,15 +214,62 @@
         const angle = i * 1.7 + k * 2.3;
         wood.branch([0, .13, 0], [.63 * Math.cos(angle), -.23, .63 * Math.sin(angle)], .16, .077, 4);
       }
-      for (const lobe of model.crowns) leaves.crown(lobe);
+      const midWood=wood.geometry();
+      const axes=model.limbs.flat().map(p=>new THREE.Vector3(...p));
+      const paperSprigs=[];
+      axes.push(new THREE.Vector3(...model.trunk.at(-1)));
+      for (const [cx,cy,cz,w,h,d,hex,yaw] of model.crowns) {
+        const origin=new THREE.Vector3(cx,cy,cz), tint=new THREE.Color(hex);
+        const stem=axes.reduce((a,b)=>a.distanceToSquared(origin)<b.distanceToSquared(origin)?a:b);
+        const fork=stem.clone().lerp(origin,.68);
+        wood.branch(stem.toArray(),fork.toArray(),.052,.025,4);
+        const c=Math.cos(yaw),s=Math.sin(yaw);
+        const local=(a,b,z)=>new THREE.Vector3(cx+c*a*w+s*z*d,cy+b*h,cz-s*a*w+c*z*d);
+        const n=8;
+        for (let j=0;j<n;j++) {
+          const a=j*2.399+yaw, radius=.23+.40*rng();
+          const px=Math.cos(a)*radius,pz=Math.sin(a)*radius, py=(rng()-.43)*.74;
+          const mid=local(px,py,pz);
+          const fat=.126+.076*rng(), lift=weeping ? .24+.13*rng() : .16+.11*rng();
+          const color=tint.clone().multiplyScalar(.83+.24*rng());
+          if ((j+Math.round(7*yaw))%3!==1) {
+            const cluster=[mid.x,mid.y,mid.z,w*fat,h*lift,d*fat,color.getStyle(),yaw+a*.25];
+            leaves.crown(cluster);
+            midLeaves.crown(cluster);
+          }
+          const tip=mid.clone().lerp(origin,.12), node=stem.clone().lerp(fork,.65+(j%4)*.11);
+          wood.branch(node.toArray(),tip.toArray(),.022,.009,3);
+          const k=12, trace=tip.clone();
+          for (let l=0;l<k;l++) {
+            const theta=a+l*2.399, r=.075+.28*rng();
+            const drop=weeping ? -.49*l/(k-1) : (rng()-.35)*.42;
+            const p=local(px+Math.sin(theta)*r,py+drop,pz+Math.cos(theta)*r);
+            const mark=(.083+.124*rng())*(w+d)*.5;
+            const width=mark*(weeping ? .21+.11*rng() : .39+.28*rng());
+            const dip=(weeping ? -.95 : -.40)+.75*rng(), shade=.70+.38*rng();
+            leaves.leaf(p,mark,width,theta,dip,tint,shade);
+            if (l%4===j%4) midLeaves.leaf(p,mark,width,theta,dip,tint,shade);
+            if ((weeping ? l%3 : l%4)===0) {
+              const end=p.clone().lerp(mid,.15);
+              wood.branch((weeping ? trace : tip).toArray(),end.toArray(),.011,.004,3);
+              if (species==='broadleaf' && l===0 && (j===1 || j===5)) {
+                paperSprigs.push({root:end, direction:end.clone().sub(fork), tint:hex});
+              }
+              trace.copy(end);
+            }
+          }
+        }
+      }
       model.assets = { wood: wood.geometry(), foliage: leaves.geometry() };
+      model.paperSprigs=paperSprigs;
+      model.midAssets = { wood: midWood, foliage: midLeaves.geometry() };
       // Distant instances keep the full footprint and pigment from three broad lobes.
       const farWood = prototype(), farLeaves = prototype(5, distantCrownProfile);
       farWood.branch(model.trunk[0], model.trunk[1], stem[0], stem[1], 4);
       farWood.branch(model.trunk[1], model.trunk[3], stem[1], stem[3], 4);
       for (const lobe of model.distantCrown) farLeaves.crown(lobe);
       model.farAssets = { wood: farWood.geometry(), foliage: farLeaves.geometry() };
-      for (const geometry of [...Object.values(model.assets), ...Object.values(model.farAssets)]) {
+      for (const geometry of [...Object.values(model.assets), ...Object.values(model.midAssets), ...Object.values(model.farAssets)]) {
         const response = new Float32Array(geometry.attributes.position.count).fill(model.wind);
         geometry.setAttribute('windResponse', new THREE.BufferAttribute(response, 1));
       }
@@ -559,22 +625,143 @@
       }
     }
 
+    // Smaller crowns belong to the inland gardens rather than the open river edge.
+    const laneGrove = seeded(0x5a71bea);
+    for (const [x,z,spread,height] of [
+      [-215.40,40.67,.44,.34],[-216.88,42.40,.37,.27],[-231.70,43.62,.39,.29],
+      [-50.70,79.20,.46,.35],[-51.95,77.66,.36,.29],[-43.10,62.20,.44,.31],
+      [-40.72,54.21,.35,.27],
+    ]) plant('broadleaf',x,z,spread,height,laneGrove);
+
+    const paperTargets=[[-226,40],[-216.88,42.4],[-50.7,79.2],[-78.8,80.9]];
+    const activePaperTrees=paperTargets.map(([x,z])=>V(x,z,0));
+
+    // Paper branches sit on the same twig tips and move in the same wind as their trunk.
+    function addPaperFoliage() {
+      if (typeof laneFoliage==='undefined' || !laneFoliage) return;
+      const model=treeTypes.broadleaf;
+      const sprays=[];
+      const material=new THREE.ShaderMaterial({
+        side:THREE.DoubleSide,alphaToCoverage:true,vertexColors:true,
+        uniforms:{...fogU,...weatherU,atlas:{value:laneFoliage}},
+        vertexShader:vegetationWind+`
+          attribute vec2 stemWind;
+          varying vec2 vUV;
+          varying vec3 vInk;
+          varying float vDistance;
+          void main() {
+            vec4 w=modelMatrix*vec4(position,1.);
+            vec2 wind=windAt(modelMatrix[3].xz)*stemWind.x;
+            w.xz+=wind*stemWind.y;
+            vec4 view=viewMatrix*w;
+            vDistance=-view.z;
+            vUV=uv; vInk=color;
+            gl_Position=projectionMatrix*view;
+          }`,
+        fragmentShader:`
+          uniform sampler2D atlas;
+          uniform vec3 uFog;
+          uniform float uNear,uFar;
+          varying vec2 vUV;
+          varying vec3 vInk;
+          varying float vDistance;
+          void main(){
+            vec4 wash=texture2D(atlas,vUV);
+            if (wash.a<.28) discard;
+            float leaf=smoothstep(.19,.49,dot(wash.rgb,vec3(.25,.6,.15)));
+            vec3 pigment=wash.rgb*mix(vec3(.89,.86,.81),vInk*1.47,leaf*.44);
+            gl_FragColor=vec4(mix(pigment,uFog,smoothstep(uNear,uFar,vDistance)),smoothstep(.28,.66,wash.a));
+          }`,
+      });
+      for (const [tree,[x,z]] of paperTargets.entries()) {
+        const matrix=model.instances.find(({elements:e})=>Math.hypot(x-e[12],z-e[14])<.12);
+        if (!matrix) continue;
+        const base=V().setFromMatrixPosition(matrix), positions=[],uv=[],pigments=[],wind=[],indices=[];
+        const scale=V().setFromMatrixScale(matrix);
+        for (let i=0;i<8;i++) {
+          const {root,direction,tint}=model.paperSprigs[(i*5+tree)%model.paperSprigs.length];
+          const theta=Math.atan2(direction.z,direction.x)+(i%2 ? .69 : -.62);
+          const span=1.08+.27*Math.sin(i*2.41+tree), height=.99+.25*Math.cos(i*1.43);
+          const u=V(Math.cos(theta)*span,.10*Math.cos(i*2.7),Math.sin(theta)*span);
+          const v=V(direction.x*.19,height,direction.z*.19);
+          const color=new THREE.Color(tint);
+          const start=positions.length/3;
+          for (let row=0;row<3;row++) for (let col=0;col<3;col++) {
+            const s=col/2,t=row/2;
+            const bend=.31*Math.sin(Math.PI*s)*(t-.085);
+            const local=root.clone().addScaledVector(u,s-.018).addScaledVector(v,t-.085)
+              .add(V(-Math.sin(theta)*bend,0,Math.cos(theta)*bend));
+            const shear=Math.max(local.y-.28,0)*.255;
+            wind.push(model.wind,shear*shear*scale.y);
+            positions.push(...local.applyMatrix4(matrix).sub(base).toArray());
+            uv.push(s,t); pigments.push(color.r,color.g,color.b);
+          }
+          for (let row=0;row<2;row++) for (let col=0;col<2;col++) {
+            const a=start+row*3+col;
+            indices.push(a,a+1,a+3,a+1,a+4,a+3);
+          }
+        }
+        const geo=new THREE.BufferGeometry();
+        geo.setAttribute('position',new THREE.Float32BufferAttribute(positions,3));
+        geo.setAttribute('uv',new THREE.Float32BufferAttribute(uv,2));
+        geo.setAttribute('color',new THREE.Float32BufferAttribute(pigments,3));
+        geo.setAttribute('stemWind',new THREE.Float32BufferAttribute(wind,2));
+        geo.setIndex(indices);
+        geo.computeBoundingSphere();
+        const mesh=new THREE.Mesh(geo,material);
+        mesh.name='两岸近树纸本枝叶 · '+(tree+1);
+        mesh.position.copy(base);
+        mesh.visible=false;
+        scene.add(mesh);
+        sprays.push({mesh,center:activePaperTrees[tree]});
+      }
+      // A nonzero projected canopy must justify the alpha coverage work. Perspective stays entirely in the geometry.
+      const point=new THREE.Vector3();
+      scene.onBeforeRender=(renderer,world,view)=>{
+        if (view!==camera) return;
+        const pixelScale=renderer.domElement.clientHeight*view.projectionMatrix.elements[5];
+        for (const {mesh,center} of sprays) {
+          const sphere=mesh.geometry.boundingSphere;
+          const depth=-point.copy(sphere.center).add(mesh.position).applyMatrix4(view.matrixWorldInverse).z;
+          const diameter=sphere.radius*pixelScale/Math.max(depth,.01);
+          mesh.visible=depth>0 && diameter>56;
+          center.z=mesh.visible ? THREE.MathUtils.smoothstep(diameter,56,64) : 0;
+        }
+      };
+      app.cleanups.push(()=>{
+        material.dispose();
+        for (const {mesh} of sprays) mesh.geometry.dispose();
+      });
+    }
+    addPaperFoliage();
+
     // Color stores sRGB floats for the standalone map and the Blender capture.
     const plantMaterial = new THREE.ShaderMaterial({
-      vertexColors: true,
-      uniforms: { ...fogU, ...weatherU, uLight: sharedInk.uLight, uCanopy: { value: 1 } },
+      vertexColors: true, side:THREE.DoubleSide,
+      uniforms: { ...fogU, ...weatherU, uLight: sharedInk.uLight, uCanopy: { value: 1 }, uPaperTrees:{value:activePaperTrees} },
       vertexShader: vegetationWind + `
         attribute float windResponse;
+        attribute vec3 crownCenter;
+        uniform vec3 uPaperTrees[4];
         varying vec3 vTint, vNormal, vWorld, vSprig;
         varying float vDistance;
         void main() {
-          vec4 w = modelMatrix * instanceMatrix * vec4(position, 1.0);
+          vec2 root = (modelMatrix * instanceMatrix[3]).xz;
+          vec3 sprig=position;
+          if(crownCenter.y>0.){
+            for(int i=0;i<4;i++){
+              vec3 tree=uPaperTrees[i];
+              vec2 offset=root-tree.xy;
+              if(tree.z>.0 && dot(offset,offset)<.025)
+                sprig=mix(sprig,crownCenter,tree.z*.60);
+            }
+          }
+          vec4 w = modelMatrix * instanceMatrix * vec4(sprig, 1.0);
           mat3 basis = mat3(instanceMatrix);
           vec3 scaled = normal / vec3(dot(basis[0], basis[0]), dot(basis[1], basis[1]), dot(basis[2], basis[2]));
-          vec2 root = (modelMatrix * instanceMatrix[3]).xz;
           // Bark and foliage share a shear so branch tips stay inside their lobes.
           vec2 wind = windAt(root) * windResponse;
-          float bendHeight = max(position.y - .28, 0.) * .255;
+          float bendHeight = max(sprig.y - .28, 0.) * .255;
           w.xz += wind * bendHeight * bendHeight * length(mat3(modelMatrix) * basis[1]);
           vec3 worldNormal = mat3(modelMatrix) * basis * scaled;
           worldNormal.y -= dot(worldNormal.xz, wind) * bendHeight * .51;
@@ -592,7 +779,7 @@
         varying vec3 vTint, vNormal, vWorld, vSprig;
         varying float vDistance;
         void main() {
-          float light = dot(normalize(vNormal),normalize(uLight))*.5+.5;
+          float light = dot(normalize(gl_FrontFacing ? vNormal : -vNormal),normalize(uLight))*.5+.5;
           float depth = smoothstep(.23,.73,light);
           vec3 pigment = vTint*(.67+.38*depth);
           if(uCanopy>.5){
@@ -616,6 +803,7 @@
     });
     plantMaterial.userData.windVegetation = true;
     const barkMaterial = plantMaterial.clone();
+    barkMaterial.side = THREE.FrontSide;
     barkMaterial.uniforms = { ...plantMaterial.uniforms, uCanopy: { value: 0 } };
     for (const [species, model] of Object.entries(treeTypes)) {
       for (const [part, geometry] of Object.entries(model.assets)) {
@@ -624,6 +812,7 @@
         mesh.name = `Vegetation / ${species} / ${part}`;
         mesh.userData.vegetation = { species, part, material: part === 'wood' ? 'plantBark' : model.material };
         mesh.userData.farGeometry = model.farAssets[part];
+        mesh.userData.midGeometry = model.midAssets[part];
         model.instances.forEach((matrix, i) => mesh.setMatrixAt(i, matrix));
         mesh.instanceMatrix.needsUpdate = true;
         scene.add(mesh);
@@ -631,6 +820,135 @@
     }
   }
   buildVegetation();
+
+  // Small plants follow wall bases and fallow shoulders. Paths retain a clear strip.
+  function plantLaneVerge() {
+    const leafInk=inkMat(.34,true,['#606d51','#a4a473']);
+    const stalkInk=inkMat(.37,true,['#736d4f','#b7a476']);
+    const ink=vergeWash(.34,['#6f7a5e','#a5a788']);
+    const paths=[...cityGround.streets,...cityGround.courtyardPaths];
+    const beds=[
+      ['汉阳滨水街巷地面',[
+        [-215.2,38.0,4.8,1.22,-.10],[-221.9,45.3,3.3,1.72,.24],
+        [-228.0,21.6,4.2,1.04,-.55],[-231.5,32.2,2.5,.84,-.78],
+        [-230.1,43.3,3.3,1.24,.50],[-231.6,47.0,2.6,1.39,-.47],
+        [-202.0,31.6,3.1,.93,.34],[-201.5,34.2,2.8,.83,.28],
+      ]],
+      ['武昌滨水街巷地面',[
+        [-65.1,81.2,3.8,1.16,-.15],[-61.0,86.1,4.2,1.46,.06],
+        [-55.2,84.2,2.8,1.18,.48],[-48.9,74.8,3.5,.88,.67],
+        [-40.4,75.5,3.2,1.25,-.83],[-35.1,53.1,2.3,.89,-.43],
+        [-30.4,55.7,2.37,1.11,-.17],[-67.7,87.2,4.6,1.24,.28],
+        [-40.4,77.62,1.58,.56,-.31],[-38.48,53.03,1.07,.44,.77],
+      ]],
+    ];
+    let seed=0x74e69c;
+    const sample=()=>((seed=(Math.imul(seed,1664525)+1013904223)>>>0)/4294967296);
+    const show=(group,label,material,shader,positions,alpha)=>{
+      if (!positions.length) return;
+      const geometry=new THREE.BufferGeometry();
+      geometry.setAttribute('position',new THREE.Float32BufferAttribute(positions,3));
+      if (alpha) geometry.setAttribute('vergeCover',new THREE.Float32BufferAttribute(alpha,1));
+      geometry.computeVertexNormals();
+      const mesh=new THREE.Mesh(geometry,shader);
+      mesh.name=group+' · '+label;
+      mesh.userData.landscapeSurface={group,name:mesh.name,material};
+      mesh.userData.detailSize=.44;
+      mesh.userData.vergePlanting=true;
+      scene.add(mesh);
+    };
+    for (const [group,locations] of beds) {
+      const soil=[],alpha=[],blades=[],stalks=[];
+      for (const [cx,cz,rx,rz,yaw] of locations) {
+        const near=paths.filter(({a,b})=>cx>=Math.min(a.x,b.x)-6 && cx<=Math.max(a.x,b.x)+6 &&
+          cz>=Math.min(a.z,b.z)-6 && cz<=Math.max(a.z,b.z)+6);
+        const c=Math.cos(yaw),s=Math.sin(yaw);
+        function point(a,b) {
+          const x=cx+a*c+b*s,z=cz-a*s+b*c;
+          const y=plantingSurface(x,z);
+          if (y===null || cityGround.occupied(x,z,.05)) return null;
+          for (const {a,b,width} of near) {
+            const dx=b.x-a.x,dz=b.z-a.z;
+            const t=THREE.MathUtils.clamp(((x-a.x)*dx+(z-a.z)*dz)/(dx*dx+dz*dz||1),0,1);
+            if (Math.hypot(x-a.x-dx*t,z-a.z-dz*t)<width*.5+.18) return null;
+          }
+          return V(x,y+.041,z);
+        }
+        const layers=[[],[],[]], rings=[.24,.63,1], sides=15;
+        for (let i=0;i<sides;i++) {
+          const angle=i*Math.PI*2/sides, scale=.79+sample()*.31;
+          rings.forEach((r,j)=>layers[j].push(point(rx*scale*r*Math.cos(angle),rz*scale*r*Math.sin(angle))));
+        }
+        function triangle(a,b,c,x,y,z) {
+          if (!a||!b||!c) return;
+          soil.push(...a.toArray(),...b.toArray(),...c.toArray());
+          alpha.push(x,y,z);
+        }
+        const center=point(0,0);
+        for (let i=0;i<sides;i++) {
+          const j=(i+1)%sides;
+          triangle(center,layers[0][j],layers[0][i],.78,.66,.66);
+          for (let k=0;k<2;k++) {
+            const [a,b]=[layers[k][i],layers[k][j]], [c,d]=[layers[k+1][i],layers[k+1][j]];
+            const inner=k===0?.66:.34, outer=k===0?.34:0;
+            triangle(a,b,c,inner,inner,outer);
+            triangle(b,d,c,inner,outer,outer);
+          }
+        }
+        for (let i=0,count=Math.min(38,Math.ceil(10+6*rx*rz));i<count;i++) {
+          const a=sample()*Math.PI*2,r=.87*Math.sqrt(sample());
+          const p=point(r*rx*Math.cos(a),r*rz*Math.sin(a));
+          if (!p) continue;
+          for (let j=0,n=2+Math.floor(sample()*4);j<n;j++) {
+            const turn=a+j*2.399+sample(), h=.07+sample()*.22, wide=.014+sample()*.025;
+            const side=V(-Math.sin(turn)*wide,0,Math.cos(turn)*wide);
+            const bias=V(Math.cos(turn),0,Math.sin(turn));
+            const root=p.clone().addScaledVector(bias,.045*sample());
+            const mid=root.clone().addScaledVector(bias,h*.24).add(V(0,h*.62,0));
+            const tip=root.clone().addScaledVector(bias,h*.64).add(V(0,h,0));
+            const left=root.clone().addScaledVector(side,-.18),right=root.clone().addScaledVector(side,.18);
+            const d=mid.clone().sub(side),e=mid.clone().add(side);
+            const stroke=j===0 && i%3===0 ? stalks : blades;
+            stroke.push(...left.toArray(),...right.toArray(),...d.toArray(),...d.toArray(),...right.toArray(),...e.toArray(),
+              ...d.toArray(),...e.toArray(),...tip.toArray());
+          }
+        }
+      }
+      show(group,'野草土斑','BankGrass',ink,soil,alpha);
+      show(group,'墙脚野叶','Reeds',leafInk,blades);
+      show(group,'篱根草穗','Reeds',stalkInk,stalks);
+    }
+  }
+  plantLaneVerge();
+
+
+  // Keep the established verge roots; bend each narrow blade into an inclined arc.
+  function archLaneGrasses() {
+    for (const mesh of scene.children.filter(node=>node.name.endsWith(' · 巷脚细草'))) {
+      const old=mesh.geometry, blades=old.attributes.position, positions=[];
+      for (let i=0;i<blades.count;i+=3) {
+        const left=V().fromBufferAttribute(blades,i), right=V().fromBufferAttribute(blades,i+1);
+        const root=left.clone().lerp(right,.5), tip=V().fromBufferAttribute(blades,i+2);
+        const side=right.clone().sub(left).multiplyScalar(.31), height=tip.y-root.y;
+        const drift=tip.clone().sub(root).setY(0).multiplyScalar(1.40);
+        const middle=root.clone().addScaledVector(drift,.36).add(V(0,height*.62,0));
+        const neck=root.clone().addScaledVector(drift,.77).add(V(0,height*.88,0));
+        const edge=(p,scale)=>[p.clone().addScaledVector(side,-scale),p.clone().addScaledVector(side,scale)];
+        const sections=[edge(root,.55),edge(middle,.76),edge(neck,.32),[root.clone().add(drift).add(V(0,height*.91,0))]];
+        for (let j=0;j<sections.length-1;j++) {
+          const [a,b]=sections[j], [c,d]=sections[j+1];
+          positions.push(...a.toArray(),...b.toArray(),...c.toArray());
+          if (d) positions.push(...b.toArray(),...d.toArray(),...c.toArray());
+        }
+      }
+      const geometry=new THREE.BufferGeometry();
+      geometry.setAttribute('position',new THREE.Float32BufferAttribute(positions,3));
+      geometry.computeVertexNormals();
+      mesh.geometry=geometry;
+      old.dispose();
+    }
+  }
+  archLaneGrasses();
 
 
   // Bake each building footprint and tree root into the paper and slope materials once.
@@ -674,3 +992,119 @@
     app.cleanups.push(() => field.dispose());
   }
   bakeGroundContact();
+
+  // The streets are static. Bake the light once, retaining actual eaves, trees and doorway silhouettes.
+  function bakeLaneShadows() {
+    const sun=sharedInk.uLight.value;
+    const center=V(-139,6,59);
+    const lens=new THREE.OrthographicCamera(-140,140,88,-88,30,360);
+    lens.position.copy(center).addScaledVector(sun,193);
+    lens.lookAt(center);
+    lens.updateMatrixWorld();
+    const depth=new THREE.MeshDepthMaterial({depthPacking:THREE.RGBADepthPacking,side:THREE.DoubleSide});
+    const casters=new THREE.Scene();
+    const receivers=new Set();
+    const nearLane=(x,z)=>Math.min(Math.hypot(x+218,z-36),Math.hypot(x+62,z-80))<72;
+    const matrix=new THREE.Matrix4(), selected=[], nearbyCrowns=[];
+    const besideWalk=(x,z)=>Math.min(Math.hypot(x+206,z-35),Math.hypot(x+67,z-84))<15;
+    scene.updateMatrixWorld(true);
+    scene.traverse(mesh=>{
+      if (!mesh.isMesh) return;
+      if (mesh.material?.fragmentShader?.includes('#ifdef LANE_SHADOW')) receivers.add(mesh.material);
+      if (mesh.isInstancedMesh && (mesh.name.startsWith('City /') || mesh.userData.vegetation)) {
+        selected.length=0;
+        nearbyCrowns.length=0;
+        const foliage=mesh.userData.vegetation?.part==='foliage';
+        // Visibility compaction rewrites the draw buffer. The shadow needs the original street.
+        const authored=mesh.userData.authoredMatrices ?? mesh.instanceMatrix.array;
+        for (let i=0;i<authored.length/16;i++) {
+          matrix.fromArray(authored,i*16);
+          const x=matrix.elements[12], z=matrix.elements[14];
+          if (!nearLane(x,z)) continue;
+          // Keep the nearest patches of dapple broken into leaves. The far proxy supplies the other crowns.
+          const batch=foliage && besideWalk(x,z) ? nearbyCrowns : selected;
+          batch.push(i);
+        }
+        for (const [ids,geometry] of [
+          [selected,mesh.userData.farGeometry ?? mesh.geometry],
+          [nearbyCrowns,mesh.userData.midGeometry]
+        ]) {
+          if (!ids.length) continue;
+          const copies=new THREE.InstancedMesh(geometry,depth,ids.length);
+          ids.forEach((source,i)=>{copies.setMatrixAt(i,matrix.fromArray(authored,source*16));});
+          copies.frustumCulled=false;
+          copies.userData.trace=mesh.name.startsWith('City /');
+          casters.add(copies);
+        }
+      } else if (!mesh.userData.vergePlanting && /滨水街巷|茶棚后街坊/.test(mesh.userData.landscapeSurface?.group ?? '')) {
+        mesh.geometry.computeBoundingBox();
+        if (mesh.geometry.boundingBox.max.y<LAND_Y+.29) return;
+        const copy=new THREE.Mesh(mesh.geometry,depth);
+        copy.applyMatrix4(mesh.matrixWorld);
+        copy.userData.trace=true;
+        casters.add(copy);
+      }
+    });
+    // A single batched line drawing picks up the corners of the houses and joinery near the visitor.
+    const drawn=[], vertex=new THREE.Vector3();
+    for (const part of casters.children) {
+      if (!part.userData.trace) continue;
+      const edges=new THREE.EdgesGeometry(part.geometry,46);
+      const points=edges.getAttribute('position');
+      for (let i=0;i<(part.isInstancedMesh ? part.count : 1);i++) {
+        if (part.isInstancedMesh) {
+          part.getMatrixAt(i,matrix);
+          const x=matrix.elements[12], z=matrix.elements[14];
+          if (Math.min(Math.hypot(x+222,z-36),Math.hypot(x+54,z-75))>36) continue;
+        } else matrix.copy(part.matrix);
+        for (let k=0;k<points.count;k++) {
+          vertex.fromBufferAttribute(points,k).applyMatrix4(matrix);
+          drawn.push(vertex.x,vertex.y,vertex.z);
+        }
+      }
+      edges.dispose();
+    }
+    const lines=new THREE.BufferGeometry();
+    lines.setAttribute('position',new THREE.Float32BufferAttribute(drawn,3));
+    const inkLine=new THREE.ShaderMaterial({
+      transparent:true,depthWrite:false,uniforms:{...camU,fade:cityCloseFade},
+      vertexShader:`varying vec3 point; varying float depth;
+        void main(){point=position;vec4 mv=viewMatrix*vec4(position,1.);depth=-mv.z;
+          gl_Position=projectionMatrix*mv;gl_Position.z-=.000012*gl_Position.w;}`,
+      fragmentShader:NOISE+`varying vec3 point;varying float depth;uniform vec3 uCam;uniform vec2 fade;
+        void main(){float d=length(point-uCam);
+          float focus=smoothstep(fade.x,fade.y,d)*(1.-smoothstep(21.,68.,depth));
+          float broken=vnoise(point.xz*1.7+point.y*.72);
+          gl_FragColor=vec4(.185,.186,.159,focus*(.13+.48*smoothstep(.20,.82,broken)));}`
+    });
+    const contours=new THREE.LineSegments(lines,inkLine);
+    contours.name='两岸街屋转角墨线';
+    contours.raycast=()=>{};
+    contours.userData.detailDepth=68;
+    scene.add(contours);
+    app.cleanups.push(()=>{lines.dispose();inkLine.dispose();});
+    const size=Math.min(2048,renderer.capabilities.maxTextureSize);
+    const shadow=new THREE.WebGLRenderTarget(size,size,{minFilter:THREE.NearestFilter,magFilter:THREE.NearestFilter});
+    const previous=renderer.getRenderTarget();
+    casters.background=new THREE.Color(0xffffff);
+    try {
+      renderer.setRenderTarget(shadow);
+      renderer.render(casters,lens);
+    } finally {
+      renderer.setRenderTarget(previous);
+      casters.children.forEach(mesh=>{if(mesh.isInstancedMesh) mesh.dispose();});
+      depth.dispose();
+    }
+    const uniforms={
+      uLaneShadow:{value:shadow.texture},
+      uLaneLight:{value:new THREE.Matrix4().multiplyMatrices(lens.projectionMatrix,lens.matrixWorldInverse)},
+      uShadowTexel:{value:new THREE.Vector2(1/size,1/size)},
+    };
+    for (const material of receivers) {
+      material.defines={...material.defines,LANE_SHADOW:1};
+      Object.assign(material.uniforms,uniforms);
+      material.needsUpdate=true;
+    }
+    app.cleanups.push(()=>shadow.dispose());
+    return contours;
+  }

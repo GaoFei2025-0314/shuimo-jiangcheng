@@ -1,5 +1,5 @@
   /* 导览与观画共用画幅计算。 */
-  function createMapLayout(invalidate) {
+  function createMapLayout(invalidate, onLeavePainting) {
     const media = window.matchMedia('(max-width: 640px), (max-height: 500px)');
     const poem = document.getElementById('poem'), text = document.getElementById('cardText');
     const poemButton = document.getElementById('poem-toggle'), detailsButton = document.getElementById('details-toggle');
@@ -29,10 +29,11 @@
       panel = panel === name ? null : name;
       updatePanels();
     }
-    function setPainting(enabled) {
+    function setPainting(enabled,focusButton=true) {
+      if (painting && !enabled) onLeavePainting();
       painting = enabled;
       panel = null;
-      paintingButton.focus({ preventScroll: true });
+      if (focusButton) paintingButton.focus({ preventScroll: true });
       paintingButton.textContent = enabled ? '退出观画' : '观画';
       paintingButton.toggleAttribute('data-painting', enabled);
       paintingExtras.forEach(el => { el.hidden = enabled; });
@@ -69,6 +70,7 @@
     app.cleanups.push(() => observer.disconnect());
     updatePanels();
     return {
+      setPainting,
       get compact() { return media.matches; },
       measure(width, height) {
         updateNavEdges();

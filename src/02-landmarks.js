@@ -13,10 +13,11 @@
     suspensionOrange: ['#864432', '#dc895d'],
     glaze: ['#42574e', '#8c9a87'],
     cityWall: ['#a19788', '#ddd6c6'], cityRoof: ['#65736c', '#aaafa0'],
-    cityBrick: ['#978275', '#c9b6a0'], cityShade: ['#7f8075', '#b0ac9c']
+    cityBrick: ['#888578', '#c6b9a6'], cityShade: ['#7f8075', '#b0ac9c']
   };
   const shelteredInk = { timber:.34, vermilion:.24, roofGold:.29, shadow:.18, steel:.33, glaze:.21 };
   const distantCityWash = { cityWall:.27, cityRoof:.68, cityBrick:.43, cityShade:.80 };
+  const cityDetail = {cityWall:'CITY_WALL',cityRoof:'CITY_TILE',cityBrick:'CITY_BRICK',cityShade:'CITY_JOINERY'};
   const cityCloseFade = {value:new THREE.Vector2(6,14)};
   const architectureMaterials = Object.fromEntries(Object.entries(architectureTints).map(([key, tint]) => {
     const material = inkMat(.04, true, tint);
@@ -28,6 +29,13 @@
     if (distantCityWash[key]) {
       material.uniforms.uFade = cityCloseFade;
       material.defines.ARCHITECTURE_WASH = 1;
+      material.defines.CITY_DETAIL = 1;
+      material.defines[cityDetail[key]] = 1;
+      material.uniforms.uMaterialAtlas={value:fabricAtlas};
+      if (key==='cityShade') {
+        material.uniforms.uWindowAtlas={value:windowAtlas};
+      }
+      material.extensions.derivatives = true;
       material.uniforms.uCityWash = { value: distantCityWash[key] };
     }
     return [key, material];
@@ -36,14 +44,43 @@
     const bytes = Uint8Array.from(atob(data), char => char.charCodeAt(0));
     return new Type(bytes.buffer);
   }
+  // The neighborhood window panels are baked as two consecutive triangles.
+  // Derive pane coordinates on their own plane, so sash and weathering follow every instance.
+  function cityPaneCoordinates(coordinates,faces) {
+    const values=new Float32Array(faces.length*4);
+    for (let i=0;i+5<faces.length;i+=6) {
+      const ids=faces.subarray(i,i+6);
+      if (new Set(ids).size!==4) continue;
+      const bounds=axis=>{
+        const points=Array.from(ids,id=>coordinates[id*3+axis]);
+        return [Math.min(...points),Math.max(...points)];
+      };
+      const x=bounds(0), y=bounds(1), z=bounds(2);
+      const dx=x[1]-x[0], dy=y[1]-y[0], dz=z[1]-z[0];
+      const axis=dx>=dz?0:2, width=Math.max(dx,dz);
+      if (width<.12 || dy<.12 || Math.min(dx,dz)>.07) continue;
+      const low=axis===0?x[0]:z[0];
+      for (const [j,id] of ids.entries()) {
+        const row=(i+j)*4;
+        values[row]=(coordinates[id*3+axis]-low)/width;
+        values[row+1]=(coordinates[id*3+1]-y[0])/dy;
+        values[row+2]=dy/width;
+        values[row+3]=Math.round(x[0]*7.61+z[0]*13.57+y[0]*3.91);
+      }
+    }
+    return values;
+  }
   function architectureParts(name) {
     return Object.entries(ARCHITECTURE[name]).map(([key, [vertices, faces, light]]) => {
       const coordinates = Float32Array.from(decodeWords(vertices, Int16Array), n => n / 128);
       const indexed = new THREE.BufferGeometry();
       indexed.setAttribute('position', new THREE.BufferAttribute(coordinates, 3));
       indexed.setAttribute('skyVisibility', new THREE.BufferAttribute(decodeWords(light, Uint8Array), 1, true));
-      indexed.setIndex(new THREE.BufferAttribute(decodeWords(faces, Uint16Array), 1));
+      const triangles=decodeWords(faces,Uint16Array);
+      indexed.setIndex(new THREE.BufferAttribute(triangles,1));
       const geometry = indexed.toNonIndexed();
+      if (key==='cityShade') geometry.setAttribute('cityPane',
+        new THREE.Float32BufferAttribute(cityPaneCoordinates(coordinates,triangles),4));
       geometry.computeVertexNormals();
       return { geometry, material: architectureMaterials[key] };
     });

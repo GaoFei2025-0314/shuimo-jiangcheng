@@ -152,3 +152,42 @@ test('all sixteen navigation destinations and music toggle remain usable', async
   await page.locator('#sound').click();
   await expect(page.locator('#sound')).toHaveAttribute('aria-pressed', 'false');
 });
+
+test('the architectural atlas opens eight shareable riverbank walks and restores navigation', async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await ready(page);
+  const walk = page.getByRole('combobox', { name: '选择江岸街巷视角' });
+  await expect(walk).toBeHidden();
+  await page.locator('#atlas-open').click();
+  await page.locator('#atlas-walk').click();
+  await expect(walk).toBeFocused();
+  await expect(walk.locator('option')).toHaveCount(8);
+  await expect(page).toHaveURL(/#walk=hy-in$/);
+  await walk.selectOption('wc-out');
+  await expect(page).toHaveURL(/#walk=wc-out$/);
+  await expect(page.locator('#dock')).toBeHidden();
+  const position = () => page.evaluate(() => window.__testCamera.position.toArray());
+  const before = await position();
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect.poll(position).toEqual(before);
+  const bounds = await walk.boundingBox();
+  expect(bounds.x).toBeGreaterThanOrEqual(0);
+  expect(bounds.x + bounds.width).toBeLessThanOrEqual(390);
+  await page.keyboard.press('Escape');
+  await expect(walk).toBeHidden();
+  await expect(page.locator('#dock')).toBeVisible();
+  await expect(page).not.toHaveURL(/#walk=/);
+  await expect.poll(() => page.evaluate(() => window.__testCamera.position.y)).toBeGreaterThan(30);
+});
+
+test('a shared walk opens at street height and an unknown hash leaves the map usable', async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await page.goto('/#walk=hy-out');
+  const selector = page.locator('#walk-view');
+  await expect(selector).toHaveValue('hy-out');
+  await expect(selector).toBeVisible();
+  await expect.poll(() => page.evaluate(() => window.__testCamera?.position.y)).toBeLessThan(6);
+  await page.evaluate(() => { location.hash = 'walk=unknown'; });
+  await expect(selector).toBeHidden();
+  await expect(page.locator('#nav')).toBeVisible();
+});

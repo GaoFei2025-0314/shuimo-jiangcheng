@@ -10,6 +10,7 @@ function fixture(t) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'jiangcheng-build-'));
   t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
   fs.cpSync(path.join(root, 'src'), path.join(dir, 'src'), { recursive: true });
+  fs.cpSync(path.join(root, 'assets'), path.join(dir, 'assets'), {recursive:true});
   fs.copyFileSync(path.join(root, 'build.sh'), path.join(dir, 'build.sh'));
   fs.mkdirSync(path.join(dir, 'bin'));
   for (const cmd of ['mkdir', 'mktemp', 'rm', 'dirname', 'cat', 'cp', 'mv', 'sed']) {

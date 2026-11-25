@@ -16,6 +16,20 @@ MINJS_OUT="$TMPDIR_BUILD/bundle.min.js"
 {
   printf '(function () {\n'
   # Keep the baked geometry outside the scene initializer so WebKit can compile each builder independently.
+  node <<'NODE'
+const fs = require('node:fs');
+const images = {
+  laneMaterialImage: 'lane-materials',
+  laneWindowImage: 'lane-windows',
+  laneEarthImage: 'lane-earth',
+  laneFoliageImage: 'lane-foliage',
+  riverSkyImage: 'river-sky'
+};
+for (const [name, file] of Object.entries(images)) {
+  const data = fs.readFileSync('assets/' + file + '.webp').toString('base64');
+  console.log('const ' + name + '=' + JSON.stringify('data:image/webp;base64,' + data) + ';');
+}
+NODE
   cat src/00-boot.js src/geodata.gen.js src/architecture.gen.js src/architecture-plates.gen.js
   printf '\nasync function initialize() {\nawait loadDependencies();\nif (app.state !== "loading") return;\n'
   cat src/01-core.js src/02-landmarks.js src/03-terrain.js src/04-bridge-roads.js src/04-districts.js src/04-scene.js src/04-landmark-grounds.js src/04-tower-park.js src/04-planting.js src/05-layout.js src/05-overlays.js src/05-runtime.js src/06-audio.js

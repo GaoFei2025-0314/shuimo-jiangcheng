@@ -29,11 +29,23 @@
   #sun {
     --sun-inset: 8vh;
     position: fixed; z-index: 0; left: 64%; top: var(--sun-inset);
-    width: clamp(90px, 13vw, 190px); aspect-ratio: 1; border-radius: 50%;
-    background: radial-gradient(circle at 50% 50%, var(--sun) 0 52%, rgba(216,165,150,.55) 62%, rgba(216,165,150,0) 72%);
+    width: clamp(74px, 10vw, 148px); aspect-ratio: 1; border-radius: 50%;
+    background: radial-gradient(ellipse at 47% 43%, #cd9784 0%, #d7a48e 47%, rgba(211,147,126,.74) 57%, rgba(216,161,142,.30) 63%, transparent 70%);
+    filter: url(#sun-bleed);
     transform-origin: 50% calc(0px - var(--sun-inset));
     transform: scale(var(--sky-fit, 0));
-    opacity: clamp(0, calc((var(--sky-fit, 0) - .12) * 2.4), .72); pointer-events: none;
+    opacity: calc(clamp(0, calc((var(--sky-fit, 0) - .12) * 2.4), .72) * var(--sun-presence,1)); pointer-events: none;
+  }
+  body::before {
+    content: ""; position: fixed; inset: 0; pointer-events: none;
+    background: linear-gradient(175deg, rgba(167,178,169,.21), transparent 39%),
+      url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='720' height='270'%3E%3Cfilter id='h'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.004 .039' numOctaves='3' seed='14' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 .59 0 0 0 0 .62 0 0 0 0 .56 1.25 0 0 0 -.60'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23h)'/%3E%3C/svg%3E");
+    opacity: .55;
+  }
+  #river-sky {
+    position: fixed; z-index: 0; inset: 0; pointer-events: none;
+    background-repeat: repeat-x; background-size: auto 100%; background-position: var(--sky-x,50%) 0;
+    opacity: var(--sky-wash,0); mask-image: linear-gradient(to bottom,black 0%,black 22%,transparent 78%);
   }
   #stage { position: fixed; inset: 0; z-index: 1; touch-action: none; }
   #stage canvas { display: block; width: 100%; height: 100%; }
@@ -159,10 +171,29 @@
   #sound:focus-visible { outline: 2px solid var(--ink); outline-offset: 3px; }
 
   #map-actions { display: flex; gap: 6px; top: max(16px, 3vh); right: calc(max(16px, 3.2vw) + 46px); }
-  #map-actions button {
+  #map-actions button, #walk-view {
     appearance: none; min-height: 36px; padding: 0 10px; white-space: nowrap; cursor: pointer;
     font: 500 13px/1 var(--song); color: var(--ink); background: var(--paper);
     border: 1px solid #a79f8d; border-radius: 2px;
+  }
+  #walk-view { max-width: min(47vw,16em); }
+  #map-actions:has(#walk-view:not([hidden])) { right:max(16px,env(safe-area-inset-right)); }
+  #map-actions:has(#walk-view:not([hidden])) #reset-view { display:none; }
+  #map-actions:has(#walk-view:not([hidden])) {
+    align-items: center; gap: .35rem; padding: .22rem .36rem .22rem .2rem;
+    border-inline-start: 3px solid #a85540; background: rgba(246,243,234,.94);
+    box-shadow: 0 1px 6px rgba(60,47,35,.13);
+  }
+  #map-actions #walk-view {
+    width: auto; border: 0; border-radius: 0; font-family: var(--song); font-size: 14px;
+    appearance: none; padding-inline: .5rem 1.8rem; color: #342f27; background-color: transparent;
+    background-image: linear-gradient(45deg,transparent 47%,#695f50 50%,#695f50 66%,transparent 69%),
+      linear-gradient(-45deg,transparent 47%,#695f50 50%,#695f50 66%,transparent 69%);
+    background-size: 6px 6px; background-repeat: no-repeat;
+    background-position: calc(100% - 13px) 52%,calc(100% - 9px) 52%;
+  }
+  #map-actions:has(#walk-view:not([hidden])) #painting-toggle {
+    border: 0; padding-inline: .65rem; background: transparent; color: #774733; border-inline-start: 1px solid #cfc6b2;
   }
   #map-actions #painting-toggle[data-painting] {
     background: #854837; color: #fff9eb; border-color: #754032;
@@ -300,7 +331,7 @@
     .panel-toggle[aria-expanded="true"] { color: var(--cinnabar); border-color: var(--cinnabar); }
     .panel-toggle:focus-visible { outline: 2px solid var(--ink); outline-offset: 3px; }
     #map-actions { top: max(12px, env(safe-area-inset-top)); right: calc(max(16px, env(safe-area-inset-right)) + 112px); }
-    #map-actions button { min-height: 44px; }
+    #map-actions button, #walk-view { min-height: 44px; }
     #poem-toggle { top: max(12px, env(safe-area-inset-top)); right: calc(max(16px, env(safe-area-inset-right)) + 56px); }
     #poem { top: calc(max(12px, env(safe-area-inset-top)) + 60px); right: max(16px, env(safe-area-inset-right));
       max-width: calc(100% - 64px); padding: 12px; gap: .3em; background: var(--paper); border: 1px solid var(--ink-faint);
@@ -350,6 +381,13 @@
   }
 </style>
 
+<svg width="0" height="0" aria-hidden="true" style="position:absolute"><defs>
+  <filter id="sun-bleed" x="-8%" y="-8%" width="116%" height="116%">
+    <feTurbulence baseFrequency=".047 .08" numOctaves="3" seed="7" type="fractalNoise" result="grain"/>
+    <feDisplacementMap in="SourceGraphic" in2="grain" scale="5" xChannelSelector="R" yChannelSelector="G"/>
+  </filter>
+</defs></svg>
+<div id="river-sky" aria-hidden="true"></div>
 <div id="sun" aria-hidden="true"></div>
 <div id="stage" aria-busy="true" role="img" aria-label="水墨风格的武汉三维地图：长江与汉江交汇，汉口、汉阳、武昌三镇，黄鹤楼、长江大桥、晴川阁、龟山电视塔、江汉关、武大樱园、汉口水塔、红楼、洪山宝塔、湖北省博物馆、鹦鹉洲长江大桥、归元禅寺、古琴台与东湖"></div>
 <div id="grain" aria-hidden="true"></div>
@@ -375,6 +413,7 @@
 <button type="button" id="sound" disabled class="ui" aria-pressed="false" aria-label="背景音乐" title="背景音乐">乐</button>
 
 <div id="map-actions" class="ui">
+  <select id="walk-view" aria-label="选择江岸街巷视角" disabled hidden></select>
   <button type="button" id="reset-view" disabled><span aria-hidden="true">↑</span>回全城</button>
   <button type="button" id="painting-toggle" disabled>观画</button>
 </div>
@@ -387,6 +426,7 @@
     <select id="atlas-site" aria-label="选择景点"></select>
     <button id="atlas-detail" type="button" aria-pressed="false" hidden>细部</button>
     <button id="atlas-name" type="button" aria-pressed="false" hidden>看桥名</button>
+    <button id="atlas-walk" type="button">游两岸街巷</button>
     <button id="atlas-locate" type="button">在地图中查看</button>
   </footer>
 </dialog>

@@ -292,6 +292,9 @@
     uFlow: { value: flowTex }, uDrift: { value: driftTex },
     uQuaySpurs: { value: Array.from({length: 3}, () => new THREE.Vector4()) },
     uQuayOut: { value: new THREE.Vector2() },
+    uTrussInk: {value:null}, uTowerInk: {value:null},
+    uBridgeAxis: {value:[new THREE.Vector4(),new THREE.Vector4()]},
+    uBridgeBounds: {value:[new THREE.Vector4(),new THREE.Vector4()]},
     uCutwaterRow: { value: new THREE.Vector4() }, uCutwaterFlow: { value: new THREE.Vector4() },
     uRect: { value: new THREE.Vector4(WR.x, WR.z, WR.w, WR.h) }
   }, fogU, camU, sharedInk);
@@ -306,7 +309,9 @@
         uniform vec2 uWindDirection, uBoats[6]; uniform vec4 uBoatWake[6], uRect;
         uniform vec4 uCutwaterRow, uCutwaterFlow, uQuaySpurs[3];
         uniform vec2 uQuayOut;
-        uniform sampler2D uFlow, uDrift;
+        uniform sampler2D uFlow, uDrift, uTrussInk, uTowerInk;
+        uniform vec4 uBridgeAxis[2], uBridgeBounds[2];
+        uniform vec3 uCam;
         varying vec3 vW; varying float vD;
         // Short tapered crests interrupt the long washes when the camera approaches the water.
         float brokenCrest(vec2 p){
@@ -379,6 +384,26 @@
             brush = max(brush,vec2(wash,glint));
           }
           return brush;
+        }
+        // Reflect the actual bridge elevation across the water plane, then let gaps in the ink show through.
+        float bridgeWash(vec2 waterAt, vec4 axis, vec4 bounds, sampler2D silhouette){
+          vec2 ray = waterAt - uCam.xz;
+          vec2 normal = vec2(-axis.w,axis.z);
+          float across = dot(ray,normal);
+          if(abs(across)<.01 || bounds.x<=0.) return 0.;
+          float further = dot(axis.xy-waterAt,normal)/across;
+          if(further<0.) return 0.;
+          vec2 local = vec2(dot(waterAt + ray*further-axis.xy,axis.zw),uCam.y*further);
+          vec2 uv = (local-bounds.zw)/bounds.xy;
+          if(min(uv.x,uv.y)<0. || max(uv.x,uv.y)>1.) return 0.;
+          float drift = uTime*.10;
+          vec2 band=vec2(waterAt.x*.18,waterAt.y*.64);
+          float ribbon=vnoise(band+vec2(drift*.12,0.))-.5;
+          float ripple = sin(waterAt.y*2.8+waterAt.x*.37+drift+5.4*ribbon);
+          uv += vec2(ripple*(.12+.35*uv.y),ripple*.22)/bounds.xy;
+          float body = texture2D(silhouette,clamp(uv,.001,.999)).r;
+          float broken = smoothstep(-.70,.69,ripple+.69*ribbon)*smoothstep(.17,.62,vnoise(band*.57));
+          return body*(.055+.55*broken)*(.55+.45*vnoise(waterAt*vec2(.23,.69)))*(1.-.38*uv.y);
         }
         void main(){
           vec2 p = vW.xz;
@@ -473,6 +498,11 @@
           }
           vec3 col = mix(base,uInk,wet*ink);
           col = mix(col,uPaper,wet*paperLight);
+          if(lake<.05 && vD<420. && uCam.y<90.){
+            float weight = wet*(1.-smoothstep(240.,420.,vD))*(1.-smoothstep(30.,90.,uCam.y));
+            col=mix(col,vec3(.30,.40,.39),weight*.56*bridgeWash(p,uBridgeAxis[0],uBridgeBounds[0],uTrussInk));
+            col=mix(col,vec3(.48,.32,.25),weight*.55*bridgeWash(p,uBridgeAxis[1],uBridgeBounds[1],uTowerInk));
+          }
           float foam = 0.;
           for(int i=0;i<6;i++){
             vec4 wake=uBoatWake[i];

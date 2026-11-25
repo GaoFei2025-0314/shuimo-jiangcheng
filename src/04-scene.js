@@ -411,6 +411,44 @@
   const yingwuzhou = place(builtLandmark('yingwuzhou'), AT.yingwuzhou, 1,
     Math.atan2(yB.x - yA.x, yB.z - yA.z), '鹦鹉洲长江大桥', 'yingwuzhou', 0);
   yingwuzhou.scale.z = Math.hypot(yB.x - yA.x, yB.z - yA.z) / 200;
+  // Bake two small side elevations once. The water shader projects them without a second city render.
+  function bridgeSilhouette(landmark, index, uniform) {
+    const elevation = new THREE.Scene();
+    const pigment = new THREE.MeshBasicMaterial({color:0xffffff,side:THREE.DoubleSide});
+    for (const part of landmark.children) {
+      if (!part.isMesh) continue;
+      const copy = new THREE.Mesh(part.geometry,pigment);
+      copy.applyMatrix4(part.matrix);
+      elevation.add(copy);
+    }
+    const box = new THREE.Box3().setFromObject(elevation);
+    box.expandByScalar(.20);
+    const width=box.max.z-box.min.z, height=box.max.y-box.min.y;
+    const center=box.getCenter(new THREE.Vector3());
+    const lens=new THREE.OrthographicCamera(-width/2,width/2,height/2,-height/2,.1,box.max.x-box.min.x+3);
+    lens.position.set(box.min.x-1,center.y,center.z);
+    lens.lookAt(center);
+    const plate=new THREE.WebGLRenderTarget(768,160,{depthBuffer:false,minFilter:THREE.LinearFilter,magFilter:THREE.LinearFilter});
+    const previous=renderer.getRenderTarget();
+    elevation.background=new THREE.Color(0x000000);
+    try {
+      renderer.setRenderTarget(plate);
+      renderer.render(elevation,lens);
+    } finally {
+      renderer.setRenderTarget(previous);
+      pigment.dispose();
+    }
+    const yaw=landmark.rotation.y, scale=landmark.scale, origin=landmark.position;
+    waterU.uBridgeAxis.value[index].set(origin.x,origin.z,Math.sin(yaw),Math.cos(yaw));
+    waterU.uBridgeBounds.value[index].set(width*scale.z,height*scale.y,box.min.z*scale.z,origin.y+box.min.y*scale.y);
+    uniform.value=plate.texture;
+    app.cleanups.push(()=>plate.dispose());
+  }
+  function prepareBridgeReflections() {
+    if (waterU.uTrussInk.value || camera.position.y>=90) return;
+    bridgeSilhouette(bridge,0,waterU.uTrussInk);
+    bridgeSilhouette(yingwuzhou,1,waterU.uTowerInk);
+  }
   // 两座大桥桥面之下不起楼、不种树：离桥轴 12 个单位内一概让开（长江大桥连引桥共 ±154 模型单位 × .74 × .81）
   const bridgeSpan = (c, a, b, half) => {
     const dx = b.x - a.x, dz = b.z - a.z, L = Math.hypot(dx, dz);
@@ -505,7 +543,7 @@
 
   // The planting pass queries the completed street grid and building footprints.
   const riverfrontLookouts = [];
-  const cityGround = { occupied: () => false, streets: [], verges: [], bridgeGardens: [], riverfrontPaths: [] };
+  const cityGround = { occupied: () => false, streets: [], verges: [], bridgeGardens: [], riverfrontPaths: [], courtyardPaths: [] };
 
   // Loose groups behind the river walks keep the low shore open between both bridges.
   const riverfrontBlocks = [
@@ -538,6 +576,80 @@
       ((x-cx)/(hx+margin))**2 + ((z-cz)/(hz+margin))**2 < 1));
   }
 
+  const riverfrontStoneInk=new Map();
+  function riverfrontPavingInk(base,worn=false) {
+    if (!riverfrontStoneInk.has(base)) riverfrontStoneInk.set(base,new Map());
+    const variants=riverfrontStoneInk.get(base);
+    if (variants.has(worn)) return variants.get(worn);
+    const stone=base.clone();
+    stone.uniforms=base.uniforms;
+    if (worn) stone.defines={...base.defines,WALK_WEAR:1};
+    stone.fragmentShader=stone.fragmentShader.replace('vec3 col = mix(uInk, uPaper, tone);',`
+      vec3 col = mix(uInk, uPaper, tone);
+      float quartz = vnoise(vW.xz*29.4) - .5;
+      float streak = vnoise(vW.xz*vec2(2.1,5.8)) - .5;
+      float patina = vnoise(vW.xz*.73);
+      col *= 1. + (quartz*.072 + streak*.069 - patina*.035) *
+        (1. - smoothstep(28.,107.,vD));
+    `);
+    variants.set(worn,stone);
+    return stone;
+  }
+  const walkJointInk=inkMat(.49,false,['#827866','#b4ab91']);
+  const walkEdgeInk=inkMat(.41,false,['#a49b84','#c8b99a']);
+  const walkSlabInk=inkMat(.51,false,['#aaa28a','#c9c2a8']);
+
+  // Tooling follows the sampled walking surface so the joints sit exactly on the laid stone.
+  function layWalkDetails(group,name,rows,active = null,small=false) {
+    const joints=[], edge=[], slabs=[];
+    const point=(i,t,u,lift)=>{
+      const side=u<0 ? 0 : 2, a=rows[i], b=rows[i+1];
+      const section=row=>row[1].map((v,j)=>THREE.MathUtils.lerp(v,row[side][j],Math.abs(u)));
+      const from=section(a), to=section(b), p=from.map((v,j)=>THREE.MathUtils.lerp(v,to[j],t));
+      p[1]+=lift;
+      return p;
+    };
+    function panel(batch,i,[t0,t1],[u0,u1],lift) {
+      const p=point(i,t0,u0,lift), q=point(i,t1,u0,lift), r=point(i,t0,u1,lift), t=point(i,t1,u1,lift);
+      if (triangleOnLand(p,q,r)) batch.push(...p,...q,...r);
+      if (triangleOnLand(r,q,t)) batch.push(...r,...q,...t);
+    }
+    for (let i=0;i+1<rows.length;i++) {
+      if (active && !active[i]) continue;
+      const a=rows[i][1], b=rows[i+1][1], run=Math.hypot(a[0]-b[0],a[2]-b[2]);
+      const width=Math.hypot(rows[i][0][0]-rows[i][2][0],rows[i][0][2]-rows[i][2][2]);
+      if (run<.21 || width<.65) continue;
+      const split=.10*Math.sin(i*.81);
+      const groups=width>2.7 ? [-.82,-.35+split,.31+split,.82] : [-.82,split,.82];
+      for (let j=0;j<groups.length-1;j++) {
+        const u0=groups[j],u1=groups[j+1], t=.21+.54*((i*13+j*7)%19)/18;
+        const jointHalf=Math.min(.13,(small ? .011 : .016)/run);
+        if ((i+j)%7!==4) panel(joints,i,[t-jointHalf,t+jointHalf],[u0,u1],.019);
+        if ((i*4+j)%9===0 && width>1.5)
+          panel(slabs,i,[t+jointHalf,.93],[u0+.028,u1-.028],.012);
+        if (j>0 && (i+j)%3!==0)
+          panel(joints,i,[.025,.96],[u0-.014/width,u0+.014/width],.016);
+      }
+      if ((i%5)!==3 || small) {
+        panel(edge,i,[.04,.96],[-.985,-.83],.011);
+        panel(edge,i,[.06,.93],[.83,.985],.012);
+      }
+    }
+    for (const [label,material,ink,positions] of [
+      ['石缝','ShoreStone',walkJointInk,joints],['镶边','BankStone',walkEdgeInk,edge],['错缝铺石','Masonry',walkSlabInk,slabs],
+    ]) {
+      if (!positions.length) continue;
+      const geo=new THREE.BufferGeometry();
+      geo.setAttribute('position',new THREE.Float32BufferAttribute(positions,3));
+      geo.computeVertexNormals();
+      const mesh=new THREE.Mesh(geo,ink);
+      mesh.name=name+' · '+label;
+      mesh.userData.landscapeSurface={group,name:mesh.name,material};
+      mesh.userData.detailSize=label==='石缝' ? .08 : .40;
+      scene.add(mesh);
+    }
+  }
+
   function buildRiverfrontAlleys(lots) {
     const {lane:lanes, apartment:apartments}=lots;
     const colors = {
@@ -545,8 +657,24 @@
       Ink:inkMat(.21,false,['#463b33','#756558']),
       Paper:inkMat(.53,false,['#9a896c','#e3d4af']),
       BoatAccent:inkMat(.22,false,['#774d3c','#ac7856']),
-      Slate:inkMat(.24,false,['#53605c','#8f9d90']),
+      Slate:inkMat(.22,false,['#495954','#859287']),
+      ShoreStone:inkMat(.17,false,['#4e5952','#7b8279']),
+      BoatGlass:inkMat(.23,true,['#2e424b','#758488']),
+      Reeds:inkMat(.21,true,['#475842','#9aab66']),
+      BoatLoad:inkMat(.20,false,['#6d563b','#b29965']),
+      BankStone:inkMat(.22,false,['#786c62','#b2a08f']),
+      BoatCanopy:inkMat(.26,true,['#74674e','#b7a581']),
     };
+    for (const key of ['BoatAccent','Ink']) {
+      colors[key].defines={COURT_TIMBER:1};
+      colors[key].uniforms.uMaterialAtlas={value:fabricAtlas};
+    }
+    const courtStone=colors.Masonry;
+    courtStone.fragmentShader=courtStone.fragmentShader.replace('vec3 col = mix(uInk, uPaper, tone);',`
+      vec3 col = mix(uInk, uPaper, tone);
+      float lime = fbm(vec2(vW.x-vW.z,vW.y*.72)*1.25);
+      float splash = 1.-smoothstep(.76,1.20,vW.y+.12*(lime-.5));
+      col *= 1.-(1.-smoothstep(29.,63.,vD))*(.12*lime+.14*splash);`);
     const head = new THREE.SphereGeometry(1,8,6);
     const coat = new THREE.CylinderGeometry(.78,1,1,8);
     const floor = p => plantingSurface(p.x,p.z) ?? LAND_Y;
@@ -568,6 +696,7 @@
     function add(group,name,material,mesh) {
       mesh.name=name;
       mesh.userData.landscapeSurface={group,name,material};
+      mesh.userData.detailSize=1.0;
       scene.add(mesh);
     }
     function blocks(group,label) {
@@ -583,6 +712,7 @@
         },
         round(key,shape,p,w,h,d,yaw){ batch(key).place(shape,p.x,p.y,p.z,w,h,d,yaw); },
         beam(key,a,b,width){ batch(key).beam(a,b,width); },
+        surface(key,geometry){ batch(key).push(geometry); },
         show(){
           for (const [key,built] of batches) add(group,label+' · '+key,key,built.mesh(colors[key],false));
         },
@@ -609,20 +739,23 @@
       material='Path', liftAt=t=>THREE.MathUtils.lerp(.092,.071,t), routeName,
     } = {}) {
       const curve=new THREE.CatmullRomCurve3(controls.map(p=>p.clone().setY(0)));
-      const points=curve.getSpacedPoints(count), vertices=[], indices=[];
+      const points=curve.getSpacedPoints(count), vertices=[], indices=[], sections=[];
       for (let i=0;i<points.length;i++) {
         const p=points[i], a=points[Math.max(i-1,0)], b=points[Math.min(i+1,points.length-1)];
         const axis=V(b.z-a.z,0,a.x-b.x).normalize(), t=i/count;
-        for (const sign of [-1,1]) {
+        const section=[-1,1].map(sign=>{
           const q=p.clone().addScaledVector(axis,halfWidth(t)*sign);
-          vertices.push(q.x,floor(q)+liftAt(t),q.z);
-        }
+          return [q.x,floor(q)+liftAt(t),q.z];
+        });
+        vertices.push(...section.flat());
+        sections.push([section[0],section[0].map((v,j)=>(v+section[1][j])*.5),section[1]]);
         if (!i) continue;
         const j=2*(i-1);
         indices.push(j,j+2,j+1,j+1,j+2,j+3);
+        const path={a:points[i-1],b:p,width:2*Math.max(halfWidth((i-1)/count),halfWidth(t)),
+          name:routeName,group,planted:true,riverfront:true};
+        cityGround.courtyardPaths.push(path);
         if (routeName) {
-          const path={a:points[i-1],b:p,width:2*Math.max(halfWidth((i-1)/count),halfWidth(t)),
-            name:routeName,group,planted:true,riverfront:true};
           cityGround.riverfrontPaths.push(path);
           cityGround.streets.push(path);
         }
@@ -630,7 +763,31 @@
       const geometry=new THREE.BufferGeometry();
       geometry.setAttribute('position',new THREE.Float32BufferAttribute(vertices,3));
       geometry.setIndex(indices); geometry.computeVertexNormals();
-      add(group,name,material,new THREE.Mesh(geometry,material==='BankStone' ? M.bankStone : M.bankPath));
+      const ink=riverfrontPavingInk(material==='BankStone' ? M.bankStone : M.bankPath);
+      add(group,name,material,new THREE.Mesh(geometry,ink));
+      layWalkDetails(group,name,sections,null,true);
+    }
+    const dripTile=new THREE.CylinderGeometry(.50,.45,1,7,1,false,Math.PI*.5,Math.PI).rotateX(Math.PI*.5);
+    function streetEaves(group,name,x,z) {
+      const matrix=lanes.find(({elements:e})=>Math.hypot(x-e[12],z-e[14])<.28);
+      if (!matrix) return;
+      const e=matrix.elements, scale=Math.hypot(e[0],e[2]), height=e[5], yaw=Math.atan2(-e[2],e[0]);
+      const point=(u,h,v)=>V(u,h,v).applyMatrix4(matrix);
+      const trim=blocks(group,name);
+      // Three ridge lengths stop short of the party walls of the baked roof.
+      for (const [i,bay] of [-3.17,0,3.17].entries()) {
+        const crown=4.15+[.004,.052,.025][i];
+        trim.box('ShoreStone',point(bay,crown,0),2.82*scale,.13*height,.21*scale,yaw);
+        for (const side of [-1,1]) {
+          trim.box('Ink',point(bay,2.642,side*2.91),2.92*scale,.096*height,.12*scale,yaw);
+          for (let tile=0;tile<12;tile++) {
+            const u=bay-1.39+.25*tile, sag=.027*Math.sin(tile*1.34+i*.71);
+            trim.round('ShoreStone',dripTile,point(u,2.655+sag,side*(2.94+sag*.42)),
+              .213*scale,.14*height,.173*scale,yaw);
+          }
+        }
+      }
+      trim.show();
     }
     function doorway(detail,front,across,width,height) {
       const {point,yaw}=front;
@@ -652,24 +809,387 @@
         detail.box('BoatAccent',point(across,.035,center+r*height*.49),width,.029,.026,yaw);
       }
     }
-    function person(detail,front,u,d,turn,size,outfit,stride) {
-      const root=front.point(u,d), yaw=front.yaw+turn;
-      const at=(x,y,z)=>root.clone().add(V((x*Math.cos(yaw)+z*Math.sin(yaw))*size,y*size,
-        (-x*Math.sin(yaw)+z*Math.cos(yaw))*size));
-      const step=stride*.20;
-      for (const side of [-1,1]) {
-        const heel=at(side*.091,.060,side*step), knee=at(side*.087,.365,side*step*.59);
-        detail.box('Ink',heel,.10*size,.09*size,.21*size,yaw);
-        detail.beam('Ink',heel,knee,.105*size);
-        detail.beam('Ink',knee,at(side*.084,.635,0),.119*size);
-        const elbow=at(side*.206,.732,-side*step*.50), hand=at(side*.189,.579,-side*step*.87);
-        detail.beam(outfit,at(side*.156,.956,0),elbow,.094*size);
-        detail.beam(outfit,elbow,hand,.083*size);
-        detail.round('Masonry',head,hand,.044*size,.055*size,.045*size,yaw);
+    function person(detail,front,u,d,turn,size,outfit,stride,pose={}) {
+      const seated=pose.mode==='seated', window=pose.mode==='window';
+      const vendor=!seated&&!window&&Math.abs(stride)<.3, step=stride*.20, trousers=vendor?'Slate':'Ink';
+      const root=front.point(u,d), yaw=front.yaw+turn, c=Math.cos(yaw), s=Math.sin(yaw);
+      const paving=scene.getObjectByName(vendor?'汉阳茶案前埕接支巷':'武昌里分门前石径接支巷');
+      if (window) root.y=pose.base;
+      if (paving && !seated && !window) {
+        const ground=new THREE.Raycaster(root.clone().add(V(0,.22,0)),V(0,-1,0),0,.25);
+        const support=ground.intersectObject(paving)[0];
+        if (support) root.y=Math.max(root.y,support.point.y);
       }
-      detail.round(outfit,coat,at(0,.824,0),.193*size,.385*size,.135*size,yaw);
-      detail.round('Masonry',head,at(0,1.112,.012),.106*size,.128*size,.105*size,yaw);
-      detail.round('Ink',head,at(0,1.184,.003),.108*size,.066*size,.108*size,yaw);
+      const raw=(x,y,z)=>root.clone().add(V((x*c+z*s)*size,y*size,(-x*s+z*c)*size));
+      const fold=seated?.276:0;
+      const lean=window?.31:0;
+      const at=(x,y,z)=>raw(x,y-fold,z+lean*Math.max(0,y-.57));
+      const local=p=>{
+        const q=p.clone().sub(root).divideScalar(size), y=q.y+fold;
+        return [q.x*c-q.z*s,y,q.x*s+q.z*c-lean*Math.max(0,y-.57)];
+      };
+      const seam=(key,path,radius)=>cane(detail,key,path.map(([x,y,z])=>at(x,y,z)),radius*size);
+      function oval(key,place,x,y,z,rx,ry,rz,rotation=yaw) {
+        detail.round(key,head,place(x,y,z),rx*size,ry*size,rz*size,rotation);
+      }
+      function rings(key,nodes,place=at,sides=12) {
+        const points=[], indices=[];
+        for (const [i,[x,y,z,wide,deep]] of nodes.entries()) {
+          const before=nodes[Math.max(0,i-1)], after=nodes[Math.min(nodes.length-1,i+1)];
+          const direction=V(after[0]-before[0],after[1]-before[1],after[2]-before[2]).normalize();
+          const cross=V(1,0,0).addScaledVector(direction,-direction.x).normalize();
+          const depth=V(0,0,0).crossVectors(cross,direction).normalize();
+          for (let j=0;j<sides;j++) {
+            const theta=j*Math.PI*2/sides;
+            const offset=cross.clone().multiplyScalar(wide*Math.cos(theta)).addScaledVector(depth,deep*Math.sin(theta));
+            points.push(...place(x+offset.x,y+offset.y,z+offset.z).toArray());
+            if (i) {
+              const a=(i-1)*sides+j,b=(i-1)*sides+(j+1)%sides,c=a+sides,d=b+sides;
+              indices.push(a,c,b,b,c,d);
+            }
+          }
+        }
+        const mesh=new THREE.BufferGeometry();
+        mesh.setAttribute('position',new THREE.Float32BufferAttribute(points,3));
+        mesh.setIndex(indices); mesh.computeVertexNormals();
+        detail.surface(key,mesh);
+      }
+      rings(outfit,[
+        [0,.565,0,.026,.039],[0,.568,0,.157,.099],[0,.612,-.013,.167,.108],
+        [.009,.737,-.010,.147,.100],[.005,.848,.007,.152,.106],
+        [0,.912,.013,.168,.093],[.005,.957,.014,.123,.069],[.005,.979,.018,.076,.055],
+      ]);
+      for (const side of [-1,1]) {
+        if (!window) {
+          const z=side*step, foot=seated?.273+side*.021:z+.055;
+          oval('Ink',raw,side*.092,.043,foot,.064,.046,.115);
+          rings(trousers,seated?[
+            [side*.092,.080,foot-.010,.049,.052],[side*.102,.174,.263,.053,.061],
+            [side*.105,.277,.283,.069,.068],[side*.103,.323,.200,.073,.065],
+            [side*.090,.322,.102,.075,.071],[side*.079,.324,.009,.083,.070],
+          ]:[
+            [side*.092,.079,z,.053,.053],[side*.089,.137,z-.006,.056,.057],
+            [side*.082,.27,z*.72,.059,.070],[side*.082,.344,z*.54+.023,.065,.071],
+            [side*.080,.472,z*.20,.077,.076],[side*.077,.604,0,.082,.083],
+            [side*.077,.624,0,.041,.051],
+          ],raw);
+        }
+        const reaching=pose.hand && side===pose.side;
+        const carrying=vendor&&side===1&&!pose.hand;
+        const elbow=reaching?[side*.171,window?.841:.776,window?.126:.138]
+          :vendor?[side*.173,carrying?.749:.719,carrying?.092:.066]
+          :seated?[side*.162,.713,.132]:[side*.191,.761,-side*step*.50];
+        const wrist=reaching?local(pose.hand)
+          :vendor?[side*(carrying?.138:.139),carrying?.744:.683,carrying?.237:.149]
+          :seated?[side*.118,.682,.283]:[side*.177,.648,-side*step*.83+.030];
+        const mix=(a,b,t,r,d)=>[a[0]+(b[0]-a[0])*t,a[1]+(b[1]-a[1])*t,
+          a[2]+(b[2]-a[2])*t,r,d];
+        const shoulder=[side*.133,.913,.006];
+        rings(outfit,[mix(shoulder,elbow,-.08,.047,.052),mix(shoulder,elbow,.36,.066,.053),
+          mix(shoulder,elbow,.82,.055,.053),[...elbow,.050,.051],
+          mix(elbow,wrist,.43,.049,.043),mix(elbow,wrist,.80,.043,.038),
+          mix(elbow,wrist,.91,.040,.035)]);
+        rings(vendor?'Slate':outfit,[mix(elbow,wrist,.78,.044,.039),mix(elbow,wrist,.89,.045,.038),
+          mix(elbow,wrist,.98,.040,.032)]);
+        const [x,y,z2]=wrist;
+        oval('BankStone',at,x,y+.006,z2+.014,.035,.039,.034);
+        oval('Masonry',at,x+side*.021,y+.014,z2+.019,.015,.025,.019);
+        if (reaching) {
+          const shoulderHand=at(x,y,z2);
+          const fingers=pose.hand.clone().addScaledVector(at(x,y,z2+.05).sub(shoulderHand).normalize(),.039*size);
+          cane(detail,'BankStone',[shoulderHand,shoulderHand.clone().lerp(fingers,.62).add(V(0,.009*size,0)),fingers],.012*size);
+        }
+        if (carrying) detail.round('Paper',ware.bowl,at(x+.001,y+.029,z2+.017),.40*size,.32*size,.40*size,yaw);
+      }
+
+      // Turn the face a little toward the patron, retaining the original stance.
+      const turnHead=pose.head ?? (vendor?-.23:(stride<0?.13:-.09)), hc=Math.cos(turnHead), hs=Math.sin(turnHead);
+      const face=(x,y,z)=>at(x*hc+z*hs,y,-x*hs+z*hc+.015);
+      const skin='BankStone', headYaw=yaw+turnHead;
+      oval(skin,face,0,1.002,.008,.050,.066,.050,headYaw);
+      rings(skin,[
+        [0,1.022,.032,.019,.024],[.002,1.038,.027,.041,.045],
+        [0,1.070,.013,.066,.066],[.003,1.105,.010,.079,.073],
+        [0,1.139,.007,.075,.070],[0,1.171,.000,.065,.066],[0,1.199,-.003,.024,.030],
+      ],face,18);
+      oval('Masonry',face,0,1.095,.079,.016,.023,.021,headYaw);
+      oval(skin,face,0,1.082,.095,.022,.012,.013,headYaw);
+      for (const ear of [-1,1]) {
+        oval(skin,face,ear*.074,1.088,.009,.016,.025,.017,headYaw);
+        oval('BoatAccent',face,ear*.083,1.086,.016,.007,.011,.008,headYaw);
+        const trace=(key,pts,width)=>cane(detail,key,pts.map(p=>face(...p)),width*size);
+        trace('Ink',[[ear*.020,1.125,.082],[ear*.034,1.130,.080],
+          [ear*.053,1.125,.067]],.0034);
+        trace('Ink',[[ear*.020,1.114,.083],[ear*.036,1.115,.077],
+          [ear*.051,1.112,.068]],.0026);
+      }
+      cane(detail,'BoatAccent',[[ -.021,1.059,.073],[.002,1.061,.079],[.022,1.061,.072]]
+        .map(p=>face(...p)),.0029*size);
+      if (vendor) {
+        rings('Ink',[[0,1.152,-.002,.081,.079],[0,1.173,-.008,.093,.085],
+          [-.004,1.207,-.013,.085,.075],[-.007,1.225,-.015,.032,.034],
+          [-.007,1.230,-.017,.004,.004]],face,16);
+        oval('Slate',face,.004,1.160,.054,.079,.014,.068,headYaw);
+        const apron=(u,t)=>at((u-.5)*(.245+.048*t),.827-.277*t,
+          .139+.018*Math.sin(Math.PI*u)+.015*t+.006*Math.cos(u*16+t));
+        fabric(detail,'ShoreStone',apron,7,8);
+        seam('BoatLoad',[[-.136,.826,.146],[0,.816,.159],[.132,.822,.143]],.009);
+        seam('Ink',[[-.139,.824,.143],[-.149,.827,.010],[-.126,.825,-.085]],.0065);
+      } else {
+        oval('Ink',face,0,1.174,-.003,.081,.057,.081,headYaw);
+        if (stride<0) {
+          oval('Ink',face,.009,1.146,-.079,.052,.048,.050,headYaw);
+          seam('BoatLoad',[[.125,.902,.057],[.077,.830,.121],[-.113,.649,.108]],.011);
+          oval('BoatLoad',at,-.132,.616,.103,.077,.070,.040);
+        }
+      }
+      for (const side of [-1,1]) seam('ShoreStone',[[side*.063,.976,.061],
+        [side*.067,.940,.099],[side*.022,.914,.116]],.010);
+      seam('Ink',[[.017,.914,.116],[.048,.842,.118],[.058,.748,.103],[.060,.574,.105]],.0055);
+      for (const y of [.894,.849,.783]) seam('BoatLoad',[[.035,y,.115],[.065,y-.003,.112]],.005);
+    }
+
+    function shoreVignettes() {
+      const body=new THREE.SphereGeometry(1,14,9);
+      const normal=V(0,-1,0), ray=new THREE.Raycaster();
+      const frame=(x,z,yaw,base)=> {
+        const c=Math.cos(yaw),s=Math.sin(yaw);
+        return (u,y,d)=>V(x+c*u+s*d,base+y,z-s*u+c*d);
+      };
+      function stone(detail,x,z,w,d,yaw,phase) {
+        if (!onLand(x,z) || cityGround.occupied(x,z,.14)) return;
+        const c=Math.cos(yaw),s=Math.sin(yaw), group=[];
+        const ring=[[-.44,-.37],[.25,-.52],[.48,-.14],[.44,.34],[.18,.48],[-.46,.31]];
+        const center=V(x,0,z);
+        center.y=floor(center)+.037;
+        const rim=ring.map(([u,v],i)=>{
+          const swell=1+.10*Math.sin(i*2.36+phase), dx=u*w*swell,dz=v*d;
+          const p=V(x+c*dx+s*dz,0,z-s*dx+c*dz);
+          p.y=floor(p)+.027+.006*Math.sin(i*1.87+phase);
+          return p;
+        });
+        if (!rim.every(p=>onLand(p.x,p.z) && !cityGround.occupied(p.x,p.z,.04))) return;
+        for (let i=0;i<rim.length;i++) {
+          group.push(...center.toArray(),...rim[(i+1)%rim.length].toArray(),...rim[i].toArray());
+        }
+        const shape=new THREE.BufferGeometry();
+        shape.setAttribute('position',new THREE.Float32BufferAttribute(group,3));
+        shape.computeVertexNormals();
+        detail.surface(phase%3===0?'Masonry':'ShoreStone',shape);
+      }
+      const seat=scene.getObjectByName('武昌滨水分节石凳');
+      if (seat) {
+        const x=-83.76,z=92.25,yaw=-1.06;
+        ray.set(V(x,4,z),normal);
+        const y=ray.intersectObject(seat)[0]?.point.y;
+        if (y) {
+          const detail=blocks('武昌两桥滨水岸线','武昌石凳上看江人');
+          const at=frame(x,z,yaw,y);
+          for (const side of [-1,1]) {
+            const hip=at(side*.095,.073,-.045), knee=at(side*.128,.028,.319);
+            const ankle=at(side*.148,-.275,.377);
+            cane(detail,'Ink',[hip,hip.clone().lerp(knee,.58).add(V(0,.017,0)),knee],.078);
+            cane(detail,'Ink',[knee,knee.clone().lerp(ankle,.54),ankle],.063);
+            detail.round('Ink',body,at(side*.148,-.364,.432),.070,.062,.125,yaw);
+            const hand=at(side*.092,.104,.313);
+            cane(detail,'BoatGlass',[at(side*.149,.37,-.015),at(side*.198,.19,.205),hand],.056);
+            detail.round('Masonry',body,hand,.039,.034,.064,yaw);
+          }
+          detail.round('BoatGlass',body,at(0,.243,-.063),.205,.255,.137,yaw);
+          detail.round('Slate',body,at(0,.071,-.062),.199,.086,.150,yaw);
+          detail.round('Masonry',body,at(0,.493,-.023),.047,.075,.051,yaw);
+          detail.round('Masonry',body,at(0,.602,.009),.104,.124,.098,yaw);
+          detail.round('Ink',body,at(0,.657,-.016),.106,.077,.102,yaw);
+          detail.round('Ink',body,at(0,.594,-.097),.086,.093,.036,yaw);
+          const basket=frame(x+.02,z+1.13,yaw,y+.005);
+          const bowl=new THREE.LatheGeometry([[.12,.006],[.126,.03],[.16,.172],[.172,.185]]
+            .map(([u,v])=>new THREE.Vector2(u,v)),14);
+          detail.round('BoatLoad',bowl,basket(0,0,0),1,1,1,yaw);
+          for (const r of [.04,.087,.135,.184]) {
+            const ring=Array.from({length:19},(_,i)=>{
+              const a=i*Math.PI/9, k=.122+r*.255;
+              return basket(k*Math.cos(a),r,k*Math.sin(a));
+            });
+            cane(detail,'BoatLoad',ring,.0095);
+          }
+          cane(detail,'BoatLoad',[basket(-.163,.172,0),basket(-.11,.277,.02),basket(0,.31,.015),
+            basket(.11,.276,0),basket(.163,.173,0)],.014);
+          detail.show();
+
+          const steps=blocks('武昌两桥滨水岸线','武昌观江凳后 · 路脚碎石');
+          for (const [i,[sx,sz,w,d]] of [[-82.75,92.37,.51,.39],[-82.29,92.14,.41,.29],
+            [-81.95,92.29,.27,.21],[-83.02,94.57,.28,.28],[-82.65,94.48,.37,.24]].entries()) {
+            stone(steps,sx,sz,w,d,i*.51,i);
+          }
+          steps.show();
+        }
+      }
+      const x=-201.0,z=28.9,yaw=1.01;
+      if (onLand(x,z) && !cityGround.occupied(x,z,.33)) {
+        const p=V(x,0,z), y=floor(p), at=frame(x,z,yaw,y);
+        const detail=blocks('汉阳两桥滨水岸线','汉阳岸上收缆人');
+        cane(detail,'Ink',[at(-.13,.40,-.104),at(-.16,.14,.183),at(-.15,.065,.08)],.084);
+        cane(detail,'Ink',[at(.109,.39,-.109),at(.134,.34,.226),at(.17,.069,.257)],.077);
+        detail.round('Ink',body,at(-.15,.065,.013),.072,.052,.134,yaw);
+        detail.round('Ink',body,at(.17,.052,.285),.075,.049,.117,yaw);
+        detail.round('BoatGlass',body,at(0,.548,-.035),.206,.223,.143,yaw);
+        cane(detail,'BoatGlass',[at(-.149,.633,.007),at(-.21,.44,.20),at(-.137,.239,.326)],.057);
+        cane(detail,'BoatGlass',[at(.14,.65,.022),at(.19,.443,.203),at(.095,.250,.461)],.054);
+        detail.round('Masonry',body,at(-.137,.239,.326),.045,.044,.06,yaw);
+        detail.round('Masonry',body,at(.095,.250,.461),.046,.039,.060,yaw);
+        detail.round('Masonry',body,at(0,.747,.065),.048,.066,.048,yaw);
+        detail.round('Masonry',body,at(0,.828,.107),.104,.112,.099,yaw);
+        detail.round('Ink',body,at(0,.884,.078),.109,.065,.105,yaw);
+        const coil=Array.from({length:49},(_,i)=>{
+          const t=i/48,a=t*Math.PI*5.6,r=.08+.255*t;
+          return at(r*Math.cos(a),.024+.018*(1-t),.66+r*Math.sin(a)*.78);
+        });
+        const last=coil.at(-1);
+        coil.push(last.clone().lerp(at(.095,.250,.461),.46).add(V(0,-.027,.031)),at(.095,.25,.461));
+        cane(detail,'BoatLoad',coil,.016);
+        detail.show();
+        groundContacts.push({x,z,rx:.39,rz:.40,c:Math.cos(yaw),s:Math.sin(yaw),tree:false});
+
+        const ledge=blocks('汉阳两桥滨水岸线','汉阳收缆处 · 断石脚径');
+        for (const [i,[sx,sz,w,d]] of [[-201.42,29.72,.98,.44],[-200.62,29.85,.55,.34],
+          [-199.92,29.63,.62,.41],[-199.16,29.38,.65,.39],[-198.24,28.95,.60,.33],[-197.48,28.71,.45,.25],
+          [-196.59,28.42,.33,.26],[-195.86,27.88,.28,.20],[-194.98,27.57,.34,.22]].entries()) {
+          stone(ledge,sx,sz,w,d,i*.38,i);
+        }
+        ledge.show();
+      }
+    }
+    shoreVignettes();
+
+    function shapedMerchandise() {
+      const turn=profile=>{
+        const geometry=new THREE.LatheGeometry(profile.map(([r,y])=>new THREE.Vector2(r,y)),12);
+        const points=geometry.attributes.position, faces=geometry.index.array, indices=[];
+        const a=V(0,0,0), b=V(0,0,0), c=V(0,0,0);
+        for (let i=0;i<faces.length;i+=3) {
+          a.fromBufferAttribute(points,faces[i]);
+          b.fromBufferAttribute(points,faces[i+1]).sub(a);
+          c.fromBufferAttribute(points,faces[i+2]).sub(a);
+          if (b.cross(c).lengthSq()>1e-14) indices.push(faces[i],faces[i+1],faces[i+2]);
+        }
+        geometry.setIndex(indices);
+        return geometry;
+      };
+      return {
+        jar:turn([[0,0],[.076,0],[.107,.03],[.132,.095],[.118,.19],[.094,.211],[.099,.227],
+          [.082,.227],[.078,.196],[.086,.152],[0,.15]]),
+        bowl:turn([[0,0],[.077,0],[.091,.034],[.164,.157],[.162,.174],[.149,.171],[.125,.108],[0,.081]]),
+        tea:turn([[0,0],[.061,0],[.091,.019],[.115,.061],[.102,.103],[.070,.131],
+          [.062,.141],[.022,.145],[.012,.162],[0,.165]]),
+        stool:turn([[0,0],[.125,0],[.142,.022],[.134,.036],[0,.036]]),
+      };
+    }
+    const ware=shapedMerchandise();
+    function cane(detail,key,points,radius) {
+      const curve=new THREE.CatmullRomCurve3(points);
+      detail.surface(key,new THREE.TubeGeometry(curve,Math.max(8,points.length*3),radius,5,false));
+    }
+    function fabric(detail,key,point,columns,rows) {
+      const vertices=[], indices=[];
+      for (let j=0;j<=rows;j++) for (let i=0;i<=columns;i++) {
+        vertices.push(...point(i/columns,j/rows).toArray());
+        if (!i || !j) continue;
+        const d=j*(columns+1)+i, c=d-1, b=d-columns-1, a=b-1;
+        indices.push(a,c,b,b,c,d);
+      }
+      const geometry=new THREE.BufferGeometry();
+      geometry.setAttribute('position',new THREE.Float32BufferAttribute(vertices,3));
+      geometry.setIndex(indices); geometry.computeVertexNormals();
+      detail.surface(key,geometry);
+    }
+    function courtyardPlant(detail,front,across,depth,size,key) {
+      const {point,yaw}=front;
+      detail.round(key,ware.jar,point(across,depth,-.011),size,size,size,yaw);
+      for (const [u,d,y] of [[-.12,.035,.53],[.15,-.03,.68],[.03,.13,.51]]) {
+        const stem=(t)=>point(across+u*size*t,depth+d*size*t,(.18+(y-.18)*t)*size);
+        cane(detail,'BoatLoad',[stem(0),stem(.48),stem(.78),stem(1)],.010*size);
+        for (const [t,side] of [[.46,-1],[.64,1],[.82,-1],[.95,1]]) {
+          const root=stem(t);
+          const tip=root.clone().addScaledVector(V(-.57,.15,1).normalize(),.145*size*side);
+          const blade=V(.87,0,.49).normalize();
+          fabric(detail,'Reeds',(u,t)=>{
+            const curl=Math.sin(Math.PI*t);
+            return root.clone().lerp(tip,t).add(V(0,.039*size*curl,0))
+              .addScaledVector(blade,(u-.5)*size*(.002+.056*curl));
+          },2,5);
+        }
+      }
+    }
+    function teaDetails(group,front) {
+      const {point,yaw}=front, detail=blocks(group,'汉阳茶招、提梁壶与竹凳');
+      const banner=(u,v,ink=0)=>point(1.098+.088*Math.sin(u*5.1+v*4.4)*v+ink,
+        1.43+(.5-u)*.55+.10*v*v,1.68-v*.67+.037*Math.sin(u*4.7)*v*v);
+      colors.Paper.side=THREE.DoubleSide;
+      colors.Ink.side=THREE.DoubleSide;
+      fabric(detail,'Paper',(u,v)=>banner(u,v),12,12);
+      cane(detail,'BoatLoad',[point(1.025,1.09,1.74),banner(.98,.01),banner(.50,0),banner(.02,.01)],.018);
+      // Tea, set as individually tapered brush strokes on the curved cloth.
+      const strokes=[
+        [[.18,.245],[.43,.232],[.78,.218]], [[.348,.155],[.371,.301]], [[.656,.148],[.623,.300]],
+        [[.505,.335],[.382,.458],[.176,.567]], [[.507,.338],[.641,.444],[.821,.519]],
+        [[.349,.555],[.637,.542]], [[.222,.665],[.51,.651],[.770,.636]],
+        [[.503,.559],[.510,.759],[.479,.852],[.427,.812]],
+        [[.354,.716],[.254,.824]], [[.626,.709],[.724,.800]],
+      ];
+      for (const [i,stroke] of strokes.entries()) {
+        const width=i===3||i===4?.042:.031;
+        const curve=new THREE.CatmullRomCurve3(stroke.map(([u,v])=>V(u,v,0)));
+        fabric(detail,'Ink',(u,v)=>{
+          const p=curve.getPoint(v), along=curve.getTangent(v), taper=.31+.69*Math.sin(Math.PI*v)**.52;
+          return banner(p.x+along.y*width*taper*(u-.5),p.y-along.x*width*taper*(u-.5),.005);
+        },1,8);
+      }
+      const kettle=(u,d,h)=>point(u-.39,d+.12,h);
+      detail.round('BoatAccent',ware.tea,kettle(.05,.94,.712),1.15,1.13,1.15,yaw);
+      cane(detail,'Ink',[kettle(-.049,.94,.828),kettle(-.060,.94,.931),kettle(.054,.94,.973),
+        kettle(.15,.94,.923),kettle(.151,.94,.830)],.014);
+      cane(detail,'BoatAccent',[kettle(.13,.95,.773),kettle(.197,.957,.804),kettle(.237,.969,.867)],.023);
+      const stoolU=-1.53,stoolD=1.55;
+      detail.round('BoatLoad',ware.stool,point(stoolU,stoolD,.29),1.06,1,1.06,yaw);
+      for (const [u,d] of [[-.07,-.076],[.086,-.064],[0,.094]]) {
+        cane(detail,'BoatLoad',[point(stoolU+u*1.37,stoolD+d*1.37,-.015),
+          point(stoolU+u*1.17,stoolD+d*1.16,.139),point(stoolU+u,stoolD+d,.301)],.022);
+      }
+      detail.round('BoatAccent',ware.jar,point(1.54,.30,-.013),1.43,1.24,1.43,yaw);
+      courtyardPlant(detail,front,1.83,.40,.90,'ShoreStone');
+      detail.show();
+    }
+    function paintedDoorGoods(group,front) {
+      const {point,yaw}=front, detail=blocks(group,'武昌里分靛布、竹编与墙脚盆栽');
+      const cloth=(u,v)=>point(.74+u*.34+.034*v, .193+.066*Math.sin(12*u+3*v)*v,1.52-v*.55);
+      fabric(detail,'BoatGlass',cloth,10,12);
+      cane(detail,'Ink',[point(.70,.18,1.537),point(.92,.19,1.536),point(1.13,.18,1.533)],.016);
+      cane(detail,'BoatLoad',[point(.72,.01,1.53),point(.72,.09,1.54),point(.72,.19,1.54)],.011);
+      for (const [u,y] of [[.22,.81],[.71,.80]]) {
+        cane(detail,'Paper',[cloth(u,y),cloth(u+.024,y+.08),cloth(u+.012,y+.15)],.0038);
+      }
+      const near=1.16,d=.38;
+      detail.round('BoatLoad',ware.bowl,point(near,d,-.017),1.10,1.13,1.10,yaw);
+      for (const rad of [.10,.132,.164]) {
+        const ring=Array.from({length:13},(_,i)=>{
+          const angle=i/12*Math.PI*2;
+          return point(near+rad*Math.cos(angle),d+rad*Math.sin(angle),.024+(rad-.10)*2.3);
+        });
+        cane(detail,'Paper',ring,.009);
+      }
+      courtyardPlant(detail,front,1.50,.27,.98,'BoatAccent');
+      courtyardPlant(detail,front,1.78,.34,.73,'ShoreStone');
+      detail.round('ShoreStone',ware.jar,point(-1.21,.24,-.012),.86,.77,.86,yaw);
+      // A small diamond lattice and a few abraded streaks on the lower paint.
+      for (const anchor of [1.19,1.59]) for (const sign of [-1,1]) {
+        detail.beam('BoatLoad',point(anchor-.105,.071,1.10+sign*.087),
+          point(anchor+.105,.071,1.10-sign*.087),.017);
+      }
+      for (const [u,y,l] of [[-.23,.276,.095],[-.18,.314,.070],[.26,.269,.091],[.34,.347,.071]]) {
+        cane(detail,'BoatLoad',[point(u,.067,y),point(u+.009,.070,y+l*.62),
+          point(u+.005,.068,y+l)],.0048);
+      }
+      detail.show();
     }
 
     // A tea counter sits against a real end wall, with a clear apron running into the side lane.
@@ -677,25 +1197,124 @@
     if (west) {
       const group='汉阳滨水街巷生活', {point,yaw}=west;
       laneApron(group,'汉阳茶案前埕接支巷',west,1.8,1.56);
-      const counter=blocks(group,'汉阳山墙下的布棚茶案');
-      for (const u of [-.91,.91]) {
-        counter.beam('Ink',point(u,.17,.02),point(u,.17,1.84),.076);
-        counter.beam('Ink',point(u,1.50,.02),point(u,1.50,1.67),.076);
-        for (const d of [.66,1.25]) counter.box('Ink',point(u*.72,d,.31),.095,.60,.10,yaw);
+      const counter=blocks(group,'汉阳贴墙竹木单坡茶寮');
+      const roof=(u,v)=>point((u-.5)*2.34,.041+1.77*v,
+        2.058-.401*v-.047*Math.sin(Math.PI*v)+.014*Math.cos(u*6.7+v*2.1));
+      for (const u of [-1.02,1.02]) {
+        cane(counter,'BoatLoad',[point(u*.987,1.59,-.012),point(u,1.61,.84),point(u*.999,1.60,1.70)],.050);
+        counter.beam('Ink',point(u,.045,1.995),point(u,.045,1.744),.093);
+        cane(counter,'BoatLoad',[point(u,1.59,1.17),point(u,1.47,1.43),point(u,.78,1.819)],.032);
+        for (const d of [.66,1.25]) counter.box('Ink',point(u*.66,d,.31),.095,.60,.10,yaw);
       }
+      counter.box('Ink',point(0,.072,1.994),2.21,.117,.14,yaw);
+      for (const u of [-1.015,-.51,-.02,.47,1.02]) {
+        const a=.5+u/2.34;
+        cane(counter,'BoatLoad',[roof(a,.02).add(V(0,-.054,0)),roof(a,.52).add(V(0,-.055,0)),
+          roof(a,1).add(V(0,-.034,0))],.027);
+      }
+      cane(counter,'Ink',[roof(.015,.94).add(V(0,-.043,0)),roof(.52,.95).add(V(0,-.045,0)),
+        roof(.989,.962).add(V(0,-.044,0))],.038);
+      colors.Paper.side=THREE.DoubleSide;
+      fabric(counter,'BoatCanopy',roof,18,14);
+      for (const at of [.185,.425,.674,.834]) {
+        cane(counter,'BoatLoad',[roof(at,.018),roof(at,.50).add(V(0,.008,0)),
+          roof(at,.98).add(V(0,.006,0))],.008);
+      }
+      fabric(counter,'BoatLoad',(u,v)=>roof(u,1).add(V(0,
+        -.158*v-.062*Math.abs(Math.sin(u*15.7))*v*v,0)).addScaledVector(west.forward,.039*v*Math.sin(u*25.1)),24,8);
       counter.box('BoatAccent',point(0,.94,.65),1.65,.13,.76,yaw);
-      counter.box('Paper',point(0,.85,1.758),2.20,.043,1.56,yaw,.126);
-      counter.box('BoatAccent',point(0,1.62,1.590),2.20,.17,.052,yaw);
-      for (const [u,d,size] of [[-.52,.95,.096],[-.30,1.01,.073],[.36,.84,.112],[.61,.86,.071]]) {
+      counter.round('ShoreStone',ware.jar,point(-.72,.44,-.013),1.62,1.4,1.62,yaw);
+      counter.round('Ink',ware.stool,point(-.72,.44,.303),1.26,.94,1.26,yaw);
+      const second={point:(u,d,h)=>point(u-1.76,d+.72,h),yaw};
+      counter.round('BoatLoad',ware.stool,second.point(0,0,.35),1.12,1,1.12,yaw);
+      for (const [u,d] of [[-.089,-.057],[.077,-.080],[.019,.102]]) {
+        cane(counter,'BoatLoad',[second.point(u*1.33,d*1.33,-.014),second.point(u*1.18,d*1.14,.16),
+          second.point(u,d,.355)],.023);
+      }
+      for (const [u,d,size] of [[-.58,.82,.075],[-.03,1.13,.073],[.36,.84,.112],[.61,.86,.071]]) {
         counter.round(u>0?'Slate':'Paper',coat,point(u,d,.725+size*.45),size,size*.9,size,yaw);
       }
       counter.box('Masonry',point(1.33,.38,.21),.42,.39,.42,yaw);
       doorway(counter,west,-1.25,.55,1.25);
       latticeWindow(counter,west,.84,.51,.47);
       counter.show();
+      teaDetails(group,west);
       const life=blocks(group,'汉阳茶案旁的店主');
-      person(life,west,1.16,.99,1.42,1.04,'Slate',.20);
+      const bowl=west.point(-1.088,1.554,.748);
+      person(life,west,-.585,1.438,-1.04,1.04,'Slate',.20,
+        {hand:west.point(-1.030,1.549,.753),side:-1,head:-.19});
+      life.round('Paper',ware.bowl,bowl,.49,.39,.49,yaw);
+      life.round('BoatLoad',ware.stool,bowl.clone().add(V(0,.054,0)),.33,.09,.33,yaw);
       life.show();
+      const patron=blocks(group,'汉阳竹凳上的接茶客人');
+      person(patron,west,-1.53,1.55,1.04,.94,'BoatAccent',.35,
+        {mode:'seated',hand:west.point(-1.154,1.567,.751),side:1,head:.16});
+      patron.show();
+    }
+
+    function enclosingCourt(group,name,runs,gate) {
+      const detail=blocks(group,name);
+      const segment=(a,b,height,key='Masonry')=>{
+        const p=a.clone().lerp(b,.5), rise=floor(p), span=Math.hypot(b.x-a.x,b.z-a.z);
+        const yaw=Math.atan2(a.z-b.z,b.x-a.x);
+        detail.box('BankStone',p.clone().setY(rise+.125),span+.045,.28,.284,yaw);
+        detail.box(key,p.clone().setY(rise+height*.5+.008),span+.028,height,.227,yaw);
+        detail.box('ShoreStone',p.clone().setY(rise+height+.028),span+.065,.067,.303,yaw);
+      };
+      for (const {line,heights,material} of runs) {
+        for (let i=1;i<line.length;i++) segment(line[i-1],line[i],heights[i-1],material);
+      }
+      if (gate) {
+        const [a,b]=gate, mid=a.clone().lerp(b,.5), y=floor(mid), width=a.distanceTo(b);
+        const yaw=Math.atan2(a.z-b.z,b.x-a.x);
+        for (const p of gate) {
+          const h=floor(p);
+          detail.box('BankStone',p.clone().setY(h+.92),.225,1.86,.273,yaw);
+          detail.box('ShoreStone',p.clone().setY(h+.087),.29,.190,.344,yaw);
+        }
+        detail.box('Ink',mid.clone().setY(y+1.823),width+.29,.127,.268,yaw);
+        detail.box('ShoreStone',mid.clone().setY(y+1.931),width+.416,.113,.433,yaw);
+        for (let i=0;i<10;i++) {
+          const station=a.clone().lerp(b,(i+.5)/10);
+          detail.round('Slate',dripTile,station.setY(y+2.005+.018*Math.sin(i*.89)),.129,.098,.35,yaw);
+        }
+      }
+      detail.show();
+    }
+    function kitchenWing(group,name,front,anchor,depth,sideVent=false) {
+      const {point,yaw}=front, wing=blocks(group,name);
+      const p=(u,d,h)=>point(anchor+u,d,h);
+      // The rear ties into the existing house; a narrow unglazed service opening faces the court.
+      wing.box('BankStone',p(0,depth*.50,.058),1.54,.151,depth+.075,yaw);
+      for (const side of [-1,1]) {
+        if (sideVent && side<0) {
+          const u=-.715;
+          wing.box('Masonry',p(u,depth*.49,.370),.128,.68,depth,yaw);
+          wing.box('Masonry',p(u,depth*.49,1.135),.128,.267,depth,yaw);
+          for (const d of [depth*.135,depth*.839]) wing.box('Masonry',p(u,d,.847),.128,.442,depth*.305,yaw);
+          wing.box('BoatAccent',p(u-.019,depth*.48,.721),.19,.061,depth*.43,yaw);
+          for (let row=0;row<3;row++)
+            wing.box('Ink',p(u-.004,depth*.48,.808+row*.071),.055,.028,depth*.376,yaw);
+        } else wing.box('Masonry',p(side*.715,depth*.49,.648),.128,1.24,depth,yaw);
+        wing.box('BankStone',p(side*.494,depth,.691),.442,1.29,.127,yaw);
+      }
+      wing.box('Masonry',p(0,depth,.32),.567,.608,.141,yaw);
+      wing.box('BoatAccent',p(0,depth+.014,.661),.755,.103,.265,yaw);
+      wing.box('Masonry',p(0,depth,1.168),.568,.34,.126,yaw);
+      wing.box('Ink',p(.01,depth-.18,.843),.52,.349,.035,yaw);
+      for (const side of [-1,1]) wing.box('BoatAccent',p(side*.19,depth+.025,.883),.038,.342,.053,yaw);
+      const canopy=(u,v)=>p((u-.5)*1.71,-.034+(depth+.19)*v,1.652-.279*v+.014*Math.sin(u*6.3));
+      const planeX=canopy(1,0).sub(canopy(0,0)), planeZ=canopy(0,1).sub(canopy(0,0));
+      const upward=planeZ.cross(planeX).y>0;
+      fabric(wing,'ShoreStone',(u,v)=>canopy(upward?u:1-u,v),12,8);
+      for (let i=0;i<10;i++) {
+        const u=(i+.5)*.10;
+        cane(wing,'Slate',[canopy(u,0),canopy(u,.47).add(V(0,.013,0)),
+          canopy(u,.91).add(V(0,.012,0))],.026);
+      }
+      wing.box('Ink',p(0,depth+.096,1.34),1.658,.077,.118,yaw);
+      wing.round('ShoreStone',ware.jar,p(-.51,depth+.18,.01),1.58,1.47,1.58,yaw);
+      wing.show();
     }
 
     function hanyangCourtyards() {
@@ -725,13 +1344,84 @@
           {routeName:'汉阳后巷步道',liftAt:t=>THREE.MathUtils.lerp(.097,.071,t)});
         return true;
       }
+      function householdCourt(front,use) {
+        const {point,yaw}=front;
+        const drying=use==='drying';
+        const name=drying?'汉阳茶棚后院透气筛廊':'汉阳后排雨檐与接水小院';
+        const details=blocks(group,name), depth=drying?1.89:1.35;
+        const roof=(u,v)=>point(-.96-u*1.74,.025+depth*v,1.869-.24*v+.026*Math.cos(u*5.2));
+        const row=roof(1,0).sub(roof(0,0)), slope=roof(0,1).sub(roof(0,0));
+        const faceUp=slope.cross(row).y>0;
+        fabric(details,'ShoreStone',(u,v)=>roof(faceUp?u:1-u,v),18,9);
+        for (let i=0;i<11;i++) {
+          const u=.045+i*.09, top=roof(u,1);
+          details.round('Slate',dripTile,top,.147,.079,.14,yaw);
+          cane(details,'ShoreStone',[roof(u,.07).add(V(0,.013,0)),roof(u,.54).add(V(0,.013,0)),
+            roof(u,.91).add(V(0,.011,0))],.025);
+        }
+        details.box('Ink',point(-1.831,.073,1.815),1.72,.11,.147,yaw);
+        for (const side of [-1.038,-2.59]) {
+          const post=point(side,depth-.107,0);
+          details.box('ShoreStone',post.clone().add(V(0,.075,0)),.143,.150,.155,yaw);
+          cane(details,'BoatAccent',[post.clone().add(V(0,.113,0)),post.clone().add(V(0,1.27,0)),
+            point(side,depth-.107,1.64)],.047);
+          cane(details,'BoatAccent',[point(side,depth-.107,1.28),point(side,depth*.70,1.52),
+            point(side,depth*.46,1.68)],.027);
+        }
+        details.box('BoatAccent',point(-1.82,depth-.08,1.631),1.76,.081,.108,yaw);
+        const bed=depth*.53;
+        details.box('ShoreStone',point(-1.82,bed,.035),1.63,.119,depth*.98,yaw);
+        for (const [i,x] of [-2.33,-1.82,-1.31].entries()) {
+          details.box(i===1?'Masonry':'BankStone',point(x,bed-.16,.088),.48,.035,depth*.57,yaw);
+          details.box('Masonry',point(x+.015,bed+.48,.083),.48,.033,.355,yaw);
+        }
+        details.box('Masonry',point(-1.11,depth+.15,.075),.46,.15,.63,yaw);
+        details.box('ShoreStone',point(-1.18,depth-.032,.207),.37,.117,.43,yaw);
+        // A short return screens the working side without crossing either approach.
+        details.box('Masonry',point(-2.64,depth+.125,.253),.24,.508,.572,yaw);
+        details.box('Slate',point(-2.64,depth+.112,.517),.27,.047,.612,yaw);
+        for (const h of [.35,.58]) cane(details,'BoatLoad',[point(-2.64,.58,h),point(-2.65,depth*.65,h-.021),
+          point(-2.64,depth-.09,h)],.016);
+        for (let i=0;i<7;i++) {
+          const d=.60+i*(depth-.69)/6, h=.61+(i%3)*.028;
+          cane(details,'BoatLoad',[point(-2.647,d,.131),point(-2.637,d+.021,h)],.020);
+        }
+        if (drying) {
+          const tray=(angle,r)=>point(-1.73+r*Math.cos(angle),1.03,1.162+r*Math.sin(angle));
+          for (const r of [.28,.278,.241]) {
+            const rim=Array.from({length:17},(_,i)=>tray(i*Math.PI/8,r));
+            cane(details,r===.241?'BoatLoad':'Paper',rim,.014);
+          }
+          for (let j=-3;j<=3;j++) {
+            const y=j*.058, half=Math.sqrt(.225**2-y*y);
+            cane(details,'BoatLoad',[point(-1.73-half,1.03,1.162+y),point(-1.73,1.016,1.163+y),
+              point(-1.73+half,1.03,1.162+y)],.007);
+          }
+          for (const u of [-1.91,-1.53]) cane(details,'BoatLoad',
+            [point(u,1.03,1.33),point(u,1.03,1.59)],.010);
+          details.round('BoatAccent',ware.jar,point(-2.31,.82,.104),1.91,1.85,1.92,yaw);
+          // The opposite wall's return is also a seat, tied into its stone foot rather than freestanding.
+          const wallSeat=V(-228.27,0,26.69), stoneYaw=Math.atan2(1.67,.68), ground=floor(wallSeat);
+          details.box('BankStone',wallSeat.clone().setY(ground+.119),1.31,.24,.47,stoneYaw);
+          details.box('Masonry',wallSeat.clone().setY(ground+.273),1.39,.089,.554,stoneYaw);
+          const outerEdge=V(-228.04,0,26.76).setY(ground+.051);
+          details.box('ShoreStone',outerEdge,1.46,.102,.48,stoneYaw);
+        } else {
+          const basin=point(-2.24,1.00,.099);
+          details.round('ShoreStone',ware.jar,basin,1.75,1.42,1.75,yaw);
+          cane(details,'Ink',[point(-2.24,1.27,1.653),point(-2.235,1.26,1.13),
+            point(-2.245,1.19,.65),point(-2.238,1.03,.40)],.015);
+          courtyardPlant(details,front,-1.52,.72,.94,'BoatAccent');
+        }
+        details.show();
+      }
       const yards=[
         {
-          house:[-222.30,20.50,false,false,3.80], name:'汉阳茶棚后院门面', walk:'茶棚后院接汉阳滨水支巷',
+          house:[-222.30,20.50,false,false,3.80], use:'drying', name:'汉阳茶棚后院门面', walk:'茶棚后院接汉阳滨水支巷',
           bends:[[-225.48,24.94],[-226.05,26.73],[-226.12,29.28],[-225.94,32.34],[-225.75,34.56]],
           walls:[[-228.0,29.53,1.64,.61,.10],[-223.87,29.29,1.25,.51,-.19]],
           returnToHouse:[[-228.78,27.55],[-228.10,25.88],[-226.75,24.16]],
-          door:[.78,1.60], window:[-1.08,.48,.46],
+          door:[1.06,1.60,.16], window:[-1.20,.70,.78],
         },
         {
           house:[-222,45,true,true,0], name:'汉阳沿巷小院山墙门面', walk:'汉阳沿巷小院过门石径',
@@ -741,18 +1431,27 @@
           door:[.69,1.37], window:[.88,.44,.44],
         },
         {
-          house:[-234.64,48.70,false,true,-.37], name:'汉阳后排里分门面', walk:'汉阳后排里分入巷石径',
+          house:[-234.64,48.70,false,true,-.37], use:'rain', name:'汉阳后排里分门面', walk:'汉阳后排里分入巷石径',
           bends:[[-235.19,44.78],[-235.44,43.22],[-235.86,41.69],[-236.70,39.58],[-237.39,37.18]],
           walls:[[-237.52,42.13,1.38,.56,.27],[-233.98,42.19,1.22,.43,.08]],
           returnToHouse:[[-237.87,43.64],[-236.18,46.22]],
-          door:[.83,1.59], window:[1.18,.52,.46],
+          door:[.84,1.59,-.39], window:[1.30,.40,.98],
         },
       ];
-      for (const {house,name,walk,bends,walls,returnToHouse,door,window} of yards) {
+      for (const {house,name,walk,bends,walls,returnToHouse,door,window,use} of yards) {
         const face=courtyardFront(...house);
         if (!face || !courtWalk(face,walk,bends)) continue;
         const detail=blocks(group,name);
-        doorway(detail,face,0,...door);
+        const [width,height,offset=0]=door, {point,yaw}=face;
+        doorway(detail,face,offset,width,height);
+        // Narrow inner leaves break the deep reveal, while the threshold remains flush.
+        for (const side of [-1,1]) {
+          const leaf=offset+side*width*.245;
+          detail.box('BoatAccent',point(leaf,.046,height*.41+.04),width*.445,height*.73,.023,yaw);
+          detail.box('Ink',point(leaf,.062,height*.47+.04),width*.308,height*.46,.012,yaw);
+          detail.box('BoatAccent',point(leaf,.079,height*.47+.04),width*.31,.028,.016,yaw);
+        }
+        detail.box('Slate',point(offset+.045,.082,height*.43),.04,.043,.032,yaw);
         latticeWindow(detail,face,...window);
         detail.show();
         const edges=blocks(group,name+'的退让院墙');
@@ -763,6 +1462,7 @@
           edges.box('Slate',p.clone().setY(y+height-.02),length+.035,.038,.19,yaw);
         }
         for (const [i,[x,z,length,height,yaw]] of walls.entries()) {
+          if (i && use) continue;
           const p=V(x,0,z);
           lowWall(p,length,height,yaw);
           if (i) continue;
@@ -775,27 +1475,88 @@
           }
         }
         edges.show();
+        if (use) householdCourt(face,use);
+        if (use==='drying') {
+          const v=(x,z)=>V(x,0,z);
+          const gate=[v(-231.61,23.21),v(-233.10,23.03)];
+          enclosingCourt(group,'汉阳晒院连墙与过檐侧门',[
+            {line:[v(-226.78,24.14),v(-229.03,23.74),gate[0]],heights:[.82,1.06]},
+            {line:[gate[1],v(-234.21,22.88),v(-234.52,21.44)],heights:[1.07,.72]},
+          ],gate);
+          paveAlley(group,'汉阳晒院侧门石径',
+            [v(-226.48,31.35),v(-229.48,30.45),v(-232.27,28.02),v(-232.36,23.15),v(-232.83,22.03),v(-233.24,21.53)],
+            20,()=>.47,{material:'BankStone',liftAt:()=>.069});
+        }
+        if (use==='rain') {
+          kitchenWing(group,'汉阳后院旧砖灶披屋',face,3.49,1.18);
+          const v=(x,z)=>V(x,0,z);
+          const gate=[v(-240.23,42.01),v(-241.66,41.81)];
+          enclosingCourt(group,'汉阳后排院侧砖墙与檐门',[
+            {line:[v(-237.86,43.63),v(-238.93,42.25),gate[0]],heights:[.61,.91],material:'BankStone'},
+            {line:[gate[1],v(-242.90,41.69),v(-243.37,43.03)],heights:[.83,.65],material:'BankStone'},
+          ],gate);
+          paveAlley(group,'汉阳雨院檐门小道',
+            [v(-237.35,37.96),v(-239.46,38.44),v(-241.52,39.71),v(-240.93,41.92),v(-241.00,43.58)],
+            15,()=>.45,{material:'BankStone',liftAt:()=>.069});
+        }
       }
     }
     hanyangCourtyards();
+    streetEaves('汉阳茶棚后街坊','汉阳茶棚旧屋起伏瓦檐',-218,29);
+    streetEaves('汉阳茶棚后街坊','汉阳后院灰瓦滴水',-222.30,20.50);
 
     // The other bank has a quieter house gate, with short caps and an open way into the courtyard.
     const east=laneFront(-59.58,75.26,false);
     if (east) {
       const group='武昌滨水街巷生活', {point,yaw}=east;
       laneApron(group,'武昌里分门前石径接支巷',east,3.3,1.43);
-      const gate=blocks(group,'武昌里分矮墙与开敞院门');
+      const gate=blocks(group,'武昌青砖里分门楼');
+      const gateZ=2.25;
       for (const side of [-1,1]) {
-        gate.box('Masonry',point(side*1.24,2.25,.39),1.02,.76,.24,yaw);
-        gate.box('Slate',point(side*1.24,2.25,.80),1.09,.095,.34,yaw);
-        gate.box('Masonry',point(side*.74,2.25,.50),.24,.99,.31,yaw);
-        gate.box('Slate',point(side*.74,2.25,1.01),.32,.085,.38,yaw);
-        gate.box('Ink',point(side*.86,2.64,.51),.12,.87,.79,yaw+.16*side);
+        gate.box('Masonry',point(side*1.35,gateZ,.39),.88,.76,.23,yaw);
+        gate.box('ShoreStone',point(side*1.35,gateZ,.788),.90,.083,.30,yaw);
+        gate.box('ShoreStone',point(side*.85,gateZ,.066),.33,.142,.43,yaw);
+        for (let row=0;row<14;row++) {
+          const key=row%4===1?'Slate':'ShoreStone';
+          gate.box(key,point(side*.851,gateZ+(row%2)*.005,.176+row*.113),
+            .260+(row%2)*.030,.107,.331,yaw);
+        }
+        gate.box('ShoreStone',point(side*.85,gateZ,1.752),.37,.115,.46,yaw);
+        gate.box('Ink',point(side*.738,2.54,.451),.095,.81,.584,yaw+side*.21);
       }
-      gate.box('Masonry',point(0,2.36,.088),1.20,.105,.32,yaw);
+      // The timber head and sign sit above the open passage between the brick piers.
+      gate.box('Ink',point(0,gateZ,1.824),1.97,.166,.285,yaw);
+      gate.box('Masonry',point(0,gateZ,1.977),1.83,.176,.353,yaw);
+      gate.box('Ink',point(0,2.445,1.962),.82,.241,.063,yaw);
+      gate.box('BoatLoad',point(0,2.484,2.082),.86,.024,.036,yaw);
+      gate.box('BoatLoad',point(0,2.482,1.843),.853,.026,.036,yaw);
+      const characters=[
+        [[[.19,.18],[.81,.19]],[[.20,.18],[.20,.553]],[[.80,.18],[.80,.55]],[[.23,.37],[.78,.37]],
+          [[.24,.55],[.78,.55]],[[.50,.20],[.50,.81]],[[.29,.70],[.72,.70]],[[.16,.84],[.86,.84]]],
+        [[[.43,.19],[.25,.38],[.13,.49]],[[.59,.16],[.74,.37],[.86,.49]],[[.25,.49],[.74,.49],[.70,.70],[.65,.82],[.53,.79]],
+          [[.46,.50],[.40,.70],[.26,.85]]],
+      ];
+      for (const [i,character] of characters.entries()) for (const stroke of character) {
+        const words=stroke.map(([u,v])=>point((.5-i)*.286+(.5-u)*.233,2.486,2.065-.205*v));
+        cane(gate,'Paper',words,.0112);
+      }
+      for (const side of [-1,1]) {
+        fabric(gate,'ShoreStone',(u,v)=>point((side<0?.5-u:u-.5)*2.18,gateZ+side*.34*(1-v),
+          2.069+.19*v+.030*Math.sin((side<0?1-u:u)*7.1)),20,9);
+        for (let tile=0;tile<14;tile++) {
+          const u=-1.018+tile*.156;
+          gate.round('ShoreStone',dripTile,point(u,gateZ+side*.348,2.062+.028*Math.cos(tile*.45)),
+            .156,.117,.133,yaw);
+        }
+      }
+      gate.box('Slate',point(0,gateZ,2.268),2.19,.064,.13,yaw);
+      gate.box('ShoreStone',point(0,2.31,.070),1.22,.091,.34,yaw);
       doorway(gate,east,0,.48,1.26);
       latticeWindow(gate,east,2.80,.45,.49);
       gate.show();
+      const planter=blocks(group,'武昌开敞院门靠墙釉盆');
+      courtyardPlant(planter,east,-1.93,1.82,1.13,'ShoreStone');
+      planter.show();
       const life=blocks(group,'武昌入巷同行');
       person(life,east,-.52,3.64,Math.PI*.12,1.07,'Slate',.83);
       person(life,east,.36,4.33,Math.PI*.04,.91,'BoatAccent',-.53);
@@ -803,6 +1564,8 @@
     }
 
     const backGroup='武昌滨水街巷生活', routeName='武昌后巷步道';
+    streetEaves(backGroup,'武昌入巷老宅错搭瓦檐',-59.58,75.26);
+    streetEaves(backGroup,'武昌里分后排灰瓦滴水',-37.73,58.08);
     function oldThreshold(matrices,x,z,doorX,wallZ) {
       const matrix=matrices.find(({elements:e})=>Math.hypot(x-e[12],z-e[14])<.28);
       if (!matrix) return null;
@@ -813,7 +1576,8 @@
         const p=origin.clone().addScaledVector(tangent,across).addScaledVector(forward,along);
         return p.setY(floor(p)+height);
       };
-      return {point,yaw:Math.atan2(-tangent.z,tangent.x)};
+      return {point,forward,yaw:Math.atan2(-tangent.z,tangent.x),
+        widthScale:Math.hypot(e[0],e[2]), heightScale:e[5], base:e[13]-floor(origin)};
     }
     function streetLip(paths,point) {
       let best=Infinity, lip;
@@ -848,29 +1612,115 @@
       const court=blocks(backGroup,'武昌公寓转角短院墙');
       court.box('Masonry',point(.03,.25,.065),1.90,.13,.63,yaw);
       court.box('Slate',point(.03,.61,.041),1.63,.077,.29,yaw);
-      court.box('Ink',point(0,.022,.80),1.41,1.44,.043,yaw);
-      court.box('Slate',point(0,.050,1.36),1.23,.25,.032,yaw);
+      // Actual brickwork projects in front of the timber leaves, leaving the reveal open.
       for (const side of [-1,1]) {
-        court.box('Masonry',point(side*.727,.061,.82),.08,1.53,.11,yaw);
-        court.box('Slate',point(side*.317,.052,.66),.607,1.06,.036,yaw);
-        court.box('Ink',point(side*.132,.081,.71),.027,.17,.034,yaw);
+        for (let course=0;course<8;course++) {
+          const y=.106+course*.135;
+          const key=(course+side+2)%5===0?'Masonry':'BankStone';
+          court.box(key,point(side*.749,.246+(course%2)*.006,y),.133+(course%2)*.025,.124,.48,yaw);
+        }
+        court.box('ShoreStone',point(side*.757,.241,.073),.23,.151,.51,yaw);
+        court.box('Ink',point(side*.588,.042,.694),.065,1.25,.082,yaw);
+        court.box('BoatAccent',point(side*.305,.041,.635),.56,1.14,.055,yaw);
+        court.box('BoatGlass',point(side*.302,.071,.813),.416,.526,.024,yaw);
+        court.box('BoatAccent',point(side*.302,.085,.785),.43,.041,.035,yaw);
+        court.box('Ink',point(side*.302,.072,.364),.427,.256,.023,yaw);
+        court.box('BoatAccent',point(side*.302,.085,.364),.354,.192,.034,yaw);
+        court.box('BoatLoad',point(side*.089,.091,.624),.024,.136,.041,yaw);
       }
-      court.box('Masonry',point(0,.056,1.59),1.53,.061,.095,yaw);
+      for (let i=0;i<11;i++) {
+        const a=Math.PI*(i+.035)/11,b=Math.PI*(i+.965)/11;
+        const arc=(r,t)=>new THREE.Vector2(r*Math.cos(t),1.104+.70*r*Math.sin(t));
+        const profile=new THREE.Shape([arc(.815,a),arc(.815,(a+b)*.5),arc(.815,b),
+          arc(.668,b),arc(.668,(a+b)*.5),arc(.668,a)]);
+        const brick=new THREE.ExtrudeGeometry(profile,{depth:.36,bevelEnabled:false});
+        court.round(i===5?'Masonry':'BankStone',brick,point(0,.102),1,1,1,yaw);
+      }
+      for (let i=0;i<7;i++) {
+        const a=Math.PI*i/7,b=Math.PI*(i+1)/7;
+        const pane=new THREE.Shape([new THREE.Vector2(0,1.117),...Array.from({length:4},(_,j)=>{
+          const angle=THREE.MathUtils.lerp(a+.016,b-.016,j/3);
+          return new THREE.Vector2(.622*Math.cos(angle),1.117+.421*Math.sin(angle));
+        })]);
+        const glass=new THREE.ExtrudeGeometry(pane,{depth:.024,bevelEnabled:false});
+        court.round('BoatGlass',glass,point(0,.068),1,1,1,yaw);
+        for (const angle of [a,b]) {
+          court.beam('BoatLoad',point(0,.103,1.117),
+            point(.615*Math.cos(angle),.103,1.117+.415*Math.sin(angle)),.024);
+        }
+      }
+      court.box('BoatAccent',point(0,.082,1.110),1.28,.068,.104,yaw);
+      court.box('BoatAccent',point(-.966,.117,.82),.23,.24,.25,yaw);
+      court.box('Ink',point(-.966,.21,.865),.174,.028,.022,yaw);
+      court.box('ShoreStone',point(-.966,.16,.952),.262,.036,.16,yaw,.09);
       // The entrance faces the turning lane on its open side. A low return screens the other corner.
       court.box('Masonry',point(1.80,1.91,.31),2.18,.61,.23,yaw);
       court.box('Slate',point(1.80,1.91,.63),2.25,.08,.31,yaw);
       court.box('Masonry',point(2.95,.97,.25),.24,.49,1.99,yaw);
       court.box('Slate',point(2.95,.97,.52),.31,.074,2.04,yaw);
-      court.box('BoatAccent',point(.72,1.91,.418),.20,.82,.24,yaw);
+      court.box('Masonry',point(.72,1.91,.323),.24,.647,.31,yaw);
+      court.box('ShoreStone',point(.72,1.91,.665),.32,.070,.38,yaw);
+      court.box('ShoreStone',point(.71,1.91,.048),.37,.095,.43,yaw);
       for (const [u,d,w,l] of [[1.8,1.91,2.24,.30],[2.95,.97,.29,2.04]]) {
         const base=point(u,d,.035);
         court.box('Slate',base,w,.068,l,yaw);
         groundContacts.push({x:base.x,z:base.z,rx:w*.59,rz:l*.59,c:Math.cos(yaw),s:Math.sin(yaw),tree:false});
       }
-      for (const [u,w] of [[-2.06,1.34],[2.08,1.34],[4.14,1.19]]) {
-        court.box('Slate',point(u,.071,.157),w,.073,.22,yaw);
+      const {widthScale,heightScale,base}=middle;
+      for (const center of [-3.22,1.12,3.29]) {
+        const u=(center+1.05)*widthScale, w=1.60*widthScale;
+        const sill=base+.34*heightScale;
+        court.box('Slate',point(u,.079,sill-.025),w+.09,.058,.19,yaw);
+        court.box('Masonry',point(u,.057,sill-.080),w+.025,.055,.116,yaw);
       }
       court.show();
+
+      const lived=blocks(backGroup,'武昌旧公寓沿街半帘与晾杆');
+      // Mount the details on the actual recessed apartment panes, clear of the slab edges.
+      const recess=(2.57-3.29)*widthScale;
+      const bambooCenter=(-2.92+1.05)*widthScale;
+      const bambooTop=base+4.05*heightScale;
+      const bambooHalf=.69*widthScale;
+      const bamboo=(u,v)=>point(bambooCenter+(u-.5)*bambooHalf*2,
+        recess+.048+.013*Math.sin(Math.PI*u)+.018*v*v,
+        bambooTop-.51*heightScale*v+.017*Math.sin(u*7.8)*v);
+      fabric(lived,'BoatCanopy',bamboo,14,13);
+      for (let row=0;row<11;row++) {
+        const v=(row+.5)/11;
+        cane(lived,'BoatLoad',[bamboo(.007,v),bamboo(.51,v).addScaledVector(middle.forward,.012),
+          bamboo(.993,v)],.009);
+      }
+      cane(lived,'BoatLoad',[bamboo(.02,1),bamboo(.54,1).add(V(0,-.019,0)),bamboo(.98,1)],.028);
+      for (const u of [bambooCenter-bambooHalf,bambooCenter+bambooHalf]) {
+        cane(lived,'Ink',[point(u,recess,bambooTop+.035),point(u,recess+.072,bambooTop+.050)],.013);
+      }
+
+      const laundryCenter=(1.08+1.05)*widthScale;
+      const laundryTop=base+3.85*heightScale;
+      const rodDepth=recess+.36;
+      cane(lived,'BoatLoad',[point(laundryCenter-.55,rodDepth,laundryTop),
+        point(laundryCenter+.56,rodDepth,laundryTop-.022)],.015);
+      for (const side of [-1,1]) cane(lived,'Ink',
+        [point(laundryCenter+side*.50,recess,laundryTop-.086),point(laundryCenter+side*.54,rodDepth,laundryTop)],.013);
+      for (const [shift,span,drop,key] of [[-.30,.30,.36,'Paper'],[.17,.45,.48,'BoatGlass']]) {
+        fabric(lived,key,(u,v)=>point(laundryCenter+shift+(u-.5)*span+.016*v,
+          rodDepth+.039*Math.sin(u*12.4+v*2.7)*v,
+          laundryTop-.013-drop*v+.014*Math.cos(u*6.28)*v*v),10,12);
+        lived.box('BoatLoad',point(laundryCenter+shift-span*.32,rodDepth,laundryTop+.008),.019,.064,.026,yaw);
+      }
+      lived.show();
+
+      const windowDetail=blocks(backGroup,'武昌公寓窗边接布住户');
+      const sill=base+3.02*heightScale, hinge=laundryCenter+.72*widthScale;
+      const sash=(u,v)=>point(hinge-u*.61*widthScale,recess+.041+.229*u,
+        sill+.028+v*.98*heightScale);
+      fabric(windowDetail,'BoatGlass',sash,7,8);
+      for (const u of [.008,.99]) cane(windowDetail,'BoatLoad',[sash(u,0),sash(u,.50),sash(u,1)],.018);
+      for (const v of [.011,.48,.982]) cane(windowDetail,'BoatLoad',[sash(0,v),sash(.52,v),sash(1,v)],.017);
+      const grip=point(laundryCenter+.017,rodDepth+.015,laundryTop-.158);
+      person(windowDetail,middle,laundryCenter-.43,recess+.126,.39,.74,'Slate',.8,
+        {mode:'window',hand:grip,side:1,head:.24,base:point(0,recess,sill).y-.57*.74});
+      windowDetail.show();
     }
     if (rear) {
       const {point,yaw}=rear, endpoint=streetLip(oldStreet,point(.12,1.86));
@@ -883,29 +1733,191 @@
       // Recessed timber leaves and narrow divisions follow the openings of this specific front.
       entry.box('Ink',point(0,.022,.81),.75,1.55,.046,yaw);
       entry.box('BoatAccent',point(0,.064,1.60),.82,.073,.11,yaw);
-      entry.box('BoatAccent',point(0,.13,1.74),1.05,.102,.39,yaw,.12);
+      const awning=(u,v)=>point((u-.5)*1.27,.05+.48*v,1.88-.17*v+.027*Math.cos(u*6.1)-.018*v*v);
+      fabric(entry,'Ink',(u,v)=>awning(u,v).add(V(0,-.040,0)),12,7);
+      for (let tile=0;tile<10;tile++) {
+        const spread=tile%3===1?.012:-.006;
+        fabric(entry,'ShoreStone',(u,v)=>{
+          const p=awning((tile+.06+u*.88)/10,v);
+          return p.add(V(0,.031*Math.sin(Math.PI*u)+spread,0));
+        },5,8);
+        const lip=awning((tile+.5)/10,1).add(V(0,.016+spread,0));
+        entry.round('ShoreStone',dripTile,lip,.117,.102,.14,yaw);
+      }
+      cane(entry,'BoatAccent',[awning(.01,.93).add(V(0,-.044,0)),awning(.46,.96).add(V(0,-.052,0)),
+        awning(.99,.94).add(V(0,-.045,0))],.032);
       for (const side of [-1,1]) {
-        entry.beam('Ink',point(side*.49,.094,1.49),point(side*.49,.26,1.70),.067);
-        entry.box('BoatAccent',point(side*.38,.061,.80),.068,1.54,.098,yaw);
+        cane(entry,'BoatAccent',[point(side*.54,.077,1.345),point(side*.54,.185,1.53),
+          point(side*.54,.317,1.63),point(side*.54,.457,1.71)],.037);
+        entry.box('Ink',point(side*.54,.067,1.37),.089,.18,.084,yaw);
+        entry.box('BoatAccent',point(side*.38,.061,.80),.075,1.54,.118,yaw);
         entry.box('BoatAccent',point(side*.175,.047,.79),.315,1.46,.031,yaw);
         entry.box('Ink',point(side*.175,.067,.98),.221,.69,.021,yaw);
         entry.box('BoatAccent',point(side*.175,.082,.97),.208,.035,.024,yaw);
+        entry.box('Ink',point(side*.086,.080,.695),.087,.122,.021,yaw);
+        const ring=Array.from({length:13},(_,i)=>{
+          const angle=i*Math.PI/6;
+          return point(side*.086+.033*Math.sin(angle),.110+.017*Math.cos(angle),.683+.041*Math.cos(angle));
+        });
+        cane(entry,'BoatLoad',ring,.009);
       }
-      entry.box('Masonry',point(.071,.077,.78),.032,.083,.033,yaw);
-      for (const [u,w] of [[1.13,.39],[1.64,.39],[-1.51,.37]]) {
-        entry.box('Ink',point(u,.017,.997),w,.87,.026,yaw);
+      entry.box('BoatLoad',point(.043,.087,.618),.068,.075,.033,yaw);
+      entry.box('Ink',point(.044,.103,.609),.013,.028,.009,yaw);
+      // The timber bars land on the four actual panes flanking the threshold.
+      const {widthScale,heightScale,base}=rear;
+      for (const center of [-2.73,-2.19,.43,.97]) {
+        const u=(center+.75)*widthScale, w=.40*widthScale, h=.95*heightScale, y=base+1.125*heightScale;
+        const jamb=.032;
         for (const side of [-1,1]) {
-          entry.box('BoatAccent',point(u+side*(w*.5-.018),.045,.997),.036,.88,.059,yaw);
+          entry.box('BoatAccent',point(u+side*(w*.5-jamb*.5),.039,y),jamb,h+.012,.052,yaw);
         }
-        entry.box('BoatAccent',point(u,.046,.997),w,.042,.058,yaw);
-        entry.box('Slate',point(u,.036,1.446),w+.04,.049,.049,yaw);
+        entry.box('BoatAccent',point(u,.042,y-h*.11),w,.034,.055,yaw);
+        entry.box('Slate',point(u,.036,y+h*.5),w+.045,.044,.049,yaw);
       }
       entry.box('Masonry',point(0,.21,.067),.91,.13,.48,yaw);
       entry.box('Masonry',point(.015,.53,.035),1.03,.066,.21,yaw);
       for (const [u,w] of [[-1.82,.88],[1.37,.91],[4.36,.91]]) {
         entry.box('Slate',point(u,.071,.517),w,.064,.21,yaw);
       }
+      for (const [u,w] of [[-1.30,1.45],[1.46,1.88]]) {
+        entry.box('ShoreStone',point(u,.032,.044),w,.094,.129,yaw);
+      }
       entry.show();
+      paintedDoorGoods(backGroup,rear);
+      kitchenWing(backGroup,'武昌里分连屋小灶间',rear,3.75,1.43,true);
+      const edgeGate=[point(-2.91,.995),point(-4.02,.995)];
+      enclosingCourt(backGroup,'武昌里分侧院短砖界与进院门',[
+        {line:[point(-4.89,.045),point(-4.67,.756),edgeGate[1]],heights:[.83,.76],material:'BankStone'},
+        {line:[edgeGate[0],point(-2.58,1.02),point(-2.25,.44)],heights:[.65,.52],material:'Masonry'},
+      ],edgeGate);
+      paveAlley(backGroup,'武昌里分从便门到侧院',
+        [point(-3.42,1.72),point(-3.46,1.00),point(-3.52,.29)],7,
+        ()=>.375,{material:'BankStone',liftAt:()=>.069});
+    }
+  }
+
+  function dressRiverfrontGround(lots) {
+    const meadow=vergeWash(.40,['#758068','#b4b895']);
+    const earth=vergeWash(.47,['#9c9079','#c8baa1']);
+    const moss=vergeWash(.24,['#596750','#9c9f7b']);
+    const field=vergeWash(.34,['#918972','#c2b69a']);
+    field.fragmentShader=field.fragmentShader.replace('vec4(col, vVergeCover *',`vec4(col *
+      (1. + (vnoise(vW.xz*12.1)-.5)*.105 + (vnoise(vW.xz*2.49)-.5)*.09), vVergeCover *`);
+    const grass=inkMat(.47,true,['#627057','#9f9e76']);
+    const distanceToWalk=(x,z,{a,b})=>{
+      const dx=b.x-a.x, dz=b.z-a.z;
+      const t=THREE.MathUtils.clamp(((x-a.x)*dx+(z-a.z)*dz)/(dx*dx+dz*dz),0,1);
+      return Math.hypot(x-a.x-dx*t,z-a.z-dz*t);
+    };
+    const paths=[...new Set([...cityGround.streets,...cityGround.courtyardPaths])];
+    const banks=[
+      ['汉阳滨水街巷地面',[
+        [-203.3,32.3,5.5,1.85,.15],[-210.6,38.7,4.1,1.65,-.06],
+        [-216.6,40.7,4.0,2.65,-.15],[-224.0,41.0,4.2,1.65,.22],
+        [-220.9,33.12,2.25,1.01,-.06],[-224.4,27.2,2.55,1.55,-1.43],
+        [-229.8,40.1,5.3,1.85,.11],[-234.8,40.02,3.6,1.6,.19],
+        [-229.9,48.2,3.6,2.5,-.33],[-204.1,50.6,2.6,1.09,.63],
+      ]],
+      ['武昌滨水街巷地面',[
+        [-76.2,91.7,5.8,1.35,.18],[-71.7,80.0,4.8,1.65,-.13],
+        [-64.7,81.0,3.1,1.25,.18],[-57.6,81.2,3.45,1.1,.49],
+        [-54.7,87.4,4.3,1.56,-.18],[-49.5,78.4,5.2,1.7,-.97],
+        [-40.6,79.0,3.2,.96,.11],[-48.8,69.1,4.15,1.75,1.34],
+        [-43.1,60.8,3.8,1.84,1.19],[-40.6,54.0,4.7,1.48,-.43],
+        [-32.35,55.6,3.8,1.6,-1.03],[-37.2,50.6,3.5,1.31,-.38],
+      ]],
+    ];
+    for (const [group,zones] of banks) {
+      const patches=new Map(), shoots=[];
+      function plot(name,ink,material,cx,cz,rx,rz,yaw,seed,underWall=false,baseAlpha=1) {
+        const range=Math.max(rx,rz)+3;
+        const near=paths.filter(({a,b})=>cx>=Math.min(a.x,b.x)-range && cx<=Math.max(a.x,b.x)+range &&
+          cz>=Math.min(a.z,b.z)-range && cz<=Math.max(a.z,b.z)+range);
+        const landFade=([x,,z])=>{
+          if (!onLand(x,z) || (!underWall && cityGround.occupied(x,z,.03))) return 0;
+          const gap=Math.min(2,...near.map(path=>distanceToWalk(x,z,path)-path.width*.5));
+          const walkFade=THREE.MathUtils.smoothstep(gap,.07,.91);
+          return walkFade*(!underWall&&cityGround.occupied(x,z,.35) ? .30 : 1);
+        };
+        const c=Math.cos(yaw),s=Math.sin(yaw), vertices=[], coverage=[], faces=[], sides=23;
+        const point=(u,v,lift)=>{
+          const x=cx+c*u+s*v,z=cz-s*u+c*v;
+          return [x,(plantingSurface(x,z) ?? LAND_Y)+lift,z];
+        };
+        vertices.push(point(0,0,ink===field ? .021 : .037)); coverage.push(.79);
+        for (const [ring,alpha] of [[.38,.72],[.72,.50],[1,0]]) {
+          for (let i=0;i<sides;i++) {
+            const a=i/sides*Math.PI*2, noise=.93+.12*Math.sin(i*2.29+seed)+.10*Math.cos(i*1.11+seed*.78);
+            vertices.push(point(Math.cos(a)*rx*ring*noise,Math.sin(a)*rz*ring*noise,(ink===field ? .018 : .012+.028*(1-ring))));
+            coverage.push(alpha*(.75+.25*Math.cos(i*1.7+seed)**2));
+          }
+        }
+        for (let i=0;i<sides;i++) {
+          const j=(i+1)%sides;
+          faces.push([0,1+j,1+i]);
+          for (const base of [1,1+sides]) {
+            const a=base+i,b=base+j,c=a+sides,d=b+sides;
+            faces.push([a,b,c],[b,d,c]);
+          }
+        }
+        if (!patches.has(name)) patches.set(name,{ink,material,positions:[],alpha:[]});
+        const batch=patches.get(name), fade=vertices.map(p=>landFade(p)*baseAlpha);
+        for (const face of faces) {
+          const tri=face.map(i=>vertices[i]);
+          if (!face.some(i=>fade[i]*coverage[i]>.015) || !triangleOnLand(...tri)) continue;
+          for (const i of face) {
+            batch.positions.push(...vertices[i]); batch.alpha.push(coverage[i]*fade[i]);
+          }
+        }
+        if (underWall || ink!==meadow) return;
+        for (let j=0;j<13;j++) {
+          const a=j*2.399+seed, r=.39+.54*(j%7)/7;
+          const [x,y,z]=point(Math.cos(a)*rx*r,Math.sin(a)*rz*r,.026);
+          if (landFade([x,y,z])<.96) continue;
+          for (const k of [-2,-1,0,1,2]) {
+            const a2=a+k*.71, h=.053+.115*Math.sin(j*1.77+seed+k)**2, w=.022+.008*(j%3);
+            const dx=Math.cos(a2), dz=Math.sin(a2), shift=.024*k;
+            shoots.push(x+(shift-w)*dz,y,z-(shift-w)*dx, x+(shift+w)*dz,y,z-(shift+w)*dx,
+              x+dx*h*.54+shift*dz,y+h,z+dz*h*.54-shift*dx);
+          }
+        }
+      }
+      const fieldPads=group.startsWith('汉阳') ?
+        [[-205,40.5,10.0,6.4,.16],[-219,40.7,12,7,.06],[-227,29,5.9,6.9,1.27],[-233,41.3,9.7,5.2,-.13],
+          [-230,49,9.8,5.1,.37],[-213,28.3,7.1,5.2,-.08]] :
+        [[-76.8,91.7,11.2,5.3,.24],[-66,89.4,9.7,5.7,-.24],[-71.3,88.0,8.9,4.65,-.14],[-64,78.9,9.1,6.8,.09],
+          [-51,83.6,11.5,6.1,.41],[-44,72.7,9.7,10.6,-.15],[-42,58.4,9.5,8.2,.18],[-34,50.8,9.1,5.9,-.28]];
+      for (const [i,[x,z,rx,rz,yaw]] of fieldPads.entries()) {
+        plot('街坊浅土',field,'WetBank',x,z,rx,rz,yaw,21.7+i*1.72,false,.80);
+      }
+      for (const [i,[x,z,rx,rz,yaw]] of zones.entries()) {
+        plot('低草与湿土',meadow,'BankGrass',x,z,rx,rz,yaw,1.9+i*1.23);
+        if (i%3!==2) plot('巷边露土',earth,'WetBank',x+.22,z-rz*.61,rx*.85,rz*.56,yaw,4.3+i);
+      }
+      const nearHouses=group.startsWith('汉阳') ? [[-218,29,'lane'],[-222,45,'lane'],[-234.64,48.70,'lane']]
+        : [[-59.58,75.26,'lane'],[-40.09,71.99,'apartment'],[-37.73,58.08,'lane']];
+      for (const [j,[x,z,kind]] of nearHouses.entries()) {
+        const lot=lots[kind].find(({elements:e})=>Math.hypot(x-e[12],z-e[14])<.28);
+        if (!lot) continue;
+        const e=lot.elements, scale=Math.hypot(e[0],e[2]), yaw=Math.atan2(-e[2],e[0]);
+        for (const [i,[u,v,r]] of [[-3.10,-3.1,1.22],[2.65,-3.05,.83],[-2.25,3.12,1.48],[3.06,3.02,1.12]].entries()) {
+          const p=V(u,0,v*(kind==='apartment'?1.16:1)).applyMatrix4(lot);
+          plot('屋脚薄苔',moss,'BankGrass',p.x,p.z,r*scale,.37,yaw,13.7+i+j*2.3,true);
+        }
+      }
+      if (shoots.length) patches.set('巷脚细草',{ink:grass,material:'Reeds',positions:shoots});
+      for (const [label,{ink,material,positions,alpha}] of patches) {
+        if (!positions.length) continue;
+        const geometry=new THREE.BufferGeometry();
+        geometry.setAttribute('position',new THREE.Float32BufferAttribute(positions,3));
+        if (alpha) geometry.setAttribute('vergeCover',new THREE.Float32BufferAttribute(alpha,1));
+        geometry.computeVertexNormals();
+        const mesh=new THREE.Mesh(geometry,ink);
+        mesh.name=group+' · '+label;
+        mesh.userData.landscapeSurface={group,name:mesh.name,material};
+        mesh.userData.detailSize=.65;
+        scene.add(mesh);
+      }
     }
   }
 
@@ -944,6 +1956,44 @@
       return false;
     }
     const occupied = occupiedIn.bind(null,cells);
+    function oldStreetBed(a,b,width,bank,looseAtStart) {
+      const length=Math.hypot(b.x-a.x,b.z-a.z), steps=Math.ceil(length/.65);
+      const nx=(b.z-a.z)/length, nz=(a.x-b.x)/length;
+      const positions=[],cover=[],indices=[],rows=[],visible=[];
+      const lerp=THREE.MathUtils.lerp, smooth=THREE.MathUtils.smoothstep;
+      const ink=vergeWash(.50,['#9a917b','#d2c5a9']);
+      for (let i=0;i<=steps;i++) {
+        const t=i/steps, fromEnd=(looseAtStart?t:1-t)*length;
+        const neck=smooth(fromEnd,0,Math.min(2.2,length*.33));
+        const x=lerp(a.x,b.x,t),z=lerp(a.z,b.z,t), course=[];
+        for(const [s,alpha] of [[-1,0],[-.80,.91],[0,.98],[.80,.91],[1,0]]) {
+          const off=s*width*.5*(.60+.40*neck) +
+            Math.pow(Math.abs(s),3)*.058*Math.sin(i*1.67+s*4);
+          const px=x+nx*off,pz=z+nz*off;
+          const p=[px,(plantingSurface(px,pz)??LAND_Y)+.046,pz];
+          positions.push(...p);
+          cover.push(alpha*neck);
+          course.push(p);
+        }
+        rows.push([course[1],course[2],course[3]]);
+        visible.push(fromEnd>1.9);
+        if(!i) continue;
+        for(let j=0;j<4;j++){
+          const k=(i-1)*5+j;
+          indices.push(k,k+5,k+1,k+1,k+5,k+6);
+        }
+      }
+      const geometry=new THREE.BufferGeometry();
+      geometry.setAttribute('position',new THREE.Float32BufferAttribute(positions,3));
+      geometry.setAttribute('vergeCover',new THREE.Float32BufferAttribute(cover,1));
+      geometry.setIndex(indices);
+      geometry.computeVertexNormals();
+      const mesh=new THREE.Mesh(geometry,ink), group=bank+'两桥滨水岸线', name=bank+'旧巷石土收口';
+      mesh.name=name;
+      mesh.userData.landscapeSurface={group,name,material:'Path'};
+      scene.add(mesh);
+      layWalkDetails(group,name,rows,visible,true);
+    }
     function pavedLine(a, b, width) {
       const dx = b.x - a.x, dz = b.z - a.z, length = Math.hypot(dx, dz);
       if (length < .15) return;
@@ -958,7 +2008,12 @@
               !onLand(px, pz) || !offBridge(px, pz, false) || terrainTop(px, pz) > LAND_Y + .3 || landmarkAt(px, pz)) return;
         }
       }
-      streetsMesh.place(streetSurface, (a.x + b.x) / 2, LAND_Y + .045, (a.z + b.z) / 2, length, 1, width, Math.atan2(-dz, dx));
+      // These two exposed ends would otherwise read as square plugs in the shore-level views.
+      if (Math.hypot(a.x+236.19,a.z-42.38)<.08 && Math.hypot(b.x+230.35,b.z-41.03)<.08)
+        oldStreetBed(a,b,width,'汉阳',false);
+      else if (Math.hypot(a.x+82.80,a.z-87.82)<.08 && Math.hypot(b.x+60.24,b.z-96.03)<.08)
+        oldStreetBed(a,b,width,'武昌',true);
+      else streetsMesh.place(streetSurface, (a.x + b.x) / 2, LAND_Y + .045, (a.z + b.z) / 2, length, 1, width, Math.atan2(-dz, dx));
       cityGround.streets.push({ a: { x: a.x, z: a.z }, b: { x: b.x, z: b.z }, width });
     }
     function fits(x, z, yaw, scale, reserveApproach = true) {
@@ -1020,6 +2075,11 @@
                 kind = mainTowers ? 'terrace_tower' : 'highrise';
               }
               top = height * ((leading ? 1.02 : .80) - .49 * radius) * (.87 + cityRandom() * .23);
+            }
+            // Step the Hanyang tower cluster down into the low tea-shop quarter along its eastern edge.
+            if (kind==='highrise' && Math.hypot(lot.x+269,lot.z-42)<17) {
+              kind='apartment';
+              top=Math.min(top,10.5);
             }
             const scale = .83 + cityRandom() * .30;
             built = buildLot(kind, lot, yaw + (side > 0 ? Math.PI : 0), scale, top / prototypeHeight[kind]) || built;
@@ -1111,7 +2171,7 @@
     }
 
     function districtRoute({ name, group, points, width, widthAt, planted = false, riverfront = false, material = 'Path', terrace = false, earthy = false, connect = false, gradeStart = null, entryHeight = null, plain = false, surfaceLift = 0, junctionLift = 0 }) {
-      const vertices = [], indices = [];
+      const vertices = [], indices = [], onSurface = [];
       const rows = [];
       for (let i = 0; i < points.length-1; i++) {
         const a = points[i], b = points[i+1];
@@ -1154,6 +2214,7 @@
           }
         }
         if (active) {
+          onSurface[i]=true;
           reservePath({ a: rows[i], b: rows[i+1], width: widths[i], group, name, planted, riverfront });
           if (gradeStart !== null) {
             // Two embedded embankment faces close the gap between the leveled deck and grade.
@@ -1175,6 +2236,7 @@
       geometry.setAttribute('position', new THREE.Float32BufferAttribute(vertices,3));
       geometry.setIndex(indices); geometry.computeVertexNormals();
       if (riverfront) {
+        layWalkDetails(group,name,worldPoints,onSurface);
         const edge = new Float32Array(vertices.length/3);
         for (let i=0; i<worldPoints.length; i++) {
           edge[i*3] = -1;
@@ -1265,23 +2327,14 @@
     }
     cityGround.occupied = (x, z, radius) => occupied(x, z, radius);
     buildRiverfrontAlleys(lots);
+    dressRiverfrontGround(lots);
     const streets = streetsMesh.mesh(inkMat(.42, false, ['#b3a895', '#dfd8c7']), false);
     streets.name = 'City streets';
     scene.add(streets);
     const earthPath = inkMat(.23, false, ['#788074', '#a9ad99']);
-    const worn = new Map();
     for (const { name, group, material, earthy, riverfront, tiles } of districtPaving.values()) {
-      let ink = earthy ? earthPath : material === 'BankStone' ? M.bankStone : M.bankPath;
-      if (riverfront) {
-        if (!worn.has(ink)) {
-          const surface = ink.clone();
-          surface.uniforms = ink.uniforms;
-          surface.defines = {...ink.defines, WALK_WEAR: 1};
-          worn.set(ink,surface);
-        }
-        ink = worn.get(ink);
-      }
-      const mesh = tiles.mesh(ink,false);
+      const base=earthy ? earthPath : material==='BankStone' ? M.bankStone : M.bankPath;
+      const mesh=tiles.mesh(riverfront ? riverfrontPavingInk(base,true) : base,false);
       mesh.name = name;
       mesh.userData.landscapeSurface = { group, name, material };
       mesh.raycast = function () {};

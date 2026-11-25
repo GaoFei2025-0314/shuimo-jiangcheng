@@ -22,7 +22,9 @@ const test = base.extend({
         THREE.WebGLRenderer = function (...args) {
           const renderer = new OriginalRenderer(...args), render = renderer.render;
           renderer.render = function (scene, camera) {
-            window.__testScene = scene; window.__testCamera = camera; window.__testRenderer = renderer;
+            if (camera.isPerspectiveCamera) {
+              window.__testScene = scene; window.__testCamera = camera; window.__testRenderer = renderer;
+            }
             return render.call(this, scene, camera);
           };
           return renderer;

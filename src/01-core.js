@@ -54,10 +54,18 @@
     float fbm(vec2 p){ float a = .5, s = 0.; for(int i=0;i<4;i++){ s += a*vnoise(p); p *= 2.03; a *= .5; } return s; }
   `;
   const fogU = { uFog: { value: PAPER }, uNear: { value: 300 }, uFar: { value: 1800 } };
+  const textureLoader=new THREE.TextureLoader();
+  const [fabricAtlas,windowAtlas,laneEarth,laneFoliage]=await Promise.all([laneMaterialImage,laneWindowImage,laneEarthImage,laneFoliageImage].map(url=>textureLoader.loadAsync(url)));
+  laneEarth.wrapS=laneEarth.wrapT=THREE.MirroredRepeatWrapping;
+  for (const atlas of [fabricAtlas,windowAtlas,laneEarth,laneFoliage]) {
+    atlas.anisotropy=Math.min(4,renderer.capabilities.getMaxAnisotropy());
+    app.cleanups.push(()=>atlas.dispose());
+  }
   const groundContacts = [];
   const contactU = { uContact: { value: null }, uContactRect: { value: new THREE.Vector4() } };
   const camU = { uCam: { value: new THREE.Vector3() } };        // 逐帧同步镜头位置
-  const sharedInk = { uInk: { value: new THREE.Color('#29332f') }, uPaper: { value: PAPER }, uLight: { value: new THREE.Vector3(-.45, .85, .5) } };
+  const streetLight = { value: 0 };
+  const sharedInk = { uStreetLight: streetLight, uInk: { value: new THREE.Color('#29332f') }, uPaper: { value: PAPER }, uLight: { value: new THREE.Vector3(-.45, .85, .5) } };
 
   const inkVert = `
     #ifdef WALK_WEAR
@@ -67,6 +75,14 @@
     #ifdef ARCHITECTURE_AO
       attribute float skyVisibility; varying float vSky;
     #endif
+    #ifdef CITY_DETAIL
+      varying vec3 vCityPosition;
+      varying vec3 vCityNormal;
+      #ifdef CITY_JOINERY
+        attribute vec4 cityPane;
+        varying vec4 vCityPane;
+      #endif
+    #endif
     varying vec3 vN; varying vec3 vW; varying float vD; varying vec3 vC;
     void main(){
       #ifdef WALK_WEAR
@@ -74,6 +90,16 @@
       #endif
       #ifdef ARCHITECTURE_AO
         vSky = skyVisibility;
+      #endif
+      #ifdef CITY_DETAIL
+        vCityPosition = position;
+        vCityNormal = normal;
+        #ifdef CITY_JOINERY
+          vCityPane = cityPane;
+          #ifdef USE_INSTANCING
+            vCityPane.w += floor(instanceMatrix[3].x*.32) + floor(instanceMatrix[3].z*.17);
+          #endif
+        #endif
       #endif
       vec4 local = vec4(position, 1.0);
       vec3 localNormal = normal;
@@ -107,8 +133,57 @@
       uniform sampler2D uContact;
       uniform vec4 uContactRect;
     #endif
+    #if defined(CITY_DETAIL) || defined(COURT_TIMBER)
+      uniform sampler2D uMaterialAtlas;
+      vec3 paintedSurface(vec2 uv,vec2 quadrant){
+        vec2 tile = 1.-abs(mod(uv,2.)-1.);
+        return texture2D(uMaterialAtlas,quadrant*.5+(.003+tile*.994)*.5).rgb;
+      }
+      float density(vec3 tone){return dot(tone,vec3(.299,.587,.114));}
+    #endif
+    #ifdef CITY_JOINERY
+      uniform sampler2D uWindowAtlas;
+    #endif
+    #ifdef COURT_EARTH
+      uniform sampler2D uLaneEarth;
+    #endif
+    #ifdef LANE_SHADOW
+      uniform sampler2D uLaneShadow;
+      uniform mat4 uLaneLight;
+      uniform vec2 uShadowTexel;
+      float shadowAt(vec2 uv,float receiver){
+        vec4 packedDepth=texture2D(uLaneShadow,uv);
+        float depth=dot(packedDepth,vec4(1./16777216.,1./65536.,1./256.,1.)*(255./256.));
+        return step(depth,receiver);
+      }
+      float streetShade(vec3 world,float viewDepth){
+        float nearSet=min(length(world.xz-vec2(-218.,36.)),length(world.xz-vec2(-62.,80.)));
+        float strength=(1.-smoothstep(34.,53.,nearSet))*(1.-smoothstep(110.,230.,viewDepth));
+        if(strength<=0.) return 0.;
+        vec3 uvz=(uLaneLight*vec4(world,1.)).xyz*.5+.5;
+        float receiver=uvz.z-.0013;
+        vec2 pixel=uvz.xy/uShadowTexel-.5;
+        vec2 at=(floor(pixel)+.5)*uShadowTexel;
+        vec2 blend=smoothstep(vec2(0.),vec2(1.),fract(pixel));
+        float lower=mix(shadowAt(at,receiver),shadowAt(at+vec2(uShadowTexel.x,0.),receiver),blend.x);
+        float upper=mix(shadowAt(at+vec2(0.,uShadowTexel.y),receiver),shadowAt(at+uShadowTexel,receiver),blend.x);
+        return mix(lower,upper,blend.y)*strength;
+      }
+    #endif
     uniform vec3 uFog, uInk, uPaper, uLight, uCam;
+    uniform float uStreetLight;
     uniform float uNear, uFar, uTone, uRim, uCun, uFoot; uniform vec2 uFade;
+    #ifdef CITY_DETAIL
+      varying vec3 vCityPosition;
+      varying vec3 vCityNormal;
+      #ifdef CITY_JOINERY
+        varying vec4 vCityPane;
+      #endif
+      float cityLine(float p, float width) {
+        float aa = min(.27, fwidth(p));
+        return 1. - smoothstep(width, width + aa + .007, abs(fract(p) - .5));
+      }
+    #endif
     varying vec3 vN; varying vec3 vW; varying float vD; varying vec3 vC;
     void main(){
       float near = 1.0;
@@ -179,6 +254,19 @@
         float weathering = 1. + wearMask * mix(.016,-.034,margin) + .032*(grain-.5);
         col *= mix(1.,weathering,1.-smoothstep(62.,165.,vD));
       #endif
+      #ifdef COURT_EARTH
+        float toLane=min(length(vW.xz-vec2(-215.,39.)),length(vW.xz-vec2(-65.,81.)));
+        float earthMix=(1.-smoothstep(39.,68.,toLane))*(1.-smoothstep(100.,170.,vD));
+        if(earthMix>.001){
+          vec2 field=vW.xz*.15;
+          vec3 soil=texture2D(uLaneEarth,field).rgb;
+          float pooled=fbm(vW.xz*.13);
+          float damp=smoothstep(.40,.71,pooled+.22*(vnoise(vW.xz*.78)-.5));
+          soil=mix(soil,soil*vec3(.79,.82,.86),damp);
+          vec3 clay=mix(vec3(.73,.69,.59),vec3(.85,.85,.76),pooled);
+          col=mix(col,soil*.68+clay*.32,earthMix*(.49+.21*pooled));
+        }
+      #endif
       #ifdef GROUND_CONTACT
         vec2 uv = (vW.xz-uContactRect.xy)/uContactRect.zw;
         float field = texture2D(uContact,uv).r;
@@ -194,6 +282,131 @@
           float underside = smoothstep(.10, .85, -n.y);
           col = mix(col, uInk, uArchShadow * sheltered * (.70 + .30 * underside));
         #endif
+        #ifdef CITY_DETAIL
+          float cityNear = 1. - smoothstep(34., 105., distance(vW, uCam));
+          if (cityNear > .001) {
+            vec3 localNormal = normalize(vCityNormal);
+            float face = abs(localNormal.x) > abs(localNormal.z) ? vCityPosition.z : vCityPosition.x;
+            float height = vCityPosition.y;
+            float grain = fbm(vec2(face * .43, height * .31) + vW.xz * .039);
+            #ifdef CITY_JOINERY
+              if (vCityPane.z > .01) {
+                vec2 pane = vCityPane.xy;
+                float perimeter = min(min(pane.x, 1. - pane.x), min(pane.y, 1. - pane.y));
+                float moulding = 1. - smoothstep(.045, .084, perimeter);
+                float tall = smoothstep(2.3, 4., vCityPane.z);
+                float variant = hash(vec2(vCityPane.w,16.));
+                float sashCenter = mix(.42,.61,hash(vec2(vCityPane.w,17.)));
+                float paneAA = clamp(fwidth(pane.x),.004,.052);
+                float divider = (1.-smoothstep(.021,.026+paneAA,abs(pane.x-sashCenter)))*step(.16,variant);
+                divider = max(divider,step(.74,variant)*(1.-smoothstep(.016,.022+paneAA,abs(pane.x-.28))));
+                float transom = mix(1. - smoothstep(.020,.046,abs(pane.y - mix(.28,.48,variant))),
+                  cityLine(pane.y * vCityPane.z * .57,.036),tall);
+                float wood = max(moulding*.89, max(divider*.66, transom*.73));
+                float fadedSky = smoothstep(.21,.96,pane.y);
+                float reflection = vnoise(vec2(face*.65, height*.28)+vW.xz*.11);
+                float paneTone = .12 + .43*fadedSky + .12*reflection + .07*grain;
+                vec3 glass = mix(vec3(.18,.25,.23), vec3(.62,.64,.57), paneTone);
+                float section=mod(vCityPane.w,4.);
+                vec2 quadrant=vec2(mod(section,2.),floor(section*.5));
+                vec3 eyeDir=normalize(uCam-vW);
+                vec2 inset=clamp(pane+.065*vec2(dot(eyeDir,vec3(n.z,0.,-n.x)),eyeDir.y),.012,.988);
+                vec3 inside=texture2D(uWindowAtlas,quadrant*.5+.005+.49*inset).rgb;
+                float curtainLight=.46+.24*hash(vec2(vCityPane.w,4.))+.15*max(0.,dot(eyeDir,n));
+                curtainLight*=1.-.80*smoothstep(12.,39.,vD);
+                curtainLight*=1.-smoothstep(1.85,2.7,vCityPane.z);
+                float recess=(.73+.27*smoothstep(.01,.11,perimeter))*(.88+.12*fadedSky);
+                float hem = .76+.17*hash(vec2(vCityPane.w,13.)) + .017*sin(pane.x*23.);
+                float gathered = .32-.19*pane.y+.04*sin(pane.y*7.);
+                float curtain = 1.-smoothstep(gathered-.04,gathered+.07,mix(pane.x,1.-pane.x,step(.46,variant)));
+                float blind = smoothstep(hem-.041,hem+.018,pane.y);
+                float folds = .73+.19*sin(pane.x*37.+pane.y*2.7);
+                vec3 lining = mix(vec3(.29,.36,.35),vec3(.59,.55,.44),hash(vec2(vCityPane.w,8.)));
+                glass *= .79+.22*hash(vec2(vCityPane.w,2.));
+                glass = mix(glass,glass*.57+lining*.52,(1.-step(.34,variant))*curtain*folds);
+                glass = mix(glass,lining*.80,step(.65,variant)*blind*.88);
+                // Reflection, half-blind and occupied light read differently at street distance.
+                float occupied=smoothstep(.49,.78,variant);
+                vec3 lamplit=mix(inside,vec3(density(inside)),.32)*vec3(1.01,.94,.83)*recess;
+                glass = mix(glass,lamplit,curtainLight*occupied*.74);
+                glass *= .75+.25*smoothstep(.04,.12,pane.y);
+                float skyGlint=smoothstep(.25,.95,pane.y)*(.18+.20*variant);
+                glass=mix(glass,vec3(.64,.69,.66),skyGlint*(1.-occupied*.72));
+                // The street-facing room beside the arched entry has its own curtain and tea table.
+                if (distance(vW.xz,vec2(-40.09,71.99))<8. && vCityPosition.x < -2.30 &&
+                    vCityPosition.y<2.14 && vCityPosition.z>3.27) {
+                  vec2 curtainUV=clamp(pane+.105*vec2(dot(eyeDir,vec3(n.z,0.,-n.x)),eyeDir.y),.025,.975);
+                  vec3 room=texture2D(uWindowAtlas,vec2(.005,.505)+.49*curtainUV).rgb;
+                  float light=(.54+.24*max(0.,dot(eyeDir,n)))*(.83+.17*fadedSky);
+                  glass=mix(glass,room*vec3(.89,.88,.78)*recess,light);
+                }
+                glass *= .78 + .22*smoothstep(.01,.14,pane.y);
+                vec3 trim = mix(vec3(.29,.26,.21), vec3(.71,.64,.51), .40 + .26*d + .14*grain);
+                vec3 sash = mix(glass, trim, wood) * mix(.78,1.,vSky);
+                col = mix(col, sash, cityNear * .91);
+              }
+            #elif defined(CITY_TILE)
+              vec2 roof = abs(localNormal.z) >= abs(localNormal.x) ? vCityPosition.xz : vCityPosition.zx;
+              float slope = smoothstep(.18,.60,localNormal.y)*(1.-smoothstep(.94,1.,localNormal.y));
+              vec3 clayWash=paintedSurface(roof*vec2(.26,.32),vec2(0.,0.));
+              float underEave=smoothstep(1.48,2.85,abs(roof.y));
+              float roofWash=mix(.28,.94,max(underEave,1.-smoothstep(.08,.65,dot(n,normalize(uLight)))));
+              col *= 1.+cityNear*slope*roofWash*clamp((density(clayWash)-.32)*1.48,-.34,.43);
+              float row = roof.y * 3.35;
+              float column = roof.x * 3.15 + mod(floor(row),2.) * .16;
+              float clay = vnoise(roof * 1.65 + vW.xz * .043);
+              float tile = vnoise(vec2(floor(column),floor(row)) + vW.xz*.026);
+              float channel = cityLine(column,.077) * mix(.29,1.,tile);
+              float overlap = cityLine(row + .042*(clay-.5),.038);
+              float relief = slope * roofWash * (.12*channel + .047*overlap + .085*tile);
+              col *= 1. - cityNear * (.052 + relief + .12*(1.-clay));
+            #else
+              float upright = 1. - smoothstep(.18,.65,abs(localNormal.y));
+              #ifdef CITY_BRICK
+                vec2 stoneGrain = vec2(face+height*.41, height-face*.28);
+                vec3 wash=paintedSurface(stoneGrain*vec2(.37,.39),vec2(1.,1.));
+                col=mix(col,col*(.87+.34*density(wash)),cityNear*upright*.82);
+              #else
+                vec3 wash=paintedSurface(vec2(face*.20,height*.22),vec2(1.,1.));
+                col=mix(col,col*(.45+.82*density(wash)),cityNear*upright*.89);
+              #endif
+              float foot = (1.-smoothstep(.18,1.66,height)) * upright;
+              float rain = vnoise(vec2(face * 1.85,height * .16) + vW.xz * .03);
+              float stain = smoothstep(.24,.78,grain*.64+rain*.36);
+              float dusty = vnoise(vec2(face,height)*5.1+vW.xz*.19);
+              float shoe = 1.-smoothstep(.28,.60,height+.11*(rain-.5));
+              float surface = .066 + .16*foot + (.16*stain + .045*dusty)*upright;
+              #ifdef CITY_BRICK
+                float bed = height * 7.65;
+                float brick = face*3.15+mod(floor(bed),2.)*.50;
+                float chipped = vnoise(vec2(floor(brick),floor(bed))+vW.xz*.043);
+                float runoff = smoothstep(.53,.85,rain) * smoothstep(1.28,2.43,height) *
+                  (1.-smoothstep(2.78,3.38,height));
+                surface += .11 * upright * runoff;
+                float courses = cityLine(bed+.059*(dusty-.5),.042);
+                float firing = vnoise(vec2(floor(brick)+.11,floor(bed)+.63)+vW.xz*.018);
+                // Only the damp plinth, chips and turning edges need every mortar joint.
+                float halfSpan=abs(localNormal.x)>abs(localNormal.z)?2.72:4.8;
+                float turn=1.-smoothstep(.13,1.06,abs(halfSpan-abs(face)));
+                float sunlit=smoothstep(-.30,.60,dot(n,normalize(uLight)));
+                float paper=smoothstep(.32,.72,grain+.17*(rain-.5))*sunlit;
+                float drawBrick=clamp(.04+.87*turn+.88*foot+.55*(1.-sunlit)+.19*(1.-paper),0.,1.);
+                float glaze=smoothstep(.46,.75,grain+.13*(firing-.5));
+                col*=1.+cityNear*upright*drawBrick*(.19*(firing-.44)+.038*(dusty-.52));
+                col=mix(col,col*vec3(1.14,1.035,.937),cityNear*upright*glaze*.68);
+                col=mix(col,vec3(.66,.645,.58),cityNear*upright*paper*.24*(1.-foot));
+                float limecoat=smoothstep(.52,.76,grain*.6+.4*rain);
+                col=mix(col,vec3(.67,.665,.601),cityNear*upright*(.095+.27*limecoat));
+                float joints = cityLine(brick,.039);
+                surface -= upright * (.086*courses+.066*joints) * (.30+.70*chipped)*drawBrick;
+              #else
+                surface += upright * (.016 + .018*rain) * cityLine(height * 1.6,.034);
+              #endif
+              col *= 1. - cityNear * surface;
+              col = mix(col,uInk,cityNear*(.085*foot+.14*shoe*upright));
+            #endif
+          }
+        #endif
         #ifdef ARCHITECTURE_WASH
           vec3 luminance = vec3(.24, .65, .11);
           float brightness = dot(col, luminance);
@@ -202,7 +415,29 @@
           col = mix(col, wash, uCityWash * smoothstep(86., 425., vD));
         #endif
       #endif
-      col = mix(col, uFog, smoothstep(uNear, uFar, vD));
+      #ifdef COURT_TIMBER
+        float face=abs(n.x)>abs(n.z)?vW.z:vW.x;
+        vec3 grain=paintedSurface(vec2(face*.57,vW.y*.52),vec2(1.,0.));
+        col *= mix(1.,.63+density(grain)*1.50,1.-smoothstep(23.,62.,vD));
+      #endif
+      #ifdef LANE_SHADOW
+        if (uStreetLight>.001) {
+          float nearby=min(length(vW.xz-vec2(-218.,36.)),length(vW.xz-vec2(-62.,80.)));
+          float foreground=uStreetLight*(1.-smoothstep(33.,64.,nearby))*(1.-smoothstep(38.,105.,vD));
+          float inkLoad=1.-smoothstep(.22,.75,dot(col,vec3(.29,.58,.13)));
+          col*=mix(vec3(1.),vec3(.78,.82,.85),inkLoad*foreground);
+          float receiving=smoothstep(.07,.45,dot(n,normalize(uLight)));
+          float shadow=receiving*streetShade(vW+n*.13,vD)*uStreetLight;
+          col *= mix(vec3(1.),vec3(.63,.69,.75),shadow);
+          col *= 1.+foreground*(1.-shadow)*max(0.,dot(n,normalize(uLight)))*vec3(.055,.028,-.019);
+        }
+      #endif
+      float mist=smoothstep(uNear,uFar,vD);
+      #if defined(ARCHITECTURE_AO) && !defined(CITY_DETAIL)
+        // At eye height retain the lightest ink outline of the inhabited far shore.
+        mist*=1.-.21*uStreetLight*smoothstep(95.,180.,vD)*(1.-smoothstep(315.,440.,vD));
+      #endif
+      col = mix(col, uFog, mist);
       gl_FragColor = vec4(col, 1.);
     }`;
   function inkMat(tone, dbl, tint, fade, o) {
@@ -229,6 +464,8 @@
     ground.defines = { GROUND_CONTACT: 1 };
     Object.assign(ground.uniforms, contactU);
   }
+  M.land.defines.COURT_EARTH=1;
+  M.land.uniforms.uLaneEarth={value:laneEarth};
   const lineMat  = new THREE.LineBasicMaterial({ color: 0x343d36, fog: true, transparent: true, opacity: .72 });
   const lineMat2 = new THREE.LineBasicMaterial({ color: 0x5a5851, fog: true, transparent: true, opacity: .18 });
   const lineSoft = new THREE.LineBasicMaterial({ color: 0x6b6960, fog: true, transparent: true, opacity: .6 });
