@@ -173,6 +173,13 @@
     'hy-above':['汉阳 · 茶棚与江岸',[-249,53,70],[-200,1,-1]],
     'wc-above':['武昌 · 里分与红桥',[-28,61,44],[-99,6,124]],
   };
+  // Portrait entry compositions keep the foreground action inside the narrower field of view.
+  const portraitWalkViews={
+    'hy-in':[[-207.3,3.4,34.6],[-218.1,1.80,32.47]],
+    'wc-in':[[-64.3,3.4,87],[-56.05,2.08,80.37]],
+    'wc-door':[[-47.9,3.5,79.6],[-41.65,2.1,75.1]],
+    'wc-court':[[-29,4.23,53],[-36.8,1.85,55.8]],
+  };
   for (const [name,above] of [['街巷近景',false],['小城沙盘斜俯视',true]]) {
     const group=document.createElement('optgroup');
     group.label=name;
@@ -214,7 +221,9 @@
     walkSelect.hidden=false;
     walkSelect.value=key;
     refreshLayout(false);
-    const [,eye,look]=walkViews[key], position=new THREE.Vector3(...eye);
+    const desktopPose=walkViews[key].slice(1);
+    const [eye,look]=(camera.aspect<.75 && portraitWalkViews[key]) || desktopPose;
+    const position=new THREE.Vector3(...eye);
     const target=new THREE.Vector3(...look).sub(position).setLength(24).add(position);
     moveCamera({pos:position,target},false);
     controls.enableDamping=!reduce;
