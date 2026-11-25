@@ -132,9 +132,23 @@ def paint(name, hexcolor):
         mesh.pigment_grain(mat, (1.5,4,2.2), .28 if name == "Land" else .52)
     elif name in ("Masonry", "Paper", "Hills"):
         mesh.pigment_grain(mat, (.75,1.25,3.5), .44)
+    if name == "AgedWood":
+        mat["courtyard_timber"] = True
+        mesh.neighborhood_surface(mat, "courtyardWood")
     if name == "Land":
         courtyard_soil(mat)
     return mat
+
+
+def local_roof_tiles():
+    # Three batches share the web roof clay palette even though their generic keys also label stones.
+    result = {}
+    for key, color in (("Slate", "536057"), ("ShoreStone", "5b685e"), ("BankStone", "616c60")):
+        material = paint("实体青瓦 · " + key, color)
+        material.node_tree.nodes.get("Principled BSDF").inputs["Specular IOR Level"].default_value = .18
+        mesh.pigment_grain(material, (.85, 1.2, 2.1), .36)
+        result[key] = material
+    return result
 
 
 def worn_walk(material):
@@ -162,6 +176,22 @@ def worn_walk(material):
     return worn
 
 
+def ground_moss():
+    mat = bpy.data.materials.new("江城 / GroundMoss")
+    mat.use_nodes = True
+    tree = mat.node_tree
+    surface = tree.nodes.get("Principled BSDF")
+    surface.inputs["Roughness"].default_value = 1
+    texture = mesh.lane_image(tree, "lane-moss.webp")
+    tree.links.new(texture.outputs["Color"], surface.inputs["Base Color"])
+    alpha = tree.nodes.new("ShaderNodeMath")
+    alpha.operation = 'MULTIPLY'
+    alpha.inputs[1].default_value = .82
+    tree.links.new(texture.outputs["Alpha"], alpha.inputs[0])
+    tree.links.new(alpha.outputs[0], surface.inputs["Alpha"])
+    return mat
+
+
 def paper_foliage():
     mat = bpy.data.materials.new("纸本枝叶 · 四株近树")
     mat.use_nodes = True
@@ -179,10 +209,34 @@ def paper_foliage():
     tree.links.new(pigment.outputs[0], surface.inputs["Base Color"])
     coverage = tree.nodes.new("ShaderNodeMapRange")
     coverage.interpolation_type = 'SMOOTHSTEP'
-    coverage.inputs["From Min"].default_value = .28
-    coverage.inputs["From Max"].default_value = .66
+    coverage.inputs["From Min"].default_value = .065
+    coverage.inputs["From Max"].default_value = .73
     tree.links.new(texture.outputs["Alpha"], coverage.inputs["Value"])
-    tree.links.new(coverage.outputs[0], surface.inputs["Alpha"])
+    veil = tree.nodes.new("ShaderNodeAttribute")
+    veil.attribute_name = "Leaf veil"
+    axes = tree.nodes.new("ShaderNodeSeparateXYZ")
+    tree.links.new(veil.outputs["Vector"], axes.inputs[0])
+    nearest = tree.nodes.new("ShaderNodeMath")
+    nearest.operation = 'MINIMUM'
+    for axis in (0, 1):
+        margin = tree.nodes.new("ShaderNodeMath")
+        margin.operation = 'PINGPONG'
+        margin.inputs[1].default_value = .5
+        tree.links.new(axes.outputs[axis], margin.inputs[0])
+        tree.links.new(margin.outputs[0], nearest.inputs[axis])
+    soften = tree.nodes.new("ShaderNodeMapRange")
+    soften.interpolation_type = 'SMOOTHSTEP'
+    soften.inputs["From Max"].default_value = .11
+    tree.links.new(nearest.outputs[0], soften.inputs[0])
+    edge = tree.nodes.new("ShaderNodeMixRGB")
+    edge.inputs[1].default_value = (1, 1, 1, 1)
+    tree.links.new(axes.outputs[2], edge.inputs[0])
+    tree.links.new(soften.outputs[0], edge.inputs[2])
+    alpha = tree.nodes.new("ShaderNodeMath")
+    alpha.operation = 'MULTIPLY'
+    tree.links.new(coverage.outputs[0], alpha.inputs[0])
+    tree.links.new(edge.outputs[0], alpha.inputs[1])
+    tree.links.new(alpha.outputs[0], surface.inputs["Alpha"])
     return mat
 
 
@@ -205,9 +259,13 @@ def imported_mesh(item, mat, dest, parent=None):
         coords = np.frombuffer(base64.b64decode(item["uv"]), dtype="<f4").reshape(-1, 2)
         uv = data.uv_layers.new(name="UVMap")
         uv.data.foreach_set("uv", coords[indices.flatten()].ravel())
+    if "colors" in item:
         rgb = np.frombuffer(base64.b64decode(item["colors"]), dtype="<f4").reshape(-1, 3)
         tint = data.color_attributes.new(name="Leaf pigment", type="FLOAT_COLOR", domain="POINT")
         tint.data.foreach_set("color", np.column_stack((rgb, np.ones(len(rgb)))).astype("float32").ravel())
+    if "veil" in item:
+        veil = data.attributes.new("Leaf veil", 'FLOAT_VECTOR', 'POINT')
+        veil.data.foreach_set("vector", np.frombuffer(base64.b64decode(item["veil"]), dtype="<f4"))
     if "faceGroups" in item:
         slots = np.zeros(len(indices), dtype=np.int32)
         for start, count, slot in item["faceGroups"]:
@@ -231,10 +289,10 @@ def imported_mesh(item, mat, dest, parent=None):
         obj.matrix_basis = placement(item["matrix"])
     waterfront_paving = item["name"].endswith(("两桥滨水步道", "桥头接岸步道", "滨水通街支巷"))
     courtyard_paving = (item["group"] in ("汉阳滨水街巷生活", "汉阳茶棚后街坊", "武昌滨水街巷生活")
-                       and item["material"] in ("Path", "BankStone"))
+                       and item["material"] in ("Path", "BankStone") and np.ptp(points[:, 2]) < .06)
     paving_detail = item["name"].endswith((" · 石缝", " · 镶边", " · 错缝铺石"))
     court_ground = item["group"].endswith("滨水街坊共同院埕") or "院埕间旧巷石土" in item["name"]
-    if court_ground or paving_detail or courtyard_paving or waterfront_paving or item["material"] in ("Streets", "ApproachPaving", "RoadPaint") or item["group"] in (
+    if court_ground or paving_detail or courtyard_paving or waterfront_paving or item["material"] in ("GroundMoss", "Streets", "ApproachPaving", "RoadPaint") or item["group"] in (
             "汉阳桥头街坊", "武昌桥头街坊", "汉阳两桥街道", "武昌两桥街道"):
         # Thin paving ribbons meet at intersections; their pigment casts no extra shadow.
         obj.visible_shadow = False
@@ -328,6 +386,19 @@ def city_blocks(scene, captured, streets):
             apartment_daylight(dest.objects)
 
 
+def paper_crown_points(part, points):
+    result = points.copy()
+    for key, amount in (("leafCenter", .56), ("crownCenter", .75)):
+        if key not in part:
+            continue
+        centers = np.frombuffer(base64.b64decode(part[key]), dtype="<f4").reshape(-1, 3)
+        mask = centers[:, 1] > 0
+        centers = centers[:, [0, 2, 1]].copy()
+        centers[:, 1] *= -1
+        result[mask] = (1 - amount) * points[mask] + amount * centers[mask]
+    return result
+
+
 def city_trees(captured, parent, paper_roots):
     """Link editable trees to one colored mesh per species, using the web placements."""
     names = {"pine": "松林", "broadleaf": "阔叶树", "willow": "岸柳", "cherry": "樱树"}
@@ -339,11 +410,7 @@ def city_trees(captured, parent, paper_roots):
         for part_name, part in batch["parts"].items():
             points, indices = geometry_arrays(part)
             if "crownCenter" in part:
-                centers = np.frombuffer(base64.b64decode(part["crownCenter"]), dtype="<f4").reshape(-1, 3)
-                mask = centers[:, 1] > 0
-                centers = centers[:, [0, 2, 1]].copy()
-                centers[:, 1] *= -1
-                paper_points = (len(coords) + np.flatnonzero(mask), .4 * points[mask] + .6 * centers[mask])
+                paper_points = (len(coords), paper_crown_points(part, points))
             rgb = np.frombuffer(base64.b64decode(part["colors"]), dtype="<f4").reshape(-1, 3)
             # The material swatch is also visible in Blender's default solid viewport.
             base = np.rint(np.clip(rgb.mean(axis=0), 0, 1) * 255).astype("uint8").tobytes().hex()
@@ -371,7 +438,8 @@ def city_trees(captured, parent, paper_roots):
             paper_data = data.copy()
             paper_data.name = name + " · 纸枝间隙"
             near_coords = np.asarray(coords, dtype=np.float32)
-            near_coords[paper_points[0]] = paper_points[1]
+            start, crown = paper_points
+            near_coords[start:start + len(crown)] = crown
             paper_data.vertices.foreach_set("co", near_coords.ravel())
             paper_data.update()
         dest = collection(parent, name)
@@ -393,6 +461,46 @@ def place_building(scene, builder, data, dest):
         relocate(obj, dest)
         obj.parent = root
     return root
+
+
+def pier_contact_wash(material, bridges):
+    """Deepen the water next to real masonry only inside the two bridge crossings."""
+    tree = material.node_tree
+    base = tree.nodes.get("Principled BSDF").inputs["Base Color"]
+    source = base.links[0].from_socket
+    union = tree.nodes.new("ShaderNodeMath")
+    union.operation = 'MAXIMUM'
+    for i, (key, radius, half_span) in enumerate((("bridge", 11, 69), ("yingwuzhou", 18, 85))):
+        local = tree.nodes.new("ShaderNodeTexCoord")
+        local.object = bridges[key]
+        scaled = tree.nodes.new("ShaderNodeVectorMath")
+        scaled.operation = 'MULTIPLY'
+        scaled.inputs[1].default_value = (1 / radius, 1 / half_span, 0)
+        tree.links.new(local.outputs["Object"], scaled.inputs[0])
+        axes = tree.nodes.new("ShaderNodeSeparateXYZ")
+        tree.links.new(scaled.outputs[0], axes.inputs[0])
+        along = tree.nodes.new("ShaderNodeMath")
+        along.operation = 'MAXIMUM'
+        for j in (0, 1):
+            magnitude = tree.nodes.new("ShaderNodeMath")
+            magnitude.operation = 'ABSOLUTE'
+            tree.links.new(axes.outputs[j], magnitude.inputs[0])
+            tree.links.new(magnitude.outputs[0], along.inputs[j])
+        extent = tree.nodes.new("ShaderNodeMath")
+        extent.operation = 'LESS_THAN'
+        extent.inputs[1].default_value = 1
+        tree.links.new(along.outputs[0], extent.inputs[0])
+        tree.links.new(extent.outputs[0], union.inputs[i])
+    contact = tree.nodes.new("ShaderNodeAmbientOcclusion")
+    contact.label = "两桥 · 墩脚水墨"
+    contact.samples = 16
+    contact.inputs["Distance"].default_value = 3.4
+    mix = tree.nodes.new("ShaderNodeMixRGB")
+    mix.blend_type = 'MULTIPLY'
+    tree.links.new(union.outputs[0], mix.inputs[0])
+    tree.links.new(source, mix.inputs[1])
+    tree.links.new(contact.outputs["Color"], mix.inputs[2])
+    tree.links.new(mix.outputs[0], base)
 
 
 def water(rivers, materials, dest, lakes=()):
@@ -541,6 +649,7 @@ def water(rivers, materials, dest, lakes=()):
                             faces.extend(((a,a+3,a+1),(a+1,a+3,a+4)))
         ripples = surface(name + " · 笔触", verts, faces, stroke, pigment)
         ripples.visible_shadow = False
+    return main_mat
 
 
 def vessel_wakes(wakes, lakes, dest):
@@ -994,11 +1103,11 @@ def build():
             "Land":"e4dcc9", "Hills":"a4af91", "BankGrass":"9da887",
             "WetBank":"8c9c86", "ShoreStone":"979d8d", "Reeds":"687e65",
             "BankStone":"b4a88d", "Path":"d1c3a7", "Slate":"677872",
-            "Masonry":"c4b9a2", "Ink":"4b5049", "Paper":"d4cfc2",
+            "Masonry":"c4b9a2", "Ink":"4b5049", "Paper":"d4cfc2", "FaceClay":"b5997d",
             "DistantRidge":"c5c6b5", "Greenway":"909c89", "Water":"9ab7b2", "Ripples":"c4d1c4", "Streets":"c6c1af", "ApproachPaving":"98998b", "RoadPaint":"e6dabc",
             "Boat":"aa9980", "BoatHull":"536e63", "BoatBottom":"995d48", "BoatDeck":"ab9b82", "BoatCabin":"ddd3b7",
             "BoatGlass":"486767", "BoatRail":"7b8271", "BoatAccent":"ae6550", "BoatCargo":"788969",
-            "BoatLoad":"776956", "BoatCanopy":"a9ad83"}.items()}
+            "BoatLoad":"776956", "BoatCanopy":"a9ad83", "AgedWood":"7c7062"}.items()}
         mats["SuspensionOrange"] = mesh.material("suspensionOrange")
         if any("deckPigment" in item for item in capture["meshes"]):
             # The apron begins in deck asphalt and ends in the receiving street's paving.
@@ -1016,12 +1125,16 @@ def build():
                 groups[name] = collection(scene.collection, name)
             return groups[name]
         mats["PaperFoliage"] = paper_foliage()
+        if any(it["material"] == "GroundMoss" for it in capture["meshes"]):
+            mats["GroundMoss"] = ground_moss()
         verge_materials = {}
         walk_materials = {}
         timber_materials = {}
+        legacy_timber = not any(item["material"] == "AgedWood" for item in capture["meshes"])
+        tile_materials = local_roof_tiles()
         for item in capture["meshes"]:
-            material = mats[item["material"]]
-            if item["group"] in ("汉阳滨水街巷生活", "汉阳茶棚后街坊", "武昌滨水街巷生活") and item["material"] in ("BoatAccent", "Ink"):
+            material = (tile_materials if "实体青瓦" in item["name"] else mats)[item["material"]]
+            if item["group"] in ("汉阳滨水街巷生活", "汉阳茶棚后街坊", "武昌滨水街巷生活") and (item["material"] == "Ink" or (legacy_timber and item["material"] == "BoatAccent")):
                 if material not in timber_materials:
                     timber = material.copy()
                     timber.name = material.name + " · 街巷木作"
@@ -1047,7 +1160,7 @@ def build():
         for vessel in capture.get("vessels", ()):
             place_vessel(vessel, mats, group(vessel["group"]))
         lakes = capture.get("lakes") or ([capture["eastLake"]] if capture.get("eastLake") else ())
-        water(capture["rivers"], mats, group("两江水墨"), lakes)
+        river_material = water(capture["rivers"], mats, group("两江水墨"), lakes)
         if capture.get("wakes"):
             vessel_wakes(capture["wakes"], lakes, group("舟船尾迹"))
         if capture.get("greenway"):
@@ -1063,6 +1176,7 @@ def build():
         landmark_roots = {}
         for key, record in capture["landmarks"].items():
             landmark_roots[key] = place_building(scene, landmarks.BUILDERS[key], record, group(record["name"]))
+        pier_contact_wash(river_material, landmark_roots)
         park_roots = []
         for record in capture.get("parkAssets", []):
             park_roots.append(place_building(scene, tower_park.BUILDERS[record["key"]], record, group("黄鹤楼公园西区")))

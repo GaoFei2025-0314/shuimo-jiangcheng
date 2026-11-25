@@ -36,9 +36,11 @@ function capture() {
       const attribute = node.geometry.getAttribute(key);
       if (attribute) item[key] = pack(attribute.array);
     }
-    if (material === 'PaperFoliage') {
+    if (material === 'PaperFoliage' || material === 'GroundMoss')
       item.uv = pack(node.geometry.getAttribute('uv').array);
+    if (material === 'PaperFoliage') {
       item.colors = pack(node.geometry.getAttribute('color').array);
+      if (node.geometry.hasAttribute('veil')) item.veil = pack(node.geometry.getAttribute('veil').array);
     }
     meshes.push(item);
   }
@@ -61,8 +63,10 @@ function capture() {
       const trees = vegetation[species] ||= { matrices: placements(node), parts: {} };
       if (trees.matrices.length * 16 !== node.userData.authoredMatrices.length || trees.parts[part]) throw new Error('Inconsistent planting batch: '+species);
       trees.parts[part] = { ...geometryOf(node), material, colors: pack(node.geometry.getAttribute('color').array) };
-      if (species === 'broadleaf' && part === 'foliage' && node.geometry.hasAttribute('crownCenter'))
-        trees.parts[part].crownCenter = pack(node.geometry.getAttribute('crownCenter').array);
+      if (species === 'broadleaf' && part === 'foliage') {
+        for (const key of ['crownCenter', 'leafCenter'])
+          if (node.geometry.hasAttribute(key)) trees.parts[part][key] = pack(node.geometry.getAttribute(key).array);
+      }
     } else if (node.name.startsWith('两岸近树纸本枝叶 · ')) {
       copy(node, '两岸近树纸本枝叶', node.name, 'PaperFoliage');
     } else if (node.userData.lakeGreenway) {
