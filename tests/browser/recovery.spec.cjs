@@ -1,4 +1,4 @@
-const { test, expect, ready } = require('./fixtures.cjs');
+const { test, expect, ready, STARTUP } = require('./fixtures.cjs');
 
 test('a stalled font stylesheet does not delay map readiness', async ({ page }) => {
   let release;
@@ -6,7 +6,7 @@ test('a stalled font stylesheet does not delay map readiness', async ({ page }) 
   await page.route('https://fonts.googleapis.com/**', async route => { await gate; await route.fulfill({ body: '', contentType: 'text/css' }); });
   await page.goto('/', { waitUntil: 'commit' });
   try {
-    await expect.poll(() => page.evaluate(() => window.__ready === true)).toBe(true);
+    await expect.poll(() => page.evaluate(() => window.__ready === true), STARTUP).toBe(true);
     await expect(page.locator('#nav button:enabled')).toHaveCount(16);
   } finally { release(); }
 });
@@ -50,6 +50,7 @@ test('wheel zoom cancels flight and panel gestures do not reach map controls', a
   await page.setViewportSize({ width: 390, height: 844 });
   await page.emulateMedia({ reducedMotion: 'reduce' });
   await page.evaluate(() => { window.__gestureStarts = 0; window.__testControls.addEventListener('start', () => window.__gestureStarts++); });
+  await page.locator('#more-toggle').click();
   await page.locator('#poem-toggle').click();
   await page.locator('#poem').hover();
   await page.mouse.wheel(0, 120);

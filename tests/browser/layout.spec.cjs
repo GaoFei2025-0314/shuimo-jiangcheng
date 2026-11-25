@@ -44,7 +44,8 @@ for (const [width, height] of [[390, 844], [360, 640], [844, 390]]) {
     await ready(page);
     await expect(page.locator('#poem')).toBeHidden();
     await expect(page.locator('#cardText')).toBeHidden();
-    await expect(page.locator('#poem-toggle')).toBeVisible();
+    await expect(page.locator('#more-toggle')).toBeVisible();
+    await expect(page.locator('#poem-toggle')).toBeHidden();
     for (const key of ['home', 'core', 'tower', 'bridge', 'qc', 'tv', 'customs', 'wuda', 'lake',
       'yingwuzhou', 'honglou', 'hongshan', 'museum', 'guiyuan', 'qintai', 'watertower']) {
       await page.locator(`#b-${key}`).click();
@@ -54,7 +55,11 @@ for (const [width, height] of [[390, 844], [360, 640], [844, 390]]) {
       }).toBe(true);
       if (['home', 'tower', 'lake'].includes(key)) await page.screenshot({ path: path.join(shots, `${info.project.name}-${width}x${height}-${key}.png`) });
     }
-    const heights = await page.locator('#nav button, #sound, .panel-toggle').evaluateAll(els => els.map(e => e.getBoundingClientRect().height));
+    await page.locator('#more-toggle').click();
+    const heights = await page.locator('#nav button, #sound, .panel-toggle, #action-menu button')
+      .evaluateAll(els => els.filter(e => e.checkVisibility()).map(e => e.getBoundingClientRect().height));
+    expect(heights.length).toBeGreaterThan(20);
+    await page.keyboard.press('Escape');
     expect(heights.every(h => h >= 44)).toBe(true);
     await expect(page.locator('#nav')).toHaveCSS('flex-wrap', 'nowrap');
   });
@@ -109,9 +114,13 @@ test('compact text panels are mutually exclusive, bounded and keyboard operable'
     expect(towerX < redHouseLabel.x || towerX > redHouseLabel.x + redHouseLabel.width ||
       towerY < redHouseLabel.y || towerY > redHouseLabel.y + redHouseLabel.height).toBe(true);
   }
+  await page.locator('#more-toggle').focus();
+  await page.keyboard.press('Enter');
+  await expect(page.locator('#more-toggle')).toHaveAttribute('aria-expanded', 'true');
   await page.locator('#poem-toggle').focus();
   await page.keyboard.press('Enter');
   await expect(page.locator('#poem')).toBeVisible();
+  await expect(page.locator('#action-menu')).toBeHidden();
   await expect(page.locator('#poem-toggle')).toHaveAttribute('aria-expanded', 'true');
   await page.locator('#details-toggle').click();
   await expect(page.locator('#poem')).toBeHidden();
@@ -128,7 +137,7 @@ test('landscape controls leave the drawing room and restore keyboard navigation'
   await page.emulateMedia({ reducedMotion: 'reduce' });
   await ready(page);
   const dock = page.locator('#dock'), toggle = page.getByRole('button', { name: '观画', exact: true });
-  const overview = page.getByRole('button', { name: '回全城' });
+  const overview = page.locator('#reset-view');
   const occupiedHeight = await dock.evaluate(el => innerHeight - el.getBoundingClientRect().top);
   expect(occupiedHeight).toBeLessThanOrEqual(97);
   await expect(page.locator('#hint')).toContainText('轻触景点');
@@ -136,6 +145,7 @@ test('landscape controls leave the drawing room and restore keyboard navigation'
   await page.getByRole('button', { name: '黄鹤楼', exact: true }).focus();
   await page.keyboard.press('Enter');
   await expect(page.locator('#b-tower')).toHaveAttribute('aria-pressed', 'true');
+  await page.locator('#more-toggle').click();
   await toggle.focus();
   await page.keyboard.press('Enter');
   const restore = page.getByRole('button', { name: '退出观画' });
@@ -144,7 +154,7 @@ test('landscape controls leave the drawing room and restore keyboard navigation'
   await expect(overview).toBeVisible();
   await overview.click();
   await page.keyboard.press('Escape');
-  await expect(toggle).toBeFocused();
+  await expect(page.locator('#more-toggle')).toBeFocused();
   await expect(page.locator('#nav')).toBeVisible();
   await expect(page.locator('#b-home')).toHaveAttribute('aria-pressed', 'true');
   await expect(page.locator('#marks')).toBeVisible();
@@ -180,3 +190,27 @@ for (const [width, height] of [[1440, 900], [1280, 720]]) {
     }
   });
 }
+
+test('the compact action menu opens from the ellipsis, closes on Escape and outside taps', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await ready(page);
+  const more = page.locator('#more-toggle'), menu = page.locator('#action-menu');
+  await expect(menu).toBeHidden();
+  await more.click();
+  await expect(more).toHaveAttribute('aria-expanded', 'true');
+  for (const id of ['#poem-toggle', '#reset-view', '#painting-toggle']) await expect(page.locator(id)).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(menu).toBeHidden();
+  await expect(more).toBeFocused();
+  await more.click();
+  await page.mouse.click(195, 420);
+  await expect(menu).toBeHidden();
+  await more.click();
+  await page.locator('#painting-toggle').click();
+  await expect(page.getByRole('button', { name: '退出观画' })).toBeVisible();
+  await expect(more).toBeHidden();
+  await page.keyboard.press('Escape');
+  await expect(more).toBeVisible();
+  await expect(menu).toBeHidden();
+});

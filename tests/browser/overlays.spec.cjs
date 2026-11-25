@@ -38,6 +38,7 @@ for (const [width, height] of [[1440, 900], [1280, 720], [390, 844], [360, 640],
       await expect.poll(() => collisions(page)).toEqual([]);
     }
     if (width <= 640 || height <= 500) {
+      await page.locator('#more-toggle').click();
       await page.locator('#poem-toggle').click();
       await expect.poll(() => collisions(page)).toEqual([]);
       await page.locator('#details-toggle').click();

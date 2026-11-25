@@ -44,8 +44,10 @@ const test = base.extend({
     if (errors.length) await test.info().attach('browser-errors', { body: errors.join('\n'), contentType: 'text/plain' });
   }
 });
+// The city is built in the first frames; on a loaded machine that takes several seconds.
+const STARTUP = { timeout: 20000 };
 async function ready(page) {
   await page.goto('/');
-  await expect.poll(() => page.evaluate(() => window.__ready === true)).toBe(true);
+  await expect.poll(() => page.evaluate(() => window.__ready === true), STARTUP).toBe(true);
 }
-module.exports = { test, expect, ready, scripts };
+module.exports = { test, expect, ready, scripts, STARTUP };

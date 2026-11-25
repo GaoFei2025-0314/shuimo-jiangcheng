@@ -71,6 +71,15 @@ test('each atlas plate opens for its own model, with two architectural detail vi
   const sceneKeys = await page.evaluate(() => window.__testScene.children.map(o => o.userData.modelKey).filter(Boolean));
   expect(keys.sort()).toEqual(sceneKeys.sort());
   expect(keys).toHaveLength(15);
+  // The album pages turn with the side buttons and the arrow keys, captioned by the selected site.
+  await expect(select).toHaveValue('tower');
+  await dialog.getByRole('button', { name: '下一处景点' }).click();
+  await expect(select).not.toHaveValue('tower');
+  await expect(dialog.locator('#atlas-caption-text')).not.toContainText('蛇山西麓');
+  await dialog.locator('#atlas-close').focus();
+  await page.keyboard.press('ArrowLeft');
+  await expect(select).toHaveValue('tower');
+  await expect(dialog.locator('#atlas-caption-text')).toContainText('蛇山西麓');
   for (const key of keys) {
     await select.selectOption(key);
     await image.evaluate(image => image.decode());

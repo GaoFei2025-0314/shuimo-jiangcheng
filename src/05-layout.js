@@ -3,12 +3,26 @@
     const media = window.matchMedia('(max-width: 640px), (max-height: 500px)');
     const poem = document.getElementById('poem'), text = document.getElementById('cardText');
     const poemButton = document.getElementById('poem-toggle'), detailsButton = document.getElementById('details-toggle');
-    const elements = ['title', 'poem', 'sound', 'poem-toggle', 'map-actions', 'dock'].map(id => document.getElementById(id));
+    const elements = ['title', 'poem', 'sound', 'map-actions', 'dock'].map(id => document.getElementById(id));
     const paintingButton = document.getElementById('painting-toggle');
-    const paintingExtras = ['title', 'sound', 'poem-toggle', 'dock', 'marks', 'labels', 'tip']
+    const actions = document.getElementById('map-actions'), moreButton = document.getElementById('more-toggle');
+    const paintingExtras = ['title', 'sound', 'poem-toggle', 'more-toggle', 'dock', 'marks', 'labels', 'tip']
       .map(id => document.getElementById(id));
     const sceneryOverlays = ['title', 'labels', 'marks'].map(id => document.getElementById(id));
-    let panel = null, painting = false, bridgeDetail = false;
+    let panel = null, painting = false, bridgeDetail = false, menu = false;
+    // 手机端右上角只留「⋯」与「乐」：题跋、回全城、观画收在纸色竖条里。
+    function setMenu(open) {
+      menu = open && media.matches && !painting;
+      actions.toggleAttribute('data-open', menu);
+      moreButton.setAttribute('aria-expanded', String(menu));
+    }
+    moreButton.addEventListener('click', () => setMenu(!menu));
+    document.getElementById('action-menu').addEventListener('click', event => {
+      if (event.target.closest('button')) setMenu(false);
+    });
+    function closeOutside(event) { if (menu && !actions.contains(event.target)) setMenu(false); }
+    document.addEventListener('pointerdown', closeOutside);
+    app.cleanups.push(() => document.removeEventListener('pointerdown', closeOutside));
     const nav = document.getElementById('nav');
     function updateNavEdges() {
       nav.classList.toggle('more-left', nav.scrollLeft > 1);
@@ -36,10 +50,12 @@
       if (painting && !enabled) onLeavePainting();
       painting = enabled;
       panel = null;
-      if (focusButton) paintingButton.focus({ preventScroll: true });
+      setMenu(false);
       paintingButton.textContent = enabled ? '退出观画' : '观画';
       paintingButton.toggleAttribute('data-painting', enabled);
       paintingExtras.forEach(el => { el.hidden = enabled; });
+      // 手机端退出观画后「观画」回到收起的菜单里，焦点交给「⋯」。
+      if (focusButton) (media.matches && !enabled ? moreButton : paintingButton).focus({ preventScroll: true });
       updatePanels();
       if (!enabled) nav.querySelector('[aria-pressed="true"]')?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
     }
@@ -48,14 +64,16 @@
     detailsButton.addEventListener('click', () => toggle('details'));
     document.addEventListener('keydown', event => {
       if (event.key !== 'Escape' || document.getElementById('atlas').open) return;
+      if (menu) { setMenu(false); moreButton.focus({ preventScroll: true }); return; }
       if (painting) { setPainting(false); return; }
       if (!media.matches || !panel) return;
-      const button = panel === 'poem' ? poemButton : detailsButton;
+      const button = panel === 'poem' ? moreButton : detailsButton;
       panel = null; updatePanels(); button.focus({ preventScroll: true });
     });
     media.addEventListener('change', () => {
       panel = null;
-      if (!media.matches && [poemButton, detailsButton].includes(document.activeElement)) {
+      setMenu(false);
+      if (!media.matches && [poemButton, detailsButton, moreButton].includes(document.activeElement)) {
         document.querySelector('#nav [aria-pressed="true"]').focus({ preventScroll: true });
       }
       updatePanels();

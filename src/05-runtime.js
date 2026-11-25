@@ -268,6 +268,7 @@
     layout.setBridgeDetail(bridgeCloseView === 'craft');
     controls.minDistance = bridgeCloseView === 'craft' ? 2 : bridgeCloseView === 'name' ? 6 : 22;
     activeView = key; cameraMode = 'preset';
+    document.body.toggleAttribute('data-poem-rest', true);
     const navKey = ['chutian','xingyin'].includes(key) ? 'lake' : key;
     buttons.forEach(b => b.setAttribute('aria-pressed', String(b.dataset.view === navKey)));
     cardTitle.textContent = COPY[key][0];
@@ -369,17 +370,36 @@
     detailButton.textContent = detailView ? '看全貌' : detail ? detail[1] : '';
     detailButton.setAttribute('aria-pressed', String(detailView));
     document.getElementById('atlas-note').hidden = !(nameView && key === 'bridge');
+    const siteText = COPY[atlasView(key)][1];
+    document.getElementById('atlas-caption-text').textContent = craftView ? craft.caption : siteText.split('。')[0] + '。';
     nameButton.hidden = !inscription;
     nameButton.textContent = nameView ? '看全貌' : '看桥名';
     nameButton.setAttribute('aria-pressed', String(nameView));
     locateButton.textContent = craftView ? '在地图中看构件' : nameView ? '在地图中看桥名' : '在地图中查看';
   }
-  atlasTrigger.addEventListener('click', () => {
+  atlasTrigger.addEventListener('click', event => {
     atlasSite.value = activeView === 'xingyin' ? 'lake' : LANDMARK_PLATES[activeView] ? activeView : 'tower';
     showPlate(bridgeCloseView);
     atlas.showModal();
+    // 鼠标打开时把焦点放在册页本身，关闭按钮不亮焦点框；键盘打开仍落在「关闭」上。
+    if (event.detail > 0) atlas.focus({ preventScroll: true });
   });
   atlasSite.addEventListener('change', () => showPlate());
+  // 册页翻页：按下拉中的景点顺序前后翻，首尾相接；方向键同样可用。
+  function turnPage(step) {
+    const n = atlasSite.options.length;
+    atlasSite.selectedIndex = (atlasSite.selectedIndex + step + n) % n;
+    showPlate();
+  }
+  document.getElementById('atlas-prev').addEventListener('click', () => turnPage(-1));
+  document.getElementById('atlas-next').addEventListener('click', () => turnPage(1));
+  atlas.addEventListener('keydown', event => {
+    if (event.target === atlasSite || event.altKey || event.ctrlKey || event.metaKey) return;
+    if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
+      event.preventDefault();
+      turnPage(event.key === 'ArrowLeft' ? -1 : 1);
+    }
+  });
   detailButton.addEventListener('click', () => showPlate(plateMode === 'detail' ? 'whole' : 'detail'));
   craftButton.addEventListener('click', () => showPlate(plateMode === 'craft' ? 'whole' : 'craft'));
   nameButton.addEventListener('click', () => showPlate(plateMode === 'name' ? 'whole' : 'name'));
