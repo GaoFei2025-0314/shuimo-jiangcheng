@@ -487,8 +487,14 @@
     function buildSnakeHillLane() {
       const ground = landmarkGrounds.tower;
       const top = ground.steps.find(step=>step.side===1).walk.at(-1);
-      const stations = [top,...[[1,36.65],[-1.6,38.3],[-5,39.65],[-9.7,40.6],[-13,41.05]]
-        .map(([x,z])=>plan(tower,x,z))];
+      const formerGate=plan(tower,-5,39.65);
+      const curbDistance=row=>Math.hypot(row.edges[1].outer.x-formerGate.x,row.edges[1].outer.z-formerGate.z);
+      const approach=wuhanApproachFeatures[0].stations.reduce((best,row)=>curbDistance(row)<curbDistance(best) ? row : best);
+      const {inner,outer}=approach.edges[1];
+      const landing=outer.clone().lerp(inner,.05);
+      const gate=outer.clone().addScaledVector(approach.normal,2.25);
+      const gateLead=plan(tower,-1.6,38.3).addScaledVector(approach.normal,2.1);
+      const stations=[top,plan(tower,1,36.65),gateLead,gate,gate.clone().lerp(landing,.48),landing];
       const lane = new Acc(), edge = new Acc();
       const cuts = [3,4,8,4,3];
       for (const [i,count] of cuts.entries()) {
@@ -504,7 +510,8 @@
           const probes=[-1,0,1].flatMap(side=>[-.5,0,.5].map(along=>
             landHeightAt(p.clone().addScaledVector(tangent,along*length/count)
               .add(V(tangent.z*side*width/2,0,-tangent.x*side*width/2)))));
-          const y=Math.max(...probes)+.075;
+          const grade=Math.max(...probes)+.075;
+          const y=i===cuts.length-1 ? THREE.MathUtils.lerp(grade,landing.y,(j+1)/count) : grade;
           const foot=Math.min(y-.13,floor,...probes);
           lane.box(width,y-foot,length/count+.01,p.x,(y+foot)/2,p.z,yaw);
           p.y=y;
@@ -521,7 +528,7 @@
       surface('蛇山 · 台地折巷与坡阶','蛇山',hillsideStone,'Path',lane.mesh(hillsideStone,false).geometry);
       surface('蛇山 · 巷阶矮坎','蛇山',curb,'Masonry',edge.mesh(curb,false).geometry);
 
-      const gate=stations[3].clone(), yaw=Math.atan2(stations[4].x-gate.x,stations[4].z-gate.z);
+      const yaw=Math.atan2(landing.x-gate.x,landing.z-gate.z);
       const posts=new Acc(), roof=new Acc(), at=(side,along)=>gate.clone().add(V(
         Math.cos(yaw)*side+Math.sin(yaw)*along,0,-Math.sin(yaw)*side+Math.cos(yaw)*along));
       const level=landHeightAt(gate)+.19;

@@ -352,6 +352,43 @@ test('both approach carriageways stay above the terrain through the bridgeheads 
   expect(failures).toEqual([]);
 });
 
+test('all four bridge approaches meet the receiving street at full width and level grade', async ({ page }) => {
+  await page.goto('/?debug');
+  await page.waitForFunction(() => window.__ready && window.__dbg);
+  const mouths = await page.evaluate(() => {
+    const {scene,cityGround,plantingSurface} = window.__dbg;
+    return [
+      ['武昌引道 · 接地铺装','蛇山脚坡街与首义街口'],
+      ['汉阳引道 · 接地铺装','汉阳桥头至翠微巷'],
+      ['鹦鹉洲汉阳引道 · 车行面','马鹦路与鹦鹉大道路口'],
+      ['鹦鹉洲武昌引道 · 车行面','复兴路街口']
+    ].map(([road,street]) => {
+      const mesh = scene.getObjectByName(road);
+      const p = mesh.geometry.attributes.position;
+      const vertex = i => mesh.localToWorld(new THREE.Vector3().fromBufferAttribute(p,i));
+      const left = vertex(p.count-2), right = vertex(p.count-1);
+      const end = left.clone().lerp(right,.5);
+      const prior = vertex(p.count-4).lerp(vertex(p.count-3),.5);
+      const receiving = cityGround.streets.find(s => s.name === street);
+      const dx = receiving.b.x-receiving.a.x, dz = receiving.b.z-receiving.a.z;
+      const length = Math.hypot(dx,dz);
+      const along = end.clone().sub(prior);
+      return {road, gap:Math.hypot(end.x-receiving.a.x,end.z-receiving.a.z),
+        widthError:Math.abs(left.distanceTo(right)-receiving.width),
+        skew:Math.abs((left.x-right.x)*dx+(left.z-right.z)*dz)/(length*receiving.width),
+        grade:Math.abs(along.y)/Math.hypot(along.x,along.z),
+        elevation:Math.abs(end.y-plantingSurface(end.x,end.z))};
+    });
+  });
+  for (const m of mouths) {
+    expect(m.gap,m.road).toBeLessThan(.05);
+    expect(m.widthError,m.road).toBeLessThan(.12);
+    expect(m.skew,m.road).toBeLessThan(.15);
+    expect(m.grade,m.road).toBeLessThan(.025);
+    expect(m.elevation,m.road).toBeLessThan(.16);
+  }
+});
+
 test('both riverbanks have continuous paved streets between the two bridge junctions', async ({ page }) => {
   await page.goto('/?debug');
   await page.waitForFunction(() => window.__ready && window.__dbg);
@@ -388,6 +425,15 @@ test('both riverbanks have continuous paved streets between the two bridge junct
       const group = scene.children.find(o => o.userData.modelKey === 'yingwuzhou');
       const approach = scene.getObjectByName('鹦鹉洲'+bank+'引道 · 车行面');
       const sign = bank === '汉阳' ? -1 : 1;
+      const abutment = scene.getObjectByName('鹦鹉洲'+bank+'引道 · 桥台端墙');
+      const wall = new THREE.Mesh(abutment.geometry,material);
+      for (const x of [-5,0,5]) {
+        // On the ramp side of the joint, the end wall must stay beneath the asphalt.
+        ray.set(group.localToWorld(new THREE.Vector3(x,25,sign*100.48)),down);
+        const top = ray.intersectObject(wall)[0], surface = ray.intersectObject(approach)[0];
+        if (!top || !surface || surface.point.y-top.point.y < .12)
+          failures.push({bank,x,reason:'abutment reaches the travel surface'});
+      }
       for (const lane of [-4,4]) {
         const heights = [.04,-.04].map(inset => {
           const origin = group.localToWorld(new THREE.Vector3(lane,25,sign*(100-inset)));

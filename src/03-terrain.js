@@ -86,22 +86,35 @@
   }
   // Continue the bridge surface into the adjacent street grid at their landward ends.
   const bridgeStreetEntries = [
-    { width: 5.12, next: { x: 8, z: 38 } },
-    { width: 4.85, next: { x: -265, z: -22 } }
+    { width: 5.12, next: { x: 8, z: 38 }, streetLead: { x: 25, z: 39 } },
+    { width: 4.85, next: { x: -265, z: -22 }, streetLead: { x: -269, z: -22.15 } }
   ];
   const approachLinks = [
     [bridgeLocal(0,0,-154),bridgeLocal(0,0,-158),V(-24.45,0,14.41),V(-22.85,0,17.95),V(-21.38,0,22.60),
-      V(-19.57,0,27.13),V(-18.31,0,30.29),V(-17.16,0,32.42),V(-15.57,0,34.24),
-      V(-13.61,0,35.65),V(-11.38,0,36.59),V(-10.20,0,36.86),V(-9,0,37)],
+      V(-19.57,0,27.13),V(-17.70,0,31.14),V(-14.64,0,34.51),V(-10.20,0,36.48)],
     [...[[hanyangOffset(154),154],[87.3,159.4],[94.5,163.9],[102.1,167.3],
       [110,170],[119,172.5],[128,174.7],[136,176]].map(([u,s]) => bridgeLocal(u,0,s)),
-      V(-252.45,0,-21.19),V(-256.32,0,-20.92),V(-259,0,-21.23)]
+      V(-252.45,0,-21.08),V(-256.32,0,-21.21)]
   ].map((controls,side) => {
-    const curve=new THREE.CatmullRomCurve3(controls), count=Math.ceil(curve.getLength()/.66);
-    return curve.getSpacedPoints(count).map((p,i)=>{
-      const t=i/count;
-      return p.setY(THREE.MathUtils.lerp(deckGrade(bridgeDeckEnd),LAND_Y+.068,t)+
-        (side===0?.22:.16)*Math.sin(Math.PI*t)**2);
+    const {next,streetLead}=bridgeStreetEntries[side];
+    const streetEnd=V(next.x,0,next.z);
+    const incoming=V(next.x-streetLead.x,0,next.z-streetLead.z).normalize();
+    const curve=new THREE.CatmullRomCurve3([...controls,streetEnd.clone().addScaledVector(incoming,4),streetEnd]);
+    const length=curve.getLength(), count=Math.ceil(length/.66);
+    const sign=side===0 ? -1 : 1, seam=deckGrade(bridgeDeckEnd), street=LAND_Y+.068;
+    const from=bridgeLocal(side ? hanyangOffset(153.9) : 0,deckGrade(153.9),sign*153.9);
+    const to=controls[0];
+    const incomingGrade=(from.y-seam)/Math.hypot(to.x-from.x,to.z-from.z);
+    // Round off the declining deck with a short cubic that starts at the deck grade
+    // and reaches level again before the street rise. Sample its small transition more closely.
+    const easingLength=.83, spacing=length/count;
+    const distances=[0, spacing/4, spacing/2, 3*spacing/4,
+      ...Array.from({length:count},(_,i)=>(i+1)*spacing)];
+    return distances.map(distance=>{
+      const t=Math.min(1,distance/length), easing=Math.min(1,distance/easingLength);
+      const grade=THREE.MathUtils.lerp(seam,street,THREE.MathUtils.smoothstep(t,0,.55));
+      const heel=incomingGrade*easingLength*easing*(1-easing)**2;
+      return curve.getPointAt(t).setY(grade-heel);
     });
   });
   const approachRoads = [-1,1].map((sign,index) => [
@@ -115,31 +128,24 @@
     const a = points[i], dx = b.x-a.x, dz = b.z-a.z;
     return { a,b,dx,dz,squared: dx*dx+dz*dz };
   }));
-  for (const [side,{width,next}] of bridgeStreetEntries.entries()) {
-    // Only a narrow strip along the continuing sidewalks needs the urban verge cut.
-    const a=approachLinks[side].at(-1),b=V(next.x,a.y,next.z),dx=b.x-a.x,dz=b.z-a.z;
-    approachSegments.push({a,b,dx,dz,squared:dx*dx+dz*dz,urbanVerge:width/2+1.35});
-  }
   const bridgeRoadBounds = new THREE.Box3().setFromPoints(approachRoads.flat()).expandByScalar(19);
   function roadAt(x,z) {
     if (x < bridgeRoadBounds.min.x || x > bridgeRoadBounds.max.x ||
         z < bridgeRoadBounds.min.z || z > bridgeRoadBounds.max.z) return null;
-    let distanceSquared = 19*19, height, verge;
-    for (const {a,b,dx,dz,squared,urbanVerge} of approachSegments) {
+    let distanceSquared = 19*19, height;
+    for (const {a,b,dx,dz,squared} of approachSegments) {
       const u = THREE.MathUtils.clamp(((x-a.x)*dx+(z-a.z)*dz)/squared,0,1);
       const d = (x-a.x-u*dx)**2 + (z-a.z-u*dz)**2;
       if (d >= distanceSquared) continue;
       distanceSquared = d;
       height = THREE.MathUtils.lerp(a.y,b.y,u);
-      verge = urbanVerge;
     }
-    return height === undefined ? null : { distance: Math.sqrt(distanceSquared), height, verge };
+    return height === undefined ? null : { distance: Math.sqrt(distanceSquared), height };
   }
   function cutForApproach(x,z,y) {
     const road = roadAt(x,z);
     if (!road) return y;
-    const cut = 1-THREE.MathUtils.smoothstep(road.distance, road.verge ?? approachHalfWidth+1.5,
-      road.verge === undefined ? 15.5 : road.verge+2.25);
+    const cut = 1-THREE.MathUtils.smoothstep(road.distance, approachHalfWidth+1.5,15.5);
     const top = Math.max(LAND_Y-.12, road.height-.36);
     return y-Math.max(0,y-top)*cut;
   }

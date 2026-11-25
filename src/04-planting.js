@@ -475,6 +475,22 @@
       }
     }
 
+    // 龟山、蛇山脚的短树列到路口前收住，保留从江面看桥头堡的视线。
+    const bridgeTrees = seeded(0x3be621);
+    for (const {side,stations} of wuhanApproachFeatures) {
+      const verge = side === 0 ? [[.34,-1],[.44,-1],[.65,1],[.77,1]]
+                               : [[.32,1],[.42,1],[.62,-1],[.72,-1],[.80,-1]];
+      for (const [fraction,bank] of verge) {
+        const row = stations[Math.round(fraction*(stations.length-1))];
+        const spread = .65+bridgeTrees()*.15;
+        for (const setback of [3.7,5.2]) {
+          const offset = bank*(row.half+setback);
+          if (plant('broadleaf',row.center.x+row.normal.x*offset,row.center.z+row.normal.z*offset,
+            spread,spread*.91,bridgeTrees)) break;
+        }
+      }
+    }
+
     // Color stores sRGB floats for the standalone map and the Blender capture.
     const plantMaterial = new THREE.ShaderMaterial({
       vertexColors: true,

@@ -121,20 +121,22 @@
     }
 
     const wuchang = '武昌古城';
-    for (const {walkStations} of wuhanApproachFeatures) for (const [i,row] of walkStations.slice(1).entries()) {
-      const previous=walkStations[i];
+    for (const {stations} of wuhanApproachFeatures) for (const [i,row] of stations.slice(1).entries()) {
+      const previous=stations[i];
       reservePath({a:previous.center,b:row.center,width:row.edges[0].outer.distanceTo(row.edges[1].outer)+1.45}, false);
     }
     const bridgeExit = approachLinks[0].at(-1);
     route({ name: '蛇山脚坡街与首义街口', group: wuchang, width: bridgeStreetEntries[0].width, connect: true, entryHeight:bridgeExit.y,
-      points: [bridgeExit, bridgeStreetEntries[0].next, ...points([25,39],[45,45],[71,50])] });
+      points: [bridgeExit, bridgeStreetEntries[0].streetLead, ...points([45,45],[71,50])] });
     // The hillside walk reaches the outer curb on its own side of the approach.
     const parkStation = wuhanApproachFeatures[0].stations.reduce((best,row)=>
       Math.abs(row.edges[1].outer.z-16.1)<Math.abs(best.edges[1].outer.z-16.1) ? row : best);
     const parkLink=parkStation.edges[1].outer;
     const curbExit=parkLink.clone().addScaledVector(parkStation.normal,1.45);
+    const parkTurn=new THREE.CatmullRomCurve3([parkLink,curbExit,V(-17.5,0,14.1),V(-19,0,12.1),V(-22,0,8)]);
+    const parkEntry=parkTurn.getSpacedPoints(Math.ceil(parkTurn.getLength()/.7));
     route({ name: '蛇山东麓土径', group: wuchang, width: 1.04, earthy: true, entryHeight:parkLink.y,
-      points: [parkLink,curbExit,...points([-17.5,14.1],[-19.0,12.1],[-22,8],[-25,4],[-28.1,1.8],[-29.1,.1],[-31.0,-2.1],[-32.7143,-4],[-31,-12],
+      points: [...parkEntry,...points([-25,4],[-28.1,1.8],[-29.1,.1],[-31.0,-2.1],[-32.7143,-4],[-31,-12],
         [-24,-25],[-13,-36],[-1,-42],[17,-43],[27,-53])] });
     wuhanApproachFeatures[0].parkLink = parkLink;
     for (const [x,z,yaw,kind] of [[-23,30,.15,'arcade'],[-12,29,.22,'lane'],[4,36,.25,'lane'],
@@ -154,11 +156,11 @@
     route({ name: '晴川阁与铁门关沿台石径', group: '晴川阁', width: 1.48, material: 'BankStone',
       entryHeight:terrainTop(gateToe[0].x,gateToe[0].z)+.09*qc.scale.y,
       points:[...gateToe,...points([-117.6,-118.4],[-120.5,-121.2],[-124.2,-124.9],[-127,-127])] });
-    const rounds=[bridgeStreetEntries[1].next,...points([-269,-22.15],[-276,-21.3],[-282,-19],[-286.9,-12],
+    const rounds=[approachLinks[1].at(-1),bridgeStreetEntries[1].streetLead,...points([-276,-21.3],[-282,-19],[-286.9,-12],
       [-288,0],[-288,14],[-289.4,22],[-292,31])];
     const hanyangStreet=new THREE.CatmullRomCurve3(rounds.map(({x,z})=>V(x,0,z))).getPoints((rounds.length-1)*8);
     route({ name: '汉阳桥头至翠微巷', group: hanyang, width: bridgeStreetEntries[1].width, entryHeight:approachLinks[1].at(-1).y,
-      points: [approachLinks[1].at(-1),...hanyangStreet] });
+      points: hanyangStreet });
     const templeFront = local(guiyuan,[0,30],[0,37],[0,42]);
     for (let i=1;i<templeFront.length;i++)
       reservePath({a:templeFront[i-1],b:templeFront[i],width:14},false);

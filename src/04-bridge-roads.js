@@ -35,7 +35,8 @@
     const encoded = value => Math.round(value * 128) / 128;
     const deckY = yingwuzhou.position.y + encoded(7.70 - (100 - 71.5) * .095);
     const deckEdge = encoded(15.47 / 2);
-    const streetEdge = 2.90;
+    const deckThickness = encoded(.43);
+    const junctionHalf = 5.2;
     for (const side of [-1, 1]) {
       const bank = side < 0 ? '汉阳' : '武昌';
       const name = '鹦鹉洲' + bank + '引道';
@@ -49,7 +50,7 @@
         const taper = smooth(t, .11, .91);
         // A cubic starts tangent to the bridge and settles onto the level street.
         const y = mix(deckY, junctionY, smooth(t, 0, 1)) - .095 * run * t * (1-t) ** 2;
-        return { center, y, half: mix(deckEdge, streetEdge, taper), taper, z };
+        return { center, y, half: mix(deckEdge, junctionHalf, taper), taper, z };
       });
       const rows = nodes.map((node, i) => {
         const a = nodes[Math.max(0, i-1)].center, b = nodes[Math.min(count, i+1)].center;
@@ -69,10 +70,26 @@
       function strip(section, start, end, vertices, indices) {
         ribbon(rows.slice(start,end+1).map(section),vertices,indices);
       }
+      function solid(sections, vertices, indices) {
+        const first = vertices.length / 3;
+        for (const section of sections) vertices.push(...section.flat());
+        const last = first + (sections.length-1)*4;
+        indices.push(first,first+2,first+1,first,first+3,first+2);
+        for (let start=first;start<last;start+=4) {
+          for (let j=0;j<4;j++) {
+            const a=start+j, b=start+(j+1)%4;
+            indices.push(a,b,a+4,b,b+4,a+4);
+          }
+        }
+        indices.push(last,last+1,last+2,last,last+2,last+3);
+      }
       function show(label, material, ink, vertices, indices, pigment) {
         const shape = new THREE.BufferGeometry();
         shape.setAttribute('position',new THREE.Float32BufferAttribute(vertices,3));
         if (pigment) shape.setAttribute('deckPigment',new THREE.Float32BufferAttribute(pigment,1));
+        if (ink.defines?.ARCHITECTURE_AO) {
+          shape.setAttribute('skyVisibility',new THREE.BufferAttribute(new Float32Array(vertices.length/3).fill(.92),1));
+        }
         shape.setIndex(indices);
         shape.computeVertexNormals();
         const mesh = new THREE.Mesh(shape,ink);
@@ -88,7 +105,8 @@
         strip(row => {
           const top = point(row,direction*row.half,row.y);
           const ground = terrainTop(top[0],top[2]);
-          const toe = point(row,direction*(row.half+(row.y-ground)*.10), Math.min(row.y-.03,ground-.035));
+          const toe = point(row,direction*(row.half+Math.max(0,row.y-ground)*.36), row.y);
+          toe[1] = Math.min(row.y-.03,terrainTop(toe[0],toe[2])-.035);
           return direction < 0 ? [toe,top] : [top,toe];
         },0,count,base,baseTris);
       }
@@ -99,13 +117,39 @@
       show('车行面','ApproachPaving',approachPaving,road,roadTris,pigment);
       show('坡脚挡面','BankStone',M.bankStone,base,baseTris);
 
+      // A short abutment closes the exposed end of the two retaining faces below the deck.
+      const abutment=[], abutmentTris=[];
+      const joint = rows[0];
+      const reach = 1.35;
+      const bridgeSeat = {
+        ...joint, center:joint.center.clone().add(V(joint.nz*reach,0,-joint.nx*reach)),
+        y:deckY+.095*reach/yingwuzhou.scale.z,
+      };
+      const abutmentSections = [bridgeSeat,rows[1]].map((row,i) => {
+        const topY = row.y-deckThickness, topHalf = row.half-.42;
+        const bottom = [-1,1].map(direction => {
+          const edge = point(row,direction*row.half,row.y);
+          const grade = terrainTop(edge[0],edge[2]);
+          const flare = i===0 ? .20 : Math.max(0,row.y-grade)*.36;
+          const p = point(row,direction*(topHalf+flare),topY);
+          p[1] = Math.min(topY-.10,terrainTop(p[0],p[2])-.12);
+          return p;
+        });
+        return [...bottom,point(row,topHalf,topY),point(row,-topHalf,topY)];
+      });
+      solid(abutmentSections,abutment,abutmentTris);
+      show('桥台端墙','Masonry',architectureMaterials.stone,abutment,abutmentTris);
+
       const walks=[], walkTris=[], returns=[], returnTris=[], marks=[], markTris=[];
+      const rails=[], railTris=[];
       const turnStart = count - 8;
       const forward = rows[count].center.clone().sub(rows[count-1].center).normalize();
+      const railEnd = rows.findIndex((row,i) => i >= count*.30 &&
+        row.y-terrainTop(row.center.x,row.center.z)<.45);
       for (const direction of [-1,1]) {
         const walk = row => {
-          const outer = mix(encoded(7.15 + .93 / 2), streetEdge - .06, row.taper);
-          const inner = mix(encoded(7.15 - .93 / 2), streetEdge - .80, row.taper);
+          const outer = mix(encoded(7.15 + .93 / 2), junctionHalf - .06, row.taper);
+          const inner = mix(encoded(7.15 - .93 / 2), junctionHalf - .80, row.taper);
           const y = row.y + mix(encoded(.15),.045,smooth(row.z,140,150));
           return direction<0 ? [point(row,-outer,y),point(row,-inner,y)] :
             [point(row,inner,y),point(row,outer,y)];
@@ -118,12 +162,35 @@
           return direction < 0 ? [top,bottom] : [bottom,top];
         },0,turnStart,walks,walkTris);
 
+        // Carry the existing paired steel rails onto the raised sidewalk, then lower the handrail.
+        const lastRail = railEnd > 0 ? railEnd : turnStart;
+        const railRows = rows.slice(0,lastRail+1);
+        const railX = row => direction*mix(encoded(7.63),junctionHalf-.14,row.taper);
+        const drop = i => smooth(i/lastRail,.68,1)*.47;
+        const rectangle = (row,x,y,half,height) => [
+          point(row,x-half,y),point(row,x+half,y),point(row,x+half,y+height),point(row,x-half,y+height),
+        ];
+        for (const height of [.29,.99]) {
+          solid(railRows.map((row,i) => rectangle(row,railX(row),row.y+height-.055-
+            drop(i)*(height>.5 ? 1 : .13),.065,.11)),rails,railTris);
+        }
+        const posts = railRows.filter((_,i) => i%3===1 && i<lastRail-1);
+        posts.push(railRows.at(-1));
+        for (const row of posts) {
+          const i = railRows.indexOf(row);
+          const top = row.y+.99-drop(i);
+          const bottom = row.y+mix(encoded(.15),.045,smooth(row.z,140,150))-.04;
+          solid([-.066,.066].map(along => rectangle({
+            ...row, center:row.center.clone().add(V(-row.nz*along,0,row.nx*along)),
+          },railX(row),bottom,.052,top-bottom)),rails,railTris);
+        }
+
         // Each sidewalk curves away from the crossing, then lowers beside the cross street.
         const first = walk(rows[turnStart]);
         const a = V(...first[0]).lerp(V(...first[1]),.5);
         const outward = V(rows[count].nx * direction,0,rows[count].nz * direction);
         const crossStreetHalf = direction === side ? 1.95 : 1.625;
-        const landing = junction.clone().addScaledVector(forward,-crossStreetHalf-.36).addScaledVector(outward,8);
+        const landing = junction.clone().addScaledVector(forward,-crossStreetHalf-.36).addScaledVector(outward,9);
         const curve = new THREE.CubicBezierCurve3(a, a.clone().addScaledVector(forward,1.45),
           landing.clone().addScaledVector(outward,-3.4).setY(a.y), landing.clone().setY(a.y));
         const corners = [first];
@@ -142,11 +209,11 @@
           return direction<0 ? [top,base] : [base,top];
         }),returns,returnTris);
         for (const lane of [1,2,3]) {
-          // Two dashed tracks per direction terminate as the side lanes merge.
-          const end = lane===1 ? count-7 : Math.floor(count*(lane===2 ? .64 : .49));
+          // The outer bridge lane merges on the ramp. Two lanes feed each side of the junction.
+          const end = lane===1 ? count-7 : Math.floor(count*(lane===2 ? .88 : .59));
           for (let start=1;start<end;start+=7) {
             strip(row => {
-              const x = direction*lane*2*(1-.48*row.taper), y = row.y+.016;
+              const x = direction*lane*mix(2,1.52,row.taper), y = row.y+.016;
               return [point(row,x-.038,y),point(row,x+.038,y)];
             },start,Math.min(start+3,end),marks,markTris);
           }
@@ -159,12 +226,13 @@
         return [point(row,-half,y),point(row,half,y)];
       },0,medianEnd,marks,markTris);
       strip(row => [point(row,-.045,row.y+.022),point(row,.045,row.y+.022)],medianEnd,count-5,marks,markTris);
-      for (const x of [-1.6,-1.2,-.8,-.4,0,.4,.8,1.2,1.6]) {
+      for (let bar=-9;bar<=9;bar++) {
+        const x = bar*.43;
         strip(row => [point(row,x-.13,row.y+.018),point(row,x+.13,row.y+.018)],count-5,count-3,marks,markTris);
       }
+      show('引桥步道护栏','SuspensionOrange',architectureMaterials.suspensionOrange,rails,railTris);
       show('路缘与人行道','BankStone',M.bankStone,walks,walkTris);
       show('横街人行转角','BankStone',M.bankStone,returns,returnTris);
-      show('车道线','RoadPaint',lanePaint,marks,markTris);
       for (let i=0;i<count;i++) {
         reservePath({a:rows[i].center,b:rows[i+1].center,width:2*rows[i].half,group,name});
       }
@@ -174,8 +242,27 @@
       const street = (x,z) => toWorld(offset+x,side*z);
       const innerJunction = street(side < 0 ? 3 : 2.7, side < 0 ? 200 : 203);
       const streetName = side < 0 ? '马鹦路与鹦鹉大道路口' : '复兴路街口';
-      route({ name:streetName, group:streetGroup, width:5.8, entryHeight:junctionY,
+      const receiving = route({ name:streetName, group:streetGroup, width:5.8, entryHeight:junctionY,
+        widthAt: distance => mix(junctionHalf*2,5.8,smooth(distance,10,29)),
         points:[junction,street(0,157),street(2,174),street(4,188),innerJunction], connect:true });
+      if (receiving) {
+        // Use the street's own sampled cross sections so the paint follows the road crown.
+        function receivingMark(section, offset) {
+          const [left, center, right] = section;
+          const edge = offset < 0 ? left : right;
+          const u = Math.abs(offset);
+          return [mix(center[0],edge[0],u),mix(center[1],edge[1],u)+.018,mix(center[2],edge[2],u)];
+        }
+        ribbon(receiving.slice(3,-2).map(section =>
+          [-.014,.014].map(offset => receivingMark(section,offset))),marks,markTris);
+        for (const direction of [-1,1]) {
+          for (let start=3;start<Math.min(19,receiving.length-2);start+=3) {
+            ribbon(receiving.slice(start,start+2).map(section =>
+              [direction*.30-.012,direction*.30+.012].map(offset => receivingMark(section,offset))),marks,markTris);
+          }
+        }
+      }
+      show('车道线','RoadPaint',lanePaint,marks,markTris);
       route({ name:bank+'桥头横街', group:streetGroup, width:3.9, entryHeight:junctionY, junctionLift:.016,
         points:[junction,yingwuzhouNorthStreetEnd(side)] });
       // The smaller branch returns to the inland street instead of stopping in the field.
@@ -209,7 +296,7 @@
         const height = (side < 0 ? .47 : .52) + .14 * (1 + Math.sin(i*1.77));
         lot(i%5===3 ? 'arcade' : 'lane',p,yaw,scale,height);
       }
-      for (const [x,z] of [[-11,119],[11,126],[-9,140],[8,154],[-7,163],[8,180],
+      for (const [x,z] of [[-11,119],[11,126],[-10,140],[9,145],[10,155],[-9,162],[9,180],
         [-27,160],[-27,175],[-20,192]]) cityGround.verges.push(street(x,z));
     }
   }

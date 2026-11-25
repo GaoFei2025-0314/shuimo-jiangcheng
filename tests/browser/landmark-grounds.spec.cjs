@@ -206,10 +206,24 @@ test('landmark paths reach their gates, streets and banks on the rendered terrai
 
     const alley=path('蛇山 · 台地折巷与坡阶');
     const summit=landmarkGrounds.tower.steps.find(s=>s.side===1).walk.at(-1);
-    const foot=alley.at(-1).b, slopeStreet=path('蛇山脚坡街与首义街口');
-    if(distance(alley[0].a,summit)>.015 ||
-       Math.min(...slopeStreet.map(s=>distance(s.a,foot)))>1.5)
-      failures.push('Snake Hill steps miss the terrace or the lower street');
+    const foot=alley.at(-1).b;
+    const sidewalk=scene.getObjectByName('武昌引道 · 右侧连续步道').geometry.attributes.position;
+    const road=scene.getObjectByName('武昌引道 · 接地铺装');
+    const gatePosts=scene.getObjectByName('蛇山 · 巷门').geometry.attributes.position;
+    const curb=new THREE.Vector3();
+    let curbGap=Infinity;
+    for (let i=2;i<sidewalk.count;i+=4) {
+      curb.fromBufferAttribute(sidewalk,i);
+      curbGap=Math.min(curbGap,Math.hypot(curb.x-foot.x,curb.z-foot.z,curb.y-foot.y));
+    }
+    if(distance(alley[0].a,summit)>.015 || curbGap>.10)
+      failures.push('Snake Hill steps miss the terrace or the Wuhan bridge sidewalk');
+    for (let i=0;i<gatePosts.count;i++) {
+      ray.set(new THREE.Vector3(gatePosts.getX(i),65,gatePosts.getZ(i)),down);
+      if (!ray.intersectObject(road).length) continue;
+      failures.push('Snake Hill gate overlaps the Wuhan approach carriageway');
+      break;
+    }
     return failures;
   });
   expect(failures).toEqual([]);

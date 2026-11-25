@@ -96,19 +96,21 @@
       });
     }
     for (const [side, rows] of approachLinks.entries()) {
-      const { width, next } = bridgeStreetEntries[side];
+      const { width,streetLead } = bridgeStreetEntries[side];
       const label=side===0?'武昌引道':'汉阳引道';
       const stations=rows.map((p,i)=>{
         const a = i === 0 ? approachRoads[side][bridgeDeckEnd-73] : (i === rows.length-1 ? p : rows[i-1]);
-        const b = i === 0 ? rows[0] : rows[i+1] || next;
+        const b = i===0 ? p : rows[i+1] ?? streetLead;
         const t = i/(rows.length-1);
-        const narrowing = THREE.MathUtils.smoothstep(t,.08,.92);
-        return section(p,a,b,THREE.MathUtils.lerp(carriageHalf,width/2,narrowing),
-          THREE.MathUtils.lerp(sidewalkWidth,1.03,narrowing),THREE.MathUtils.lerp(.18*bridgeScale,.073,narrowing));
+        const narrowing = THREE.MathUtils.smoothstep(t,.12,.88);
+        const street = THREE.MathUtils.smoothstep(t,.73,1);
+        const walk = THREE.MathUtils.lerp(sidewalkWidth,1.12,narrowing)*(1-THREE.MathUtils.smoothstep(t,.94,1));
+        return section(p,a,b,THREE.MathUtils.lerp(carriageHalf,width/2,narrowing),walk,
+          THREE.MathUtils.lerp(.18*bridgeScale,0,street));
       });
       const roadPoints=[], roadFaces=[], pigment=[];
       for (const [i,row] of stations.entries()) {
-        const t=i/(stations.length-1), ink=1-THREE.MathUtils.smoothstep(t,.03,.94);
+        const t=i/(stations.length-1), ink=1-THREE.MathUtils.smoothstep(t,.08,1);
         roadPoints.push(...row.edges.map(edge=>edge.road));
         pigment.push(ink,ink);
         if (i) {
@@ -124,17 +126,9 @@
       }
       road.geometry.setAttribute('jointSky',new THREE.Float32BufferAttribute(sky,1));
       road.geometry.setAttribute('jointNormal',new THREE.Float32BufferAttribute(normal,3));
-      const end=stations.at(-1).center;
-      const streetLength=Math.hypot(next.x-end.x,next.z-end.z), links=Math.ceil(streetLength/.64);
-      const walks=stations.concat(Array.from({length:links},(_,i)=>{
-        const t=(i+1)/links, p=V(THREE.MathUtils.lerp(end.x,next.x,t),0,THREE.MathUtils.lerp(end.z,next.z,t));
-        p.y=THREE.MathUtils.lerp(end.y,(plantingSurface(p.x,p.z) ?? LAND_Y)+.068,t);
-        return section(p,end,next,width/2,THREE.MathUtils.lerp(1.03,.74,THREE.MathUtils.smoothstep(t,.58,1)),
-          THREE.MathUtils.lerp(.073,.026,THREE.MathUtils.smoothstep(t,.33,1)));
-      }));
-      const sidewalks=walks[0].edges.map((_,bank)=>{
+      const sidewalks=stations[0].edges.map((_,bank)=>{
         const points=[], indices=[];
-        for (const [i,row] of walks.entries()) {
+        for (const [i,row] of stations.entries()) {
           const {road,inner,outer}=row.edges[bank];
           const bottom=Math.min(outer.y-.12,(plantingSurface(outer.x,outer.z) ?? LAND_Y)-.035);
           points.push(road,inner,outer,outer.clone().setY(bottom));
@@ -148,18 +142,19 @@
       });
       const marks=[], markFaces=[];
       for (const [i,b] of stations.slice(1).entries()) {
-        const a=stations[i],t=i/(stations.length-1),fade=1-THREE.MathUtils.smoothstep(t,.20,.68);
-        if (fade<.07) continue;
-        const stripes=t<.33 && i%6<2 ? [-.50,0,.50] : t<.43 || i%6<3 ? [0] : [];
-        for (const f of stripes) {
-          const k=marks.length,h=.031*fade;
-          for (const row of [a,b]) marks.push(offset(row.center,row.normal,f*row.half-h,.016),
-            offset(row.center,row.normal,f*row.half+h,.016));
+        const a=stations[i], t=i/(stations.length-1);
+        if (i%7>=3) continue;
+        for (const lane of [-.50,0,.50]) {
+          const fade=1-THREE.MathUtils.smoothstep(t,lane===0?.65:.18,lane===0?.92:.49);
+          if (fade<.08) continue;
+          const k=marks.length, half=.038*fade;
+          for (const row of [a,b]) marks.push(offset(row.center,row.normal,lane*row.half-half,.016),
+            offset(row.center,row.normal,lane*row.half+half,.016));
           markFaces.push(k,k+2,k+1,k+1,k+2,k+3);
         }
       }
       const markings=addPaving(label+' · 延续车道标线','RoadPaint',paintedMaterial,marks,markFaces,true);
-      wuhanApproachFeatures.push({side,road,sidewalks,markings,stations,walkStations:walks});
+      wuhanApproachFeatures.push({side,road,sidewalks,markings,stations});
     }
     scene.add(...details);
   }
@@ -553,7 +548,9 @@
         if (occupied(x, z, width / 2 + .63)) return;
         for (const offset of [-width / 2, 0, width / 2]) {
           const px = x + sideX * offset, pz = z + sideZ * offset;
-          if (!onLand(px, pz) || !offBridge(px, pz, false) || terrainTop(px, pz) > LAND_Y + .3 || landmarkAt(px, pz)) return;
+          const approach = roadAt(px,pz);
+          if ((approach && approach.distance<approachHalfWidth+.85) ||
+              !onLand(px, pz) || !offBridge(px, pz, false) || terrainTop(px, pz) > LAND_Y + .3 || landmarkAt(px, pz)) return;
         }
       }
       streetsMesh.place(streetSurface, (a.x + b.x) / 2, LAND_Y + .045, (a.z + b.z) / 2, length, 1, width, Math.atan2(-dz, dx));
@@ -699,7 +696,7 @@
       }
     }
 
-    function districtRoute({ name, group, points, width, material = 'Path', terrace = false, earthy = false, connect = false, gradeStart = null, entryHeight = null, plain = false, surfaceLift = 0, junctionLift = 0 }) {
+    function districtRoute({ name, group, points, width, widthAt, material = 'Path', terrace = false, earthy = false, connect = false, gradeStart = null, entryHeight = null, plain = false, surfaceLift = 0, junctionLift = 0 }) {
       const vertices = [], indices = [];
       const rows = [];
       for (let i = 0; i < points.length-1; i++) {
@@ -711,11 +708,16 @@
       }
       if (!rows.length) return;
       rows.push(points.at(-1));
+      let distance = 0;
+      const widths = rows.map((p, i) => {
+        if (i > 0) distance += Math.hypot(p.x-rows[i-1].x,p.z-rows[i-1].z);
+        return widthAt ? widthAt(distance) : width;
+      });
       const worldPoints = rows.map((p, i) => {
         const a = rows[Math.max(0,i-1)], b = rows[Math.min(rows.length-1,i+1)];
         const dx = b.x-a.x, dz = b.z-a.z, length = Math.hypot(dx,dz) || 1;
         return [-1,0,1].map(side => {
-          const x = p.x+side*dz/length*width/2, z = p.z-side*dx/length*width/2;
+          const x = p.x+side*dz/length*widths[i]/2, z = p.z-side*dx/length*widths[i]/2;
           const floor = plantingSurface(x,z);
           const surface = (floor ?? 0)+(terrace ? .112 : .068)+surfaceLift*Math.min(i/3,1);
           const u = i/(rows.length-1);
@@ -738,7 +740,7 @@
           }
         }
         if (active) {
-          const path = { a: rows[i], b: rows[i+1], width, group, name };
+          const path = { a: rows[i], b: rows[i+1], width: widths[i], group, name };
           reservePath(path);
           if (gradeStart !== null) {
             // Two embedded embankment faces close the gap between the leveled deck and grade.
@@ -755,13 +757,14 @@
         }
       }
       if (!indices.length) return;
-      if (connect) routeEnds.push({ name, group, point: rows.at(-1), width, material, earthy });
+      if (connect) routeEnds.push({ name, group, point: rows.at(-1), width: widths.at(-1), material, earthy });
       const geometry = new THREE.BufferGeometry();
       geometry.setAttribute('position', new THREE.Float32BufferAttribute(vertices,3));
       geometry.setIndex(indices); geometry.computeVertexNormals();
       const key = group+' / '+material+(earthy ? ' / soil' : '');
       if (!districtPaving.has(key)) districtPaving.set(key, { name, group, material, earthy, tiles: new Acc() });
       districtPaving.get(key).tiles.push(geometry);
+      return worldPoints;
     }
     buildDistrictRoutes(districtRoute, buildLot, reservePath);
     urbanCore(114.277, 30.583, 25, 42, 'slab_tower');          // 汉口商埠背后的内城
