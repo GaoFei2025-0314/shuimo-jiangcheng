@@ -572,6 +572,10 @@
           pigment=mix(pigment,ink,nib*(1.-smoothstep(.74,.94,l)));
           float amount=strength*(.89-.70*smoothstep(.59,.94,l));
           color=mix(color,pigment,amount);
+          // Let paper show through broad midtones while leaving a broken ink edge at the folds.
+          float wash=smoothstep(.08,.39,l)*(1.-smoothstep(.72,.94,l));
+          color=mix(color,paper,wash*strength*(.095+.035*grain2));
+          color=mix(color,ink,nib*strength*.93*(1.-smoothstep(.68,.97,l)));
           gl_FragColor=vec4(color*original.a,original.a);
         }`,
       depthTest:false,depthWrite:false,blending:THREE.NoBlending
