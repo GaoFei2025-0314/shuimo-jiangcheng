@@ -492,12 +492,14 @@
   function updateLandscapeVisibility() {
     camera.updateMatrixWorld();
     clipMatrix.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
-    if (previousClip.equals(clipMatrix) && previousHeight === H) return;
+    // Detail below one raster pixel cannot be seen in a temporary smaller drawing buffer.
+    const rasterHeight=Math.min(H,renderer.domElement.height);
+    if (previousClip.equals(clipMatrix) && previousHeight === rasterHeight) return;
     previousClip.copy(clipMatrix);
-    previousHeight = H;
+    previousHeight = rasterHeight;
     viewVolume.setFromProjectionMatrix(clipMatrix);
     const clip = clipMatrix.elements;
-    const pixelsPerUnit = H * camera.projectionMatrix.elements[5];
+    const pixelsPerUnit = rasterHeight * camera.projectionMatrix.elements[5];
     // Drop leaf and branch subdivisions before switching to the distant silhouette.
     const fullTreeScale = pixelsPerUnit / 68, midTreeScale = pixelsPerUnit / 18;
     const viewDepth = p => clip[3]*p.x + clip[7]*p.y + clip[11]*p.z + clip[15];
