@@ -99,11 +99,25 @@
       points: [waterside(10,19), waterside(10,35.5),
         {x:AT.watertower.x+12,z:AT.watertower.z+12}, {x:AT.watertower.x-10,z:AT.watertower.z+12},
         {x:AT.watertower.x-31,z:AT.watertower.z+1}] });
-    for (let i = 3; i < 27; i++) {
-      if ([6, 9, 10, 11, 12, 19, 20].includes(i)) continue;
-      const p = waterside(i,27.4), land = waterside(i,19);
-      const yaw = Math.atan2(land.x-p.x,land.z-p.z);
-      lot(i % 4 === 0 ? 'wharf' : i % 3 === 1 ? 'lane' : 'arcade', p, yaw, .80+(i % 3)*.055, .79+(i % 4)*.075);
+    const frontage = (station, setback) => {
+      const i = Math.floor(station);
+      const a = waterside(i,setback), b = waterside(i+1,setback);
+      return {x:THREE.MathUtils.lerp(a.x,b.x,station-i),z:THREE.MathUtils.lerp(a.z,b.z,station-i)};
+    };
+    // Two closely spaced rows within each block. The quay approaches and the
+    // view corridor opposite the Customs House stay open across both rows.
+    for (const [start, end, rear] of [[2.8,5.25,true],[6.68,7.52,false],[10.78,11.36,false],
+      [12.75,15.1,true],[16.15,18.58,true],[20.78,23.15,true],[24.2,26.58,true]]) {
+      for (let i = start, j = 0; i <= end; i += .76, j++) {
+        const p = frontage(i,27.4), street = frontage(i,18.8);
+        const yaw = Math.atan2(street.x-p.x,street.z-p.z);
+        lot(j % 4 === 2 ? 'wharf' : 'arcade',p,yaw,.72+(j % 3)*.034,.87+(j % 3)*.10);
+        if (rear && i+.28 < end)
+          lot(j % 3 === 0 ? 'arcade' : 'lane',frontage(i+.28,39.8),yaw,.72,.71+(j % 3)*.12);
+      }
+      route({name:'沿江铺面石板人行道',group:hankou,width:2.8,material:'BankStone',
+        points:[frontage(start-.18,21.65),frontage((start+end)/2,21.65),frontage(end+.18,21.65)]});
+      cityGround.verges.push(frontage((start+end)/2,14.7));
     }
 
     const wuchang = '武昌古城';
@@ -127,24 +141,32 @@
       [17,40,.32,'arcade'],[-9,-49,3.45,'lane'],[6,-49,3.48,'lane'],[23,-47,2.75,'arcade']])
       lot(kind,{x,z},yaw,.82,.71);
 
+    // Use the foot of the ridge for a lower row, leaving the climb in the opening.
+    for (const [x,z,yaw,kind] of [[-29,46,.17,'lane'],[-20,48,.25,'arcade'],[-10,51,.29,'lane'],
+      [10,48,.18,'lane'],[19,50,.25,'arcade']]) lot(kind,{x,z},yaw,.69,.67);
+
     const hanyang = '汉阳滨江';
     route({ name: '龟山东麓至南岸嘴滨江步道', group: hanyang, width: 1.88, earthy: true,
-      points: points([-128,-115],[-128,-120],[-127,-127],[-117,-134],[-106,-141],[-102,-142]) });
+      points: points([-127,-127],[-121,-133],[-115,-139],[-111,-142]) });
     route({ name: '南岸嘴两江会口石径', group: hanyang, width: 1.48, material: 'BankStone', terrace: true,
-      points: points([-127,-127],[-134,-135],[-143,-140],[-155,-142],[-166,-144]) });
-    route({ name: '晴川阁与铁门关沿台石径', group: '晴川阁', width: 1.38, material: 'BankStone',
-      points: local(qc,[0,10.6],[1,11.8],[7,10.2],[13,10.1],[18,11.75],[22,13.6]) });
+      points: points([-127,-127],[-134,-132],[-143,-135],[-155,-136],[-164,-135]) });
+    const gateToe=local(qc,[20,19.9],[20,21.5]);
+    route({ name: '晴川阁与铁门关沿台石径', group: '晴川阁', width: 1.48, material: 'BankStone',
+      entryHeight:terrainTop(gateToe[0].x,gateToe[0].z)+.09*qc.scale.y,
+      points:[...gateToe,...points([-117.6,-118.4],[-120.5,-121.2],[-124.2,-124.9],[-127,-127])] });
     const rounds=[bridgeStreetEntries[1].next,...points([-269,-22.15],[-276,-21.3],[-282,-19],[-286.9,-12],
       [-288,0],[-288,14],[-289.4,22],[-292,31])];
     const hanyangStreet=new THREE.CatmullRomCurve3(rounds.map(({x,z})=>V(x,0,z))).getPoints((rounds.length-1)*8);
     route({ name: '汉阳桥头至翠微巷', group: hanyang, width: bridgeStreetEntries[1].width, entryHeight:approachLinks[1].at(-1).y,
       points: [approachLinks[1].at(-1),...hanyangStreet] });
-    route({ name: '归元禅寺山门前庭', group: '归元禅寺', width: 6.4, material: 'BankStone',
-      points: local(guiyuan,[0,29],[0,33],[0,40]) });
+    const templeFront = local(guiyuan,[0,30],[0,37],[0,42]);
+    for (let i=1;i<templeFront.length;i++)
+      reservePath({a:templeFront[i-1],b:templeFront[i],width:14},false);
     route({ name: '翠微山门接乡路', group: hanyang, width: 2.6, connect: true,
-      points: [...local(guiyuan,[0,40], [0,46]), ...points([-309,29],[-292,31],[-270,25])] });
-    route({ name: '古琴台山门与月湖步道', group: '古琴台', width: 2.25,
-      points: local(qintai,[0,18],[0,23],[1,28],[-5,35],[-18,36],[-24,31],[-24,20],[-24,8],[-22,-4]) });
+      points: [...local(guiyuan,[0,42], [0,46]), ...points([-309,29],[-292,31],[-270,25])] });
+    route({ name: '古琴台山门与月湖步道', group: '古琴台', width: 1.95, entryHeight: qintai.localToWorld(V(0,.12,18.30)).y,
+      points: local(qintai,[0,18.30],[0,23],[0,28],[-7,31],[-19,30],[-26,23],[-27,12],
+        [-28,0],[-28,-12],[-25,-18],[-19,-23],[-13,-27],[-9,-33],[-7.65,-35.55]) });
 
     route({ name: '宝通禅寺山门铺地', group: '宝通禅寺', width: 1.95, earthy: true, connect: true,
       points: local(hongshan,[0,25.3],[0,28],[1,33],[4,37],[7,39]) });

@@ -299,7 +299,9 @@
     const forecourtTrees = seeded(0x753cb64);
     for (const [key, ground] of Object.entries(landmarkGrounds)) {
       for (const p of ground.shade) {
-        if (plant('broadleaf', p.x, p.z, .87, .82, forecourtTrees) || key !== 'museum') continue;
+        const lakeside = key === 'qintai', forecourt = key === 'guiyuan';
+        if (plant(lakeside ? 'willow' : 'broadleaf', p.x, p.z,
+          lakeside || forecourt ? .73 : .87, lakeside ? .82 : forecourt ? .96 : .82, forecourtTrees) || key !== 'museum') continue;
         // Preserve the side courts when an exact point lies too close to a walk.
         const local = museum.worldToLocal(p.clone());
         for (const [side, along] of [[2.1,-3.7],[2.6,2.6],[-1.2,-4.3],[3.5,-5.4]]) {
@@ -309,9 +311,13 @@
       }
     }
     const spitTrees = seeded(0x674fc2a);
-    for (const [x,z,scale] of [[-151,-124,.76],[-145,-131,.62],[-139,-128,.88],
-      [-134,-126,.70],[-124,-130,.52],[-120,-132,.58],[-113,-135,.46],[-148,-135,.62]])
-      plant(scale < .65 ? 'willow' : 'broadleaf', x, z, scale, .72*scale, spitTrees);
+    for (const [x,z,scale] of [
+      [-162,-126,.59],[-158,-126,.73],[-153,-125.8,.79],[-148,-124.8,.84],[-144,-125.5,.68],
+      [-142,-130.3,.68],[-138,-129.1,.69],[-134,-128.8,.63],
+      [-125,-130,.57],[-119,-133,.50],[-115,-135,.44],[-112,-137,.35],
+      [-115,-145,.34],[-109.8,-145.6,.27],
+      [-129,-119,.55],[-129,-115,.62]
+    ]) plant(scale < .60 ? 'willow' : 'broadleaf', x, z, scale, .84*scale, spitTrees);
     slopeGrove(AT.tower, 0x15cd84a3, [
       [-22, 2, 11, 5.2], [-17.5, 10, 8, 5.1], [3.2, 23.8, 9, 4.9],
       [-31, -12, 8, 8.5], [-42, 2, 8, 10], [-29, 15, 10, 8.4],

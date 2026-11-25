@@ -229,6 +229,10 @@
         const path = roadAt(wx,wz);
         if (path) height = THREE.MathUtils.lerp(height, ground+fill,
           THREE.MathUtils.smoothstep(path.distance, approachHalfWidth+1.85, approachHalfWidth+5.08));
+        // Keep the tower podium covered while tapering its eastern shoulder into the Qingchuan terrace.
+        const podiumEast = site.position.x + halfWidth*site.scale.x;
+        const terraceClearance = THREE.MathUtils.smoothstep(wx,podiumEast,qcSite.x-8);
+        height = THREE.MathUtils.lerp(height,cutForQingchuan(wx,wz,height),terraceClearance);
       }
       const point = [wx, height, wz];
       points.push(point); vertices.push(...point);
@@ -257,7 +261,7 @@
   const museum     = place(builtLandmark('museum'), AT.museum, .78, Math.PI-.32, '湖北省博物馆', 'museum', terrainTop(AT.museum.x,AT.museum.z)+.14);
   const honglou    = place(builtLandmark('honglou'), AT.honglou, .8, 0, '红楼', 'honglou');
   summitGround(honglou, 23, 9.8, 12, 10.6, -.53);
-  const guiyuan    = place(builtLandmark('guiyuan'), AT.guiyuan, .7, 0, '归元禅寺', 'guiyuan');
+  const guiyuan    = place(builtLandmark('guiyuan'), AT.guiyuan, .7, 0, '归元禅寺', 'guiyuan', terrainTop(AT.guiyuan.x,AT.guiyuan.z)+.27);
   const qintai     = place(builtLandmark('qintai'), AT.qintai, .53, .13, '古琴台', 'qintai', terrainTop(AT.qintai.x, AT.qintai.z)+.27);
   // 鹦鹉洲大桥：沿 OSM 桥向（原两端点连线并非江岸），两端各在水体掩膜江面之外 150 米落岸，桥长随之
   const yA = geo(114.26637, 30.53657), yB = geo(114.28587, 30.52963);

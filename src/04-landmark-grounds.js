@@ -10,11 +10,13 @@
       return downwind * (.23 + .67 * broad + .15 * fine) + across * (.23 * fine);
     }`;
 
-  /* ── 三处地标场地：岛岸登陆、北馆前庭、蛇山石阶 ── */
+  /* ── 地标场地：岸线、前庭与坡阶 ── */
   const landmarkGrounds = {
     xingyin: { bridges: [], paths: [], shade: [] },
     museum: { paths: [], lines: [], shade: [] },
-    tower: { paths: [], steps: [], shade: [] }
+    tower: { paths: [], steps: [], shade: [] },
+    guiyuan: { paths: [], shade: [] },
+    qintai: { shade: [] }
   };
   function buildLandmarkGrounds() {
     const inkFog='col = mix(col, uFog, smoothstep(uNear, uFar, vD));';
@@ -79,11 +81,11 @@
       }
       return faces(name,group,material,key,points,indices);
     }
-    function pathRecord(place, rows) {
+    function pathRecord(place, rows, name) {
       const points = rows.map(([a,b])=>a.clone().lerp(b,.5));
       place.paths.push(points);
       for (let i=1;i<points.length;i++)
-        cityGround.streets.push({a:points[i-1],b:points[i],width:rows[i][0].distanceTo(rows[i][1])});
+        cityGround.streets.push({a:points[i-1],b:points[i],width:rows[i][0].distanceTo(rows[i][1]),name});
       return points;
     }
     function nearestShore(p) {
@@ -469,9 +471,9 @@
         rows[0]=section(last,toe,toe,1.69);
         ribbon('黄鹤楼 · '+(sign<0?'后':'前')+'坡石径','蛇山',hillsideStone,'Path',rows,
           p=>Math.min(p.y-.20,landHeightAt(p)-.08));
-        pathRecord(landmarkGrounds.tower,rows);
+        const walk=pathRecord(landmarkGrounds.tower,rows);
         pathRecord(landmarkGrounds.tower,edges);
-        landmarkGrounds.tower.steps.push({side:sign, treads:path, sections:edges, landing:toe});
+        landmarkGrounds.tower.steps.push({side:sign, treads:path, sections:edges, landing:toe, walk});
         landmarkGrounds.tower.shade.push(plan(tower,-sign*5.95,sign*(end-1.5)), plan(tower,sign*10.3,sign*(end+4.3)));
       }
       surface('黄鹤楼 · 贴坡石阶','蛇山',hillsideStone,'Path',stair.mesh(hillsideStone,false).geometry);
@@ -479,5 +481,177 @@
       surface('黄鹤楼 · 护墙压顶','蛇山',terrace,'Path',coping.mesh(terrace,false).geometry);
     }
     buildTowerStairs();
+
+    // Pick up the south terrace walk at its last stone and climb from the
+    // street through a narrow gate and two rest landings.
+    function buildSnakeHillLane() {
+      const ground = landmarkGrounds.tower;
+      const top = ground.steps.find(step=>step.side===1).walk.at(-1);
+      const stations = [top,...[[1,36.65],[-1.6,38.3],[-5,39.65],[-9.7,40.6],[-13,41.05]]
+        .map(([x,z])=>plan(tower,x,z))];
+      const lane = new Acc(), edge = new Acc();
+      const cuts = [3,4,8,4,3];
+      for (const [i,count] of cuts.entries()) {
+        const a=stations[i], b=stations[i+1];
+        const tangent=b.clone().sub(a).setY(0);
+        const length=tangent.length(), yaw=Math.atan2(tangent.x,tangent.z);
+        tangent.normalize();
+        const width=i===2 ? 1.43 : 1.63;
+        const rows=[];
+        for(let j=0;j<count;j++){
+          const p=a.clone().lerp(b,(j+.5)/count);
+          const floor=landHeightAt(p)-.06;
+          const probes=[-1,0,1].flatMap(side=>[-.5,0,.5].map(along=>
+            landHeightAt(p.clone().addScaledVector(tangent,along*length/count)
+              .add(V(tangent.z*side*width/2,0,-tangent.x*side*width/2)))));
+          const y=Math.max(...probes)+.075;
+          const foot=Math.min(y-.13,floor,...probes);
+          lane.box(width,y-foot,length/count+.01,p.x,(y+foot)/2,p.z,yaw);
+          p.y=y;
+          if (j===0) rows.push(section(a,b,a.clone().setY(y),width));
+          rows.push(section(a,b,a.clone().lerp(b,(j+1)/count).setY(y),width));
+          if (i===2) for(const side of [-1,1]){
+            const q=p.clone().add(V(tangent.z*side*.75,0,-tangent.x*side*.75));
+            const base=Math.min(landHeightAt(q)-.06,foot);
+            edge.box(.22,y+.23-base,length/count+.01,q.x,(y+.23+base)/2,q.z,yaw);
+          }
+        }
+        pathRecord(ground,rows,'蛇山 · 台地折巷与坡阶');
+      }
+      surface('蛇山 · 台地折巷与坡阶','蛇山',hillsideStone,'Path',lane.mesh(hillsideStone,false).geometry);
+      surface('蛇山 · 巷阶矮坎','蛇山',curb,'Masonry',edge.mesh(curb,false).geometry);
+
+      const gate=stations[3].clone(), yaw=Math.atan2(stations[4].x-gate.x,stations[4].z-gate.z);
+      const posts=new Acc(), roof=new Acc(), at=(side,along)=>gate.clone().add(V(
+        Math.cos(yaw)*side+Math.sin(yaw)*along,0,-Math.sin(yaw)*side+Math.cos(yaw)*along));
+      const level=landHeightAt(gate)+.19;
+      for (const side of [-1,1]) {
+        const p=at(side*1.03,0), bottom=landHeightAt(p)-.05;
+        posts.box(.38,level+2.15-bottom,.54,p.x,(level+2.15+bottom)/2,p.z,yaw);
+      }
+      posts.box(2.38,.22,.58,gate.x,level+2.16,gate.z,yaw);
+      const courses=[[-.81,2.30],[-.39,2.52],[0,2.80],[.39,2.52],[.81,2.30]];
+      const slopes=courses.map(([z,y])=>[-1.32,1.32].map(x=>at(x,z).setY(level+y)));
+      const facesIndex=[];
+      for(let i=2;i<slopes.length*2;i+=2) facesIndex.push(i-2,i,i-1,i-1,i,i+1);
+      faces('蛇山 · 巷门青瓦','蛇山',M.roof,'Slate',slopes.flat(),facesIndex);
+      roof.box(2.72,.13,.17,gate.x,level+2.81,gate.z,yaw);
+      surface('蛇山 · 巷门脊瓦','蛇山',M.roof,'Slate',roof.mesh(M.roof,false).geometry);
+      surface('蛇山 · 巷门','蛇山',curb,'Masonry',posts.mesh(curb,false).geometry);
+    }
+    buildSnakeHillLane();
+
+    function buildTempleApron() {
+      const group='归元禅寺', ground=landmarkGrounds.guiyuan;
+      const rows=[[29.91,-2.35,2.35],[31.2,-5.2,5.2],[34,-9.6,9.4],[36.5,-10.2,10.1],
+        [39.3,-8.9,9.25],[41.1,-4.9,6.7],[42.05,-1.85,1.85]].map(([z,left,right],i)=>
+        [left,right].map(x=>{
+          const p=plan(guiyuan,x,z);
+          p.y=i===0 ? local(guiyuan,0,.17,z).y : landHeightAt(p)+.083;
+          return p;
+        }));
+      ribbon('归元禅寺山门前庭',group,terrace,'BankStone',rows,p=>landHeightAt(p)-.055);
+      pathRecord(ground,rows,'归元禅寺山门前庭');
+      const bands=new Acc(), pads=new Acc();
+      for(const [z,width] of [[32.9,7.6],[35.4,12.2],[37.2,13.2],[39.25,12.0],[41.1,7.1]]){
+        const p=plan(guiyuan,0,z);
+        bands.box(width,.027,.12,p.x,landHeightAt(p)+.088,p.z,guiyuan.rotation.y);
+      }
+      for (const sign of [-1,1]) {
+        const p=plan(guiyuan,sign*13.6,34.3), q=plan(guiyuan,sign*13.4,39.3);
+        for(const [a,width,length] of [[p,2.83,3.8],[q,2.5,1.85]])
+          pads.box(width,.13,length,a.x,landHeightAt(a)+.02,a.z,guiyuan.rotation.y);
+        ground.shade.push(p,q);
+      }
+      surface('归元禅寺 · 山门石带',group,curb,'BankStone',bands.mesh(curb,false).geometry);
+      surface('归元禅寺 · 前庭树池',group,lakesideGrass,'BankGrass',pads.mesh(lakesideGrass,false).geometry);
+    }
+    buildTempleApron();
+    function buildQintaiShore() {
+      const ring=LAKES[GEO.lakes.findIndex(lake=>lake.name==='月湖')];
+      const rows=[];
+      const shade=landmarkGrounds.qintai.shade;
+      const avoidPath=cityGround.streets.filter(s=>s.group==='古琴台');
+      const clearOfPath=(x,z)=>{
+        return avoidPath.every(({a,b,width})=>{
+          const dx=b.x-a.x,dz=b.z-a.z;
+          const t=THREE.MathUtils.clamp(((x-a.x)*dx+(z-a.z)*dz)/(dx*dx+dz*dz),0,1);
+          return Math.hypot(x-a.x-t*dx,z-a.z-t*dz)>width/2+.34;
+        });
+      };
+      let lastTree;
+      for(let i=1;i<ring.length-1;i++){
+        const [x,z]=ring[i];
+        const lateral=x-qintai.position.x;
+        if(lateral < -44 || lateral > .7 || z>qintai.position.z-8 || z<qintai.position.z-30)continue;
+        const dx=ring[i+1][0]-ring[i-1][0], dz=ring[i+1][1]-ring[i-1][1], length=Math.hypot(dx,dz);
+        if (length < .001) continue;
+        const dir=V(-dz/length,0,dx/length);
+        if (!onLand(x+dir.x*.62,z+dir.z*.62))dir.negate();
+        const bank=V(x,0,z);
+        const width=1.75+.43*Math.sin(i*.31);
+        const row=[.12,width].map(d=>bank.clone().addScaledVector(dir,d));
+        if (!row.every(p=>onLand(p.x,p.z)&&clearOfPath(p.x,p.z))) {
+          rows.push(null);
+          continue;
+        }
+        for(const p of row)p.y=landHeightAt(p)+.048;
+        rows.push(row);
+        const tree=bank.clone().addScaledVector(dir,3.2);
+        if(!lastTree||lastTree.distanceTo(tree)>4.5){
+          shade.push(tree);
+          lastTree=tree;
+        }
+      }
+      const vertices=[], triangles=[];
+      for (let i=1;i<rows.length;i++){
+        const a=rows[i-1], b=rows[i];
+        if(!a||!b||a[0].distanceTo(b[0])>2.6)continue;
+        for(const tri of [[a[0],a[1],b[0]],[a[1],b[1],b[0]]]){
+          if(!triangleOnLand(...tri.map(p=>p.toArray())))continue;
+          const [p,q,r]=tri;
+          const normal=q.clone().sub(p).cross(r.clone().sub(p));
+          const start=vertices.length;
+          vertices.push(...(normal.y>0?tri:[p,r,q]));
+          triangles.push(start,start+1,start+2);
+        }
+      }
+      if (triangles.length)
+        faces('古琴台 · 月湖草岸','古琴台',lakesideGrass,'BankGrass',vertices,triangles);
+      shade.push(...[[-10,24],[-19,21],[-22,4],[-34,26],[-35,-2]].map(([x,z])=>plan(qintai,x,z)));
+    }
+    buildQintaiShore();
+
+    // The grass rises gently to the inland shoulder and breaks into smaller
+    // patches as the spit narrows. Keep both walking branches at the old grade.
+    for(const [i,stations] of [
+      [[-166,-131,1.2,.17],[-161,-130,2.0,.45],[-154,-130,3.8,.75],[-148,-130,3.35,.64],[-142,-130,1.5,.12]],
+      [[-144,-127,1.1,.13],[-139,-126,2.7,.57],[-135,-125,2.8,.54],[-131,-124,1.0,.10]],
+      [[-125,-136,1.3,.12],[-122,-138,1.85,.33],[-119,-140,1.38,.03]],
+    ].entries()){
+      const vertices=[], indices=[];
+      const curve=values=>new THREE.CatmullRomCurve3(values.map(p=>V(...p)),false,'catmullrom',.5);
+      const axis=curve(stations.map(([x,z])=>[x,0,z]));
+      const profile=curve(stations.map(([, ,width,height])=>[width,height,0]));
+      const samples=(stations.length-1)*6;
+      for(let j=0;j<=samples;j++) {
+        const t=j/samples, {x,z}=axis.getPoint(t), size=profile.getPoint(t);
+        const taper=THREE.MathUtils.smoothstep(Math.min(t,1-t),0,.18);
+        const riseWidth=size.x*Math.max(.08,taper);
+        const height=size.y*taper;
+        for(const side of [-1,-.5,0,.5,1]){
+          const p=V(x,0,z+side*riseWidth);
+          p.y=landHeightAt(p)-.005+height*(1-side*side)**2;
+          vertices.push(p);
+        }
+        if(j===0)continue;
+        for(let k=0;k<4;k++){
+          const a=(j-1)*5+k,b=a+5;
+          for(const tri of [[a,a+1,b],[a+1,b+1,b]])
+            if(triangleOnLand(...tri.map(index=>vertices[index].toArray())))indices.push(...tri);
+        }
+      }
+      faces('南岸嘴 · 低岸草坡 '+(i+1),'汉阳滨江',M.bankGrass,'BankGrass',vertices,indices);
+    }
   }
   buildLandmarkGrounds();

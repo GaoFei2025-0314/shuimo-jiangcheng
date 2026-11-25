@@ -158,3 +158,59 @@ test('the Yellow Crane Tower view includes the west courts, pond and selectable 
   await page.mouse.click(...report.stupaPoint);
   await expect(page.locator('#b-tower')).toHaveAttribute('aria-pressed', 'true');
 });
+
+test('landmark paths reach their gates, streets and banks on the rendered terrain', async ({ page }) => {
+  await page.goto('/?debug');
+  await page.waitForFunction(() => window.__ready && window.__dbg);
+  const failures = await page.evaluate(() => {
+    const { scene, cityGround, landmarkGrounds, plantingSurface, LAKES, GEO } = window.__dbg;
+    const byKey = key => scene.children.find(node => node.userData.focus === key);
+    const path = name => cityGround.streets.filter(s => s.name === name);
+    const distance = (a,b) => Math.hypot(a.x-b.x,a.z-b.z);
+    const ray = new THREE.Raycaster(), down = new THREE.Vector3(0,-1,0);
+    function hit(name,p) {
+      ray.set(new THREE.Vector3(p.x,50,p.z),down);
+      const hits=[];
+      THREE.Mesh.prototype.raycast.call(scene.getObjectByName(name),ray,hits);
+      return hits.sort((a,b)=>a.distance-b.distance)[0]?.point.y;
+    }
+    const failures=[];
+    function checkPath(name, segments) {
+      if (!segments.length) failures.push(name+' has no path');
+      for (const [i,{a,b}] of segments.entries()) {
+        if (i && distance(segments[i-1].b,a) > .015) failures.push(name+' is interrupted');
+        const p={x:(a.x+b.x)/2,z:(a.z+b.z)/2};
+        const base=plantingSurface(p.x,p.z), y=hit(name,p);
+        if (base === null || y === undefined || y < base-.025) failures.push({name,index:i,base,paving:y});
+      }
+    }
+    for(const name of ['古琴台山门与月湖步道','归元禅寺山门前庭','晴川阁与铁门关沿台石径','蛇山 · 台地折巷与坡阶'])
+      checkPath(name,path(name));
+
+    const qintai=path('古琴台山门与月湖步道');
+    const lake=LAKES[GEO.lakes.findIndex(lake=>lake.name==='月湖')];
+    const qintaiGate=byKey('qintai').localToWorld(new THREE.Vector3(0,.12,18.30));
+    if(distance(qintai[0].a,qintaiGate)>.015 ||
+       Math.min(...lake.map(([x,z])=>distance(qintai.at(-1).b,{x,z})))>4)
+      failures.push('Guqin Terrace path misses its threshold or the lakeshore');
+
+    const temple=path('归元禅寺山门前庭'), street=path('翠微山门接乡路');
+    const gate=byKey('guiyuan').localToWorld(new THREE.Vector3(0,.17,29.91));
+    if(distance(gate,temple[0].a)>.015 || distance(temple.at(-1).b,street[0].a)>.05)
+      failures.push('Guiyuan apron misses its threshold or Cuiwei Lane');
+
+    const qc=path('晴川阁与铁门关沿台石径'), spit=path('南岸嘴两江会口石径');
+    const toe=byKey('qc').localToWorld(new THREE.Vector3(20,0,19.9));
+    if(distance(qc[0].a,toe)>.015 || distance(qc.at(-1).b,spit[0].a)>.015)
+      failures.push('Qingchuan gate path misses the stairs or confluence trail');
+
+    const alley=path('蛇山 · 台地折巷与坡阶');
+    const summit=landmarkGrounds.tower.steps.find(s=>s.side===1).walk.at(-1);
+    const foot=alley.at(-1).b, slopeStreet=path('蛇山脚坡街与首义街口');
+    if(distance(alley[0].a,summit)>.015 ||
+       Math.min(...slopeStreet.map(s=>distance(s.a,foot)))>1.5)
+      failures.push('Snake Hill steps miss the terrace or the lower street');
+    return failures;
+  });
+  expect(failures).toEqual([]);
+});
