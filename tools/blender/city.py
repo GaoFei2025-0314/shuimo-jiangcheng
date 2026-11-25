@@ -258,6 +258,49 @@ def place_vessel(record, materials, dest):
     return root
 
 
+def apartment_daylight(objects):
+    """Give broad apartment panes a pale curtain while preserving the painted corner flat."""
+    objects = list(objects)
+    data = objects[0].data
+    slot = next(i for i, mat in enumerate(data.materials) if mat.name.startswith("Wuhan / cityShade"))
+    original = data.materials[slot]
+    material = original.copy()
+    material.name = "武汉公寓 · 淡纸窗"
+    daylight = data.attributes.new("Apartment wide pane", 'FLOAT', 'FACE')
+    for face in data.polygons:
+        if face.material_index != slot:
+            continue
+        points = [data.vertices[i].co for i in face.vertices]
+        width = max(max(p[a] for p in points) - min(p[a] for p in points) for a in (0, 1))
+        height = max(p.z for p in points) - min(p.z for p in points)
+        if height > .08 and width > height * 1.28:
+            daylight.data[face.index].value = 1
+    tree = material.node_tree
+    base = tree.nodes.get('Principled BSDF').inputs['Base Color']
+    previous = base.links[0].from_socket
+    field = tree.nodes.new('ShaderNodeAttribute')
+    field.attribute_name = daylight.name
+    fade = tree.nodes.new('ShaderNodeMapRange')
+    fade.inputs['From Min'].default_value = 135
+    fade.inputs['From Max'].default_value = 175
+    fade.inputs['To Min'].default_value = .37
+    fade.inputs['To Max'].default_value = 0
+    tree.links.new(tree.nodes.new('ShaderNodeCameraData').outputs['View Distance'], fade.inputs[0])
+    mask = tree.nodes.new('ShaderNodeMath')
+    mask.operation = 'MULTIPLY'
+    tree.links.new(fade.outputs[0], mask.inputs[0])
+    tree.links.new(field.outputs['Fac'], mask.inputs[1])
+    tint = tree.nodes.new('ShaderNodeMixRGB')
+    tint.inputs[2].default_value = (.28, .31, .275, 1)
+    tree.links.new(previous, tint.inputs[1])
+    tree.links.new(mask.outputs[0], tint.inputs[0])
+    tree.links.new(tint.outputs[0], base)
+    for obj in objects:
+        if math.hypot(obj.location.x + 40.09, obj.location.y + 71.99) >= 8:
+            obj.material_slots[slot].link = 'OBJECT'
+            obj.material_slots[slot].material = material
+
+
 def city_blocks(scene, captured, streets):
     labels = {"lane": "里分", "arcade": "沿江洋行", "wharf": "码头货仓",
               "apartment": "退台住宅", "highrise": "现代塔楼",
@@ -281,6 +324,8 @@ def city_blocks(scene, captured, streets):
                 dest.objects.link(obj)
             obj.name = f"{labels[kind]} {i+1:03}"
             obj.matrix_world = placement(matrix)
+        if kind == "apartment":
+            apartment_daylight(dest.objects)
 
 
 def city_trees(captured, parent, paper_roots):
@@ -395,7 +440,8 @@ def water(rivers, materials, dest, lakes=()):
         tree = material.node_tree
         shader = tree.nodes.get("Principled BSDF")
         shader.inputs["IOR"].default_value = 1.333
-        shader.inputs["Roughness"].default_value = .135
+        shader.inputs["Roughness"].default_value = .30
+        shader.inputs["Specular IOR Level"].default_value = .055
         flow = tree.nodes.new("ShaderNodeVectorMath")
         flow.operation = 'MULTIPLY'
         flow.inputs[1].default_value = (1.9,.32,1)

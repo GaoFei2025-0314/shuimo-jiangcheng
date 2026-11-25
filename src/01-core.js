@@ -222,7 +222,7 @@
           float group = smoothstep(.31,.65,fbm(p*.082+vec2(14.,7.)));
           float brush = group*smoothstep(.42,.74,trail);
           float lift = smoothstep(.58,.88,d)*(1.-body);
-          tone += nearHill*steep*rise*(.095*lift-.36*brush-.12*body);
+          tone += nearHill*steep*rise*(.11*lift-.31*brush-.095*body);
         }
         tone = clamp(tone+(fbm(p*.027)-.5)*.15,0.,1.);
       }
@@ -486,7 +486,7 @@
   const M = {
     std:  inkMat(0),     land: inkMat(.60),   roof: inkMat(.06, true, ['#29332f', '#9ba49a']), pale: inkMat(.46),
     wall: inkMat(.32),   dbl:  inkMat(.08, true),
-    hill: inkMat(.13, false, ['#495a50', '#b7bcaa'], null, { cun: 1 }),
+    hill: inkMat(.13, false, ['#53605a', '#c7c9ba'], null, { cun: 1 }),
     bankStone: inkMat(.22, false, ['#72786e', '#c2c1aa']),
     bankGrass: inkMat(.18, false, ['#687967', '#bfc4a8']),
     bankPath: inkMat(.36, false, ['#827d70', '#d6cfb8']),
