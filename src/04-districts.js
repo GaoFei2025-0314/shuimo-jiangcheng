@@ -418,6 +418,25 @@
       shoreMesh(curb,group,'汉阳旧码头泊岸压顶','ShoreStone',treadInk);
       shoreMesh(rope,group,'汉阳旧码头盘缆','BoatLoad',mooringRope);
     }
+    function hanyangCoping(group,edge,first,last) {
+      const stones=new Acc();
+      // Several surviving runs rest on the surveyed lowest ledge, away from the stair mouths.
+      const stone=cutStone([[-.57,-.14],[.56,-.14],[.60,.075],[.49,.15],[-.50,.15],[-.61,.065]],.66);
+      for (const [z,count] of [[13.0,4],[20.2,3],[30.5,4],[36.5,3]]) {
+        const i=edge.findIndex((p,i)=>i>=Math.floor(first) && i<=last && (z-p[1])*(z-edge[i+1][1])<=0);
+        if (i<0) continue;
+        const frame=riverBankFrame(edge,i+(z-edge[i][1])/(edge[i+1][1]-edge[i][1]));
+        const yaw=Math.atan2(-frame.tangent.z,frame.tangent.x);
+        for (let j=0;j<count;j++) {
+          const end=j===0 || j===count-1, variation=Math.sin(j*2.32+z);
+          const p=frame.shore.clone().lerp(frame.cap,.105+.018*variation)
+            .addScaledVector(frame.tangent,(j-(count-1)*.5)*1.32);
+          stones.place(stone,p.x,shoreHeight(p)+(end?.038:.078),p.z,.94+.10*variation,
+            end?.73:.90,.92+.10*variation,yaw+.025*variation);
+        }
+      }
+      shoreMesh(stones,group,'汉阳旧岸分段驳岸顶石','ShoreStone',riversideStone);
+    }
     function riverSeats(group,frame,center,walkWidth) {
       const blocks=new Acc(), yaw=Math.atan2(-frame.tangent.z,frame.tangent.x);
       const seat=cutStone([[-.67,-.085],[.67,-.085],[.74,-.018],[.74,.07],[.69,.10],
@@ -540,7 +559,10 @@
         landingSteps(group,bank+'滨水亲水石阶 '+(i+1),frame,start,side<0?1.92:2.44,side>0);
       }
       const viewStation=at(openings[1].station);
-      if (side<0) oldWharf(group,frames[viewStation]);
+      if (side<0) {
+        oldWharf(group,frames[viewStation]);
+        hanyangCoping(group,edge,first,last);
+      }
       else riverSeats(group,frames[viewStation],stations[viewStation],widthAt(distances[viewStation]));
 
       const shorePaths=cityGround.riverfrontPaths.slice(firstPath);

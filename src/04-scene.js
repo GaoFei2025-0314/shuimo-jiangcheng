@@ -809,7 +809,94 @@
       layWalkDetails(group,name,sections,null,true);
     }
     const dripTile=new THREE.CylinderGeometry(.50,.45,1,7,1,false,Math.PI*.5,Math.PI).rotateX(Math.PI*.5);
-    function streetEaves(group,name,x,z,features=[]) {
+    const closeTilePalette=[
+      ['Slate',.15,['#293731','#7a8579']],
+      ['ShoreStone',.13,['#35423c','#858e7f']],
+      ['BankStone',.09,['#38463d','#8d9181']],
+    ].map(([key,tone,tint])=>{
+      const ink=inkMat(tone,false,tint);
+      // Stipple into the baked roof over the mid range without changing depth order.
+      ink.fragmentShader=ink.fragmentShader.replace('void main() {',`void main() {
+        if (vD > 24.) {
+          vec2 p = mod(floor(gl_FragCoord.xy), 4.);
+          vec2 q = floor(p * .5);
+          p = mod(p, 2.);
+          float b = mod(2. * p.x + 3. * p.y, 4.) * 4. + mod(2. * q.x + 3. * q.y, 4.);
+          if (smoothstep(24., 39., vD) >= (b + .5) / 16.) discard;
+        }
+      `);
+      ink.fragmentShader=ink.fragmentShader.replace('vec3 col = mix(uInk, uPaper, tone);',`
+        vec3 col = mix(uInk, uPaper, tone);
+        float clayGrain = (vnoise(vW.xz * 16.) - .5) * .085;
+        float clayWear = (vnoise(vW.xz * 3.6) - .5) * .095;
+        col *= 1. + (clayGrain + clayWear) * (1. - smoothstep(20., 40., vD));
+      `);
+      return {key,ink};
+    });
+    function clayRoof(group,name,point,roofHeight,features) {
+      const layers=closeTilePalette.map(()=>({positions:[],indices:[]}));
+      const pitch=.283;
+      function tile(layer,x,start,end,side,width,lift,arching,seed) {
+        const {positions,indices}=layer, startVertex=positions.length/3;
+        const rows=2, ribs=5;
+        for (let row=0;row<=rows;row++) {
+          const t=row/rows, course=THREE.MathUtils.lerp(start,end,t);
+          const taper=.97+.086*t;
+          for (let i=0;i<=ribs;i++) {
+            const u=i/ribs, cross=(u-.5)*width*taper;
+            const v=side*(course+.008*Math.sin(Math.PI*u+seed)*t);
+            const h=roofHeight(v)+lift+arching(u)*(.93+.12*t)+.025*t*t*t;
+            positions.push(...point(x+cross,h,v).toArray());
+          }
+        }
+        for (let j=0;j<rows;j++) for (let i=0;i<ribs;i++) {
+          const a=startVertex+j*(ribs+1)+i,b=a+1,c=a+ribs+1,d=c+1;
+          if (side>0) indices.push(a,c,b,b,c,d);
+          else indices.push(a,b,c,b,d,c);
+        }
+        // The exposed lower edge turns under to the tile immediately below it.
+        const front=startVertex+rows*(ribs+1), underside=positions.length/3;
+        for (let i=0;i<=ribs;i++) {
+          const v=side*(end+.008*Math.sin(Math.PI*i/ribs+seed));
+          const xEdge=x+(i/ribs-.5)*width*1.056;
+          const h=roofHeight(v)+lift+arching(i/ribs)*1.05+.025;
+          positions.push(...point(xEdge,end>2.93?roofHeight(v)-.017:h-.027,v-side*.014).toArray());
+        }
+        for (let i=0;i<ribs;i++) {
+          const a=front+i,b=a+1,c=underside+i,d=c+1;
+          if (side>0) indices.push(a,c,b,b,c,d);
+          else indices.push(a,b,c,b,d,c);
+        }
+      }
+      for (const [bayIndex,bay] of [-3.17,0,3.17].entries()) {
+        for (const side of [-1,1]) for (let course=0;course<8;course++) {
+          const start=.10+course*.352, end=Math.min(start+.385,2.966);
+          for (let run=0;run<=10;run++) {
+            const key=(run*7+course*3+bayIndex*13+side*11)*2.399;
+            const u=bay+(run-5)*pitch+.012*Math.sin(key);
+            const clear=(x,margin)=>!features.some(feature=>
+              Math.sign(feature.v)===side &&
+              Math.abs(x-feature.u)<margin+(feature.kind==='dormer'?.62:feature.kind==='chimney'?.31:.19) &&
+              Math.abs((start+end)*.5-Math.abs(feature.v))<(feature.kind==='dormer'?.63:.32));
+            const cover=layers[Math.sin(key)>.54?2:1];
+            if (clear(u,.074)) tile(cover,u,start,end,side,.151,.043,
+              t=>.077*Math.sin(Math.PI*t),key);
+            if (run<10 && clear(u+pitch*.5,.13)) tile(layers[0],u+pitch*.5,start-.005,end,side,.261,.019,
+              t=>.033*(2*t-1)**2,key);
+          }
+        }
+      }
+      for (const [i,{positions,indices}] of layers.entries()) {
+        const geometry=new THREE.BufferGeometry();
+        geometry.setAttribute('position',new THREE.Float32BufferAttribute(positions,3));
+        geometry.setIndex(indices);
+        geometry.computeVertexNormals();
+        const {key,ink}=closeTilePalette[i], mesh=new THREE.Mesh(geometry,ink);
+        add(group,name+'实体青瓦 · '+key,key,mesh);
+        mesh.userData.detailDepth=39;
+      }
+    }
+    function streetEaves(group,name,x,z,features=[],nearTiles=false) {
       const matrix=lanes.find(({elements:e})=>Math.hypot(x-e[12],z-e[14])<.28);
       if (!matrix) return;
       const e=matrix.elements, scale=Math.hypot(e[0],e[2]), height=e[5], yaw=Math.atan2(-e[2],e[0]);
@@ -821,7 +908,7 @@
         trim.box('ShoreStone',point(bay,crown,0),2.82*scale,.13*height,.21*scale,yaw);
         for (const side of [-1,1]) {
           trim.box('Ink',point(bay,2.642,side*2.91),2.92*scale,.096*height,.12*scale,yaw);
-          for (let tile=0;tile<12;tile++) {
+          for (let tile=0;!nearTiles && tile<12;tile++) {
             const u=bay-1.39+.25*tile, sag=.027*Math.sin(tile*1.34+i*.71);
             trim.round('ShoreStone',dripTile,point(u,2.655+sag,side*(2.94+sag*.42)),
               .213*scale,.14*height,.173*scale,yaw);
@@ -829,6 +916,7 @@
         }
       }
       const roofHeight=v=>4.14-Math.abs(v)*1.46/2.94;
+      if (nearTiles) clayRoof(group,name,point,roofHeight,features);
       for (const {kind,u,v} of features) {
         const side=Math.sign(v);
         if (kind==='chimney') {
@@ -1715,8 +1803,8 @@
     }
     hanyangCourtyards();
     streetEaves('汉阳茶棚后街坊','汉阳茶棚旧屋起伏瓦檐',-218,29,[{kind:'mended',u:2.92,v:-1.23}]);
-    streetEaves('汉阳茶棚后街坊','汉阳后院灰瓦滴水',-222.30,20.50,[{kind:'dormer',u:-2.89,v:-1.18}]);
-    streetEaves('汉阳茶棚后街坊','汉阳后排灶间砖烟囱',-234.64,48.70,[{kind:'chimney',u:.67,v:-.72}]);
+    streetEaves('汉阳茶棚后街坊','汉阳后院灰瓦滴水',-222.30,20.50,[{kind:'dormer',u:-2.89,v:-1.18}],true);
+    streetEaves('汉阳茶棚后街坊','汉阳后排灶间砖烟囱',-234.64,48.70,[{kind:'chimney',u:.67,v:-.72}],true);
     streetEaves('汉阳茶棚后街坊','汉阳内街补瓦压脊',-224.11,9.04,[{kind:'mended',u:-3.01,v:1.29}]);
 
     // The other bank has a quieter house gate, with short caps and an open way into the courtyard.
@@ -1784,7 +1872,7 @@
 
     const backGroup='武昌滨水街巷生活', routeName='武昌后巷步道';
     streetEaves(backGroup,'武昌入巷老宅错搭瓦檐',-59.58,75.26,[{kind:'glass',u:.12,v:-1.36}]);
-    streetEaves(backGroup,'武昌里分后排灰瓦滴水',-37.73,58.08,[{kind:'chimney',u:-2.88,v:-.62}]);
+    streetEaves(backGroup,'武昌里分后排灰瓦滴水',-37.73,58.08,[{kind:'chimney',u:-2.88,v:-.62}],true);
     streetEaves(backGroup,'武昌临桥旧屋老虎窗',-72.17,112.68,[{kind:'dormer',u:3.03,v:-1.12}]);
     streetEaves(backGroup,'武昌临桥偏置砖烟囱',-76.14,123.58,[{kind:'chimney',u:-.61,v:.83}]);
     function oldThreshold(matrices,x,z,doorX,wallZ) {
@@ -2372,6 +2460,115 @@
     banks.forEach(buildBank);
   }
 
+  function buildWuchangStreetEaves(lots) {
+    const hosts=[
+      [lots.apartment,-40.09,71.99],
+      [lots.lane,-24.77,62.80],
+    ];
+    if (!hosts.every(([row,x,z])=>row.some(({elements:e})=>Math.hypot(e[12]-x,e[14]-z)<.07))) return;
+    const stone=inkMat(.34,false,['#818579','#b9af96']);
+    const brick=inkMat(.40,false,['#797668','#b7a992']);
+    const oak=inkMat(.43,false,['#655749','#a58b68']);
+    const tile=inkMat(.31,true,['#556560','#849184']);
+    const gray=inkMat(.38,false,['#687773','#a1a395']);
+    const flags=new Acc(), plinth=new Acc(), frame=new Acc(), rolls=new Acc(), sheets=[];
+    const paths=[...cityGround.streets,...cityGround.courtyardPaths].filter(({a,b})=>
+      Math.min(a.x,b.x)<-25 && Math.max(a.x,b.x)>-40 && Math.min(a.z,b.z)<81 && Math.max(a.z,b.z)>65);
+    function support(x,z,r=.12) {
+      if (!offBridge(x,z) || cityGround.occupied(x,z,r) ||
+          paths.some(path=>distanceToPath(x,z,path)<path.width*.5+r)) return null;
+      const y=plantingSurface(x,z);
+      return y===null ? null : V(x,y,z);
+    }
+    function course(a,b,width,rise) {
+      const dx=b[0]-a[0],dz=b[1]-a[1],length=Math.hypot(dx,dz);
+      const steps=Math.ceil(length/.69),yaw=Math.atan2(-dz,dx);
+      for(let i=0;i<steps;i++){
+        const f=(i+.5)/steps,x=a[0]+f*dx,z=a[1]+f*dz;
+        const p=support(x,z,width*.49);
+        if(!p) continue;
+        flags.box(length/steps-.014,rise,width,x,p.y+rise*.5-.002,z,yaw);
+      }
+    }
+    function shed(a,b,depth,wallHeight,backing) {
+      const dx=b[0]-a[0],dz=b[1]-a[1],length=Math.hypot(dx,dz),yaw=Math.atan2(-dz,dx);
+      const point=(f,offset,lift)=>V(a[0]+dx*f-dz/length*offset,LAND_Y+lift,a[1]+dz*f+dx/length*offset);
+      const back=-depth*.5, lip=depth*.5;
+      const roof=(u,v)=>point(u,back-.09+(depth+.27)*v,wallHeight+.42*(1-v)+.021*Math.sin(3.14*v));
+      for(const u of [.05,.50,.94]){
+        for(const side of [back+.15,lip-.13]){
+          const post=point(u,side,0),p=support(post.x,post.z);
+          if(!p)continue;
+          const row=(side-back+.09)/(depth+.27);
+          const head=roof(u,row).add(V(0,-.082,0));
+          plinth.box(.22,.16,.22,p.x,p.y+.077,p.z,yaw);
+          frame.beam(p.clone().add(V(0,.148,0)),head,.13);
+          if(length>4 && side>0 && u!==.50){
+            const brace=roof(u+(u<.5?.36:-.36)/length,row).add(V(0,-.10,0));
+            frame.beam(head.clone().add(V(0,-.32,0)),brace,.067);
+          }
+        }
+      }
+      for(const offset of [back+.15,lip-.13]){
+        const row=(offset-back+.09)/(depth+.27);
+        frame.beam(roof(.015,row).add(V(0,-.093,0)),roof(.985,row).add(V(0,-.093,0)),.10);
+      }
+      const rip=Math.ceil(length/.22);
+      for(let i=0;i<rip;i++){
+        const p=i/rip,q=(i+1)/rip;
+        const mid=(p+q)*.5;
+        for(const [s,t] of [[.017,.49],[.495,.985]]){
+          const l=roof(p,s), r=roof(q,s), b=roof(p,t), c=roof(q,t);
+          const rib=roof(mid,(s+t)*.5).add(V(0,.078,0));
+          for(const v of [l,b,rib,l,rib,r,r,rib,c,c,rib,b]) sheets.push(...v.toArray());
+        }
+        if (i%2===0) {
+          const eave=roof(mid,.988);
+          rolls.box(.094,.079,.16,eave.x,eave.y-.012,eave.z,yaw);
+        }
+      }
+      // A low rear return defines the working side of the first bay; both ends remain open.
+      if (backing) {
+        const x=point(.12,back+.02,0),y=point(.53,back+.02,0);
+        if ([x,y].every(p=>support(p.x,p.z,.15))) {
+          const p=x.clone().lerp(y,.5);
+          plinth.box(x.distanceTo(y),.42,.16,p.x,LAND_Y+.21,p.z,yaw);
+          frame.box(x.distanceTo(y)+.07,.053,.23,p.x,LAND_Y+.445,p.z,yaw);
+        }
+      }
+    }
+    const frontA=[-37.24,77.68],frontB=[-31.05,79.22];
+    // The old apartment's side apron turns out to the first timber bay.
+    course([-39.05,76.65],[-37.8,77.51],1.13,.087);
+    course([-37.8,77.51],[-35.35,77.96],1.27,.101);
+    course(frontA,frontB,1.57,.123);
+    shed(frontA,frontB,1.68,1.83,true);
+    shed([-38.03,76.54],[-36.82,77.82],.92,2.09,false);
+    course([-36.66,78.58],[-31.16,80.03],.58,.071);
+    course([-31.05,79.22],[-29.38,79.62],1.14,.090);
+    // Flagstones turn into the rear court; the gap between the canopies remains open.
+    course([-33.07,78.69],[-32.51,75.33],1.16,.087);
+    course([-32.51,75.33],[-31.93,70.47],1.22,.080);
+    course([-31.93,70.47],[-30.69,67.02],1.18,.085);
+    course([-30.69,67.02],[-27.81,66.98],1.35,.107);
+    shed([-30.63,67.38],[-27.64,67.21],1.37,1.64,false);
+    const group='武昌滨水街巷 · 转角短檐廊';
+    function add(mesh,name,material) {
+      mesh.name=name;
+      mesh.userData.landscapeSurface={group,name,material};
+      mesh.userData.detailSize=1.25;
+      scene.add(mesh);
+    }
+    add(flags.mesh(stone,false),'武昌檐下连院石踏面','Path');
+    add(plinth.mesh(brick,false),'武昌短廊砖脚与低隔墙','Masonry');
+    add(frame.mesh(oak,false),'武昌两段檐廊木作','BoatLoad');
+    add(rolls.mesh(gray,false),'武昌短廊滴水瓦头','ShoreStone');
+    const roof=new THREE.BufferGeometry();
+    roof.setAttribute('position',new THREE.Float32BufferAttribute(sheets,3));
+    roof.computeVertexNormals();
+    add(new THREE.Mesh(roof,tile),'武昌两段青瓦薄檐','Masonry');
+  }
+
   function buildBridgeQuarterDetails(lots) {
     const masonry=inkMat(.34,false,['#746d62','#b3aa95']);
     const copings=inkMat(.36,false,['#646f69','#a8ab97']);
@@ -2895,6 +3092,7 @@
     dressRiverfrontGround(lots);
     dressNeighborhoodCourts(lots);
     buildBridgeQuarterDetails(lots);
+    buildWuchangStreetEaves(lots);
     const streets = streetsMesh.mesh(inkMat(.42, false, ['#b3a895', '#dfd8c7']), false);
     streets.name = 'City streets';
     scene.add(streets);

@@ -119,6 +119,7 @@
       const road = [], roadTris = [], base = [], baseTris = [];
       const grass = [], grassTris = [], earth = [], earthTris = [], edging = [], edgingTris = [];
       const grassCover = [], earthCover = [];
+      const courses = [], courseTris = [];
       function landOnly(vertices, indices) {
         const visible = [];
         for (let i=0;i<indices.length;i+=3) {
@@ -158,6 +159,28 @@
           const bare = toGround(fringe+(.55+.33*Math.sin(i*.24+side*direction))*taper,.017);
           return { inner,hump,verge,bare };
         };
+        if (side>0) {
+          // Bed the riverward end of the Wuchang ramp in short, staggered granite courses.
+          for (let course=0;course<4;course++) {
+            const stop=34-course*6+(direction>0?2:0);
+            for (let first=1+(course%2)*2;first+3<=stop;first+=5) {
+              const sections=[first,Math.min(stop,first+5)].map((i,end)=>{
+                const row=rows[i], edge=point(row,direction*row.half,row.y);
+                const ground=terrainTop(edge[0],edge[2]);
+                const bottom=ground+.055+course*.43;
+                const top=Math.min(bottom+.40+.035*Math.sin(first*1.7+course),row.y-.30);
+                if (top<bottom+.20) return null;
+                const section=(height,projection)=>point(row,direction*(row.half+(row.y-height)*.36+projection),height);
+                const ledge=.30+.055*Math.sin(i*.74+course)+.095*(3-course);
+                const corners=[section(bottom,-.06),section(bottom,ledge+.05),section(top,ledge),section(top,-.06)];
+                const shift=end?-.035:.035;
+                for (const q of corners) { q[0]-=row.nz*shift;q[2]+=row.nx*shift; }
+                return direction>0?corners:corners.reverse();
+              });
+              if (sections.every(Boolean)) solid(sections,courses,courseTris);
+            }
+          }
+        }
         const heels = rows.map(profile);
         const pair = (a,b) => direction < 0 ? [b,a] : [a,b];
         const edgeStart = Math.floor(count*.25), edgeEnd = Math.floor(count*.78);
@@ -192,6 +215,7 @@
       });
       show('车行面','ApproachPaving',approachPaving,road,roadTris,pigment);
       show('坡脚挡面','BankStone',M.bankStone,base,baseTris);
+      if (courses.length) show('临江端错缝石护脚','ShoreStone',M.bankStone,courses,courseTris);
       show('坡脚草土','BankGrass',grassWash,grass,landOnly(grass,grassTris),null,grassCover);
       show('坡脚露土','Path',dryWash,earth,landOnly(earth,earthTris),null,earthCover);
       show('坡脚石缘','BankStone',toeStone,edging,landOnly(edging,edgingTris));
