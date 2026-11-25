@@ -208,16 +208,22 @@
     }
     const yangtze = segments(YZ.s,5), han = segments(HAN.s,4);
     function field(x,z,river,out) {
-      let nearest = Infinity;
+      let nearest=Infinity, segment, projection=0;
       for (const s of river) {
         const px=x-s.x, pz=z-s.z;
         const t=Math.max(0,Math.min(s.length,px*s.dx+pz*s.dz));
         const dx=px-t*s.dx, dz=pz-t*s.dz, distance=dx*dx+dz*dz;
-        if (distance >= nearest) continue;
+        if (distance>=nearest) continue;
         nearest=distance;
-        const radius=Math.sqrt(distance);
+        segment=s;
+        projection=t;
+      }
+      if (segment) {
+        const s=segment, t=projection;
+        const radius=Math.sqrt(nearest);
+        const cross=(x-s.x)*s.dz-(z-s.z)*s.dx;
         out.band=1-radius/(s.w+t*s.taper);
-        out.across=(px*s.dz-pz*s.dx < 0 ? -1 : 1)*radius;
+        out.across=(cross<0 ? -1 : 1)*radius;
         out.along=s.along+t;
       }
     }
