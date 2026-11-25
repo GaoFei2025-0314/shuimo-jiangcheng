@@ -2120,39 +2120,59 @@
         [.016,.66,1.04,.30,.057],[-.035,1.00,.97,.29,.031],[.047,1.34,.86,.25,.012],
       ]);
       for (const u of [-1.03,1.08]) closeContact(point(u,.16),yaw,.42,.22,paving);
-      // Recessed timber leaves and narrow divisions follow the openings of this specific front.
-      entry.box('Ink',point(0,.022,.81),.75,1.55,.046,yaw);
-      entry.box('AgedWood',point(0,.064,1.60),.82,.073,.11,yaw);
-      const awning=(u,v)=>point((u-.5)*1.27,.05+.48*v,1.88-.17*v+.027*Math.cos(u*6.1)-.018*v*v);
-      fabric(entry,'Ink',(u,v)=>awning(u,v).add(V(0,-.040,0)),12,7);
-      for (let tile=0;tile<10;tile++) {
-        const spread=tile%3===1?.012:-.006;
-        fabric(entry,'ShoreStone',(u,v)=>{
-          const p=awning((tile+.06+u*.88)/10,v);
-          return p.add(V(0,.031*Math.sin(Math.PI*u)+spread,0));
-        },5,8);
-        const lip=awning((tile+.5)/10,1).add(V(0,.016+spread,0));
-        entry.round('ShoreStone',dripTile,lip,.117,.102,.14,yaw);
-      }
-      cane(entry,'AgedWood',[awning(.01,.93).add(V(0,-.044,0)),awning(.46,.96).add(V(0,-.052,0)),
-        awning(.99,.94).add(V(0,-.045,0))],.032);
+      // A shallow entrance chamber extends forward of the original baked frontage.
+      const door=blocks(backGroup,'武昌灰瓦里分半开旧木门与石门洞');
+      const jamb=.52, mouth=.574;
       for (const side of [-1,1]) {
-        cane(entry,'AgedWood',[point(side*.54,.077,1.345),point(side*.54,.185,1.53),
-          point(side*.54,.317,1.63),point(side*.54,.457,1.71)],.037);
-        entry.box('Ink',point(side*.54,.067,1.37),.089,.18,.084,yaw);
-        entry.box('AgedWood',point(side*.38,.061,.80),.075,1.54,.118,yaw);
-        entry.box('AgedWood',point(side*.175,.047,.79),.315,1.46,.031,yaw);
-        entry.box('Ink',point(side*.175,.067,.98),.221,.69,.021,yaw);
-        entry.box('AgedWood',point(side*.175,.082,.97),.208,.035,.024,yaw);
-        entry.box('Ink',point(side*.086,.080,.695),.087,.122,.021,yaw);
-        const ring=Array.from({length:13},(_,i)=>{
-          const angle=i*Math.PI/6;
-          return point(side*.086+.033*Math.sin(angle),.110+.017*Math.cos(angle),.683+.041*Math.cos(angle));
-        });
-        cane(entry,'BoatLoad',ring,.009);
+        const u=side*jamb;
+        for (const [i,height] of [.379,.722,1.063,1.402].entries()) {
+          door.box('BankStone',point(u,side<0?.167:.291,height),.139+(i%2)*.012,.339,side<0?.305:.592,yaw);
+        }
+        door.box('BankStone',point(u,mouth,.865),.156,1.47,.105,yaw);
+        door.box('BankStone',point(u,mouth+.011,.194),.208,.137,.175,yaw);
+        door.box('ShoreStone',point(u,.523,.091),.233,.15,.326,yaw);
       }
-      entry.box('BoatLoad',point(.043,.087,.618),.068,.075,.033,yaw);
-      entry.box('Ink',point(.044,.103,.609),.013,.028,.009,yaw);
+      door.box('BankStone',point(0,.307,1.637),1.173,.120,.662,yaw);
+      door.box('ShoreStone',point(0,mouth,1.645),1.226,.139,.161,yaw);
+      door.box('AgedWood',point(0,.424,1.530),.941,.055,.111,yaw);
+      door.box('BankStone',point(0,.353,.097),.981,.118,.672,yaw);
+      door.box('ShoreStone',point(0,mouth+.017,.116),1.053,.095,.215,yaw);
+      door.box('Ink',point(0,.025,.821),.948,1.434,.052,yaw);
+      // A lit edge and staggered slats give the inset screen depth without an exposed blank wall.
+      door.box('BankStone',point(.08,.099,.23),.72,.144,.132,yaw);
+      door.box('AgedWood',point(-.13,.113,.882),.470,1.14,.062,yaw);
+      door.box('Ink',point(-.13,.151,.858),.378,1.015,.035,yaw);
+      for (const u of [-.293,-.198,-.095,.022]) door.box('AgedWood',point(u,.186,.869),.029,.99,.049,yaw);
+      door.box('ShoreStone',point(-.397,.138,.803),.055,1.23,.115,yaw);
+      const hinge=point(.426,.535,0), free=point(-.057,.743,0);
+      const leafYaw=Math.atan2(hinge.z-free.z,free.x-hinge.x);
+      const normal=V(Math.sin(leafYaw),0,Math.cos(leafYaw));
+      if (normal.dot(rear.forward)<0) normal.negate();
+      const leaf=(u,h,d=0)=>hinge.clone().lerp(free,u).addScaledVector(normal,d).add(V(0,h,0));
+      door.box('AgedWood',leaf(.5,.829),.545,1.319,.076,leafYaw);
+      for (const u of [.036,.965]) door.box('AgedWood',leaf(u,.837,.048),.061,1.324,.033,leafYaw);
+      for (const h of [.217,.635,1.43]) door.box('AgedWood',leaf(.50,h,.050),.525,.060,.039,leafYaw);
+      for (const u of [.22,.41,.60,.79]) door.box('Ink',leaf(u,1.023,.043),.009,.704,.016,leafYaw);
+      for (const h of [.300,1.354]) {
+        door.box('Slate',leaf(.103,h,.071),.119,.046,.020,leafYaw);
+        cane(door,'Slate',[leaf(.006,h-.056,.057),leaf(.006,h+.057,.057)],.020);
+      }
+      door.box('Slate',leaf(.812,.745,.067),.069,.115,.025,leafYaw);
+      const ring=Array.from({length:13},(_,i)=>{
+        const a=i*Math.PI/6;
+        return leaf(.812+.059*Math.sin(a),.707+.036*Math.cos(a),.087+.010*Math.sin(a));
+      });
+      cane(door,'Slate',ring,.009);
+      const awning=(u,v)=>point((u-.5)*1.36,.11+.69*v,1.932-.165*v+.018*Math.cos(u*6.1)-.010*v*v);
+      fabric(door,'Ink',(u,v)=>awning(u,v).add(V(0,-.026,0)),12,7);
+      for (let tile=0;tile<12;tile++) {
+        const spread=tile%4===1?.009:0;
+        fabric(door,'ShoreStone',(u,v)=>awning((tile+.05+u*.90)/12,v)
+          .add(V(0,.024*Math.sin(Math.PI*u)+spread,0)),5,8);
+      }
+      cane(door,'AgedWood',[awning(.01,.77).add(V(0,-.042,0)),awning(.48,.78).add(V(0,-.048,0)),
+        awning(.99,.78).add(V(0,-.045,0))],.033);
+      door.show();
       // The timber bars land on the four actual panes flanking the threshold.
       const {widthScale,heightScale,base}=rear;
       for (const center of [-2.73,-2.19,.43,.97]) {
@@ -2164,8 +2184,6 @@
         entry.box('AgedWood',point(u,.042,y-h*.11),w,.034,.055,yaw);
         entry.box('Slate',point(u,.036,y+h*.5),w+.045,.044,.049,yaw);
       }
-      entry.box('Masonry',point(0,.21,.067),.91,.13,.48,yaw);
-      entry.box('Masonry',point(.015,.53,.035),1.03,.066,.21,yaw);
       for (const [u,w] of [[-1.82,.88],[1.37,.91],[4.36,.91]]) {
         entry.box('Slate',point(u,.071,.517),w,.064,.21,yaw);
       }
@@ -2582,6 +2600,96 @@
     roof.setAttribute('position',new THREE.Float32BufferAttribute(sheets,3));
     roof.computeVertexNormals();
     add(new THREE.Mesh(roof,tile),'武昌两段青瓦薄檐','Masonry');
+  }
+
+  function buildHanyangTeaStreetApartments(lots) {
+    const group='汉阳茶棚后街坊 · 两座旧公寓';
+    const batches={
+      stone:new Acc(), brick:new Acc(), rail:new Acc(), wood:new Acc(),
+    };
+    function dress(x,z,details) {
+      const lot=lots.apartment.find(({elements:e})=>Math.hypot(x-e[12],z-e[14])<.07);
+      if (!lot) return;
+      const source=new THREE.Matrix4(), rotation=new THREE.Quaternion();
+      const box=(key,u,y,v,w,h,d)=>{
+        source.compose(V(u,y,v),rotation,V(w,h,d)).premultiply(lot);
+        batches[key].push(UBOX,source);
+      };
+      const beam=(key,a,b,width)=>{
+        batches[key].beam(V(...a).applyMatrix4(lot),V(...b).applyMatrix4(lot),width);
+      };
+      const balcony=(wall,sign,y,v,width,projection)=>{
+        const lip=wall+sign*projection;
+        box('stone',(wall+lip)*.5,y,v,projection+.15,.19,width);
+        for(const end of [-1,1]) {
+          const edge=v+end*(width*.5-.10);
+          box('brick',wall+sign*.22,y-.21,edge,.47,.29,.23);
+          box('rail',lip,y+.36,edge,.067,.68,.067);
+          beam('rail',[wall,y+.67,edge],[lip,y+.67,edge],.056);
+        }
+        box('rail',lip,y+.67,v,.079,.056,width-.09);
+        box('rail',lip,y+.24,v,.053,.049,width-.13);
+        const bars=Math.ceil(width/.29);
+        for(let i=1;i<bars;i++)
+          box('rail',lip,y+.42,v+(i/bars-.5)*(width-.16),.037,.46,.035);
+      };
+      const blind=(x,z,center,width)=>{
+        for(let i=0;i<6;i++)
+          box('wood',x,center-.34+i*.117,z,width,.048,.095);
+        for(const edge of [-.50,.50])
+          box('wood',x+edge*width,center-.047,z,.065,.77,.065);
+      };
+      details(box,beam,balcony,blind);
+    }
+    dress(-240.52,24.59,(box,beam,balcony,blind)=>{
+      // Two staggered open landings leave the old wall vent and drain legible.
+      balcony(-4.49,-1,4.30,-.91,2.78,1.02);
+      balcony(-4.49,-1,6.54,.95,2.43,.85);
+      box('wood',-4.508,4.94,-1.27,.065,1.06,.62);
+      for(const v of [-1.59,-.96])
+        box('rail',-4.56,4.96,v,.064,1.04,.044);
+      blind(-2.49,-2.62,5.03,.64);
+      blind(1.42,-2.62,6.56,.68);
+      // Quiet open roof parapet, sitting on the measured rooftop plane at 9.063.
+      box('brick',-.60,9.18,-1.94,4.24,.25,.17);
+      box('stone',-.60,9.32,-1.94,4.34,.085,.26);
+      box('brick',-2.68,9.18,-1.27,.18,.25,1.41);
+      box('stone',-2.68,9.32,-1.27,.27,.085,1.51);
+      const roofY=9.11;
+      for(const z of [-1.23,.21]){
+        box('rail',-1.71,roofY+.34,z,.061,.68,.067);
+        box('rail',-.35,roofY+.34,z,.061,.68,.067);
+      }
+      for(const x of [-1.71,-.35])
+        beam('rail',[x,roofY+.66,-1.23],[x,roofY+.66,.21],.057);
+      beam('rail',[-1.71,roofY+.66,-1.02],[-.35,roofY+.66,-1.02],.051);
+    });
+    dress(-242.97,11.21,(box,beam,balcony,blind)=>{
+      balcony(4.49,1,6.64,-.94,2.64,.77);
+      blind(-.47,2.897,5.03,.69);
+      blind(2.77,2.897,6.56,.58);
+      // The brick water room sits lower than the old stair head on the empty setback.
+      box('brick',-2.46,9.414,.72,1.54,.71,1.44);
+      box('stone',-2.46,9.815,.72,1.73,.13,1.60);
+      box('wood',-2.36,9.43,1.466,.57,.57,.055);
+      for(let i=0;i<4;i++)
+        box('rail',-2.36,9.24+i*.119,1.499,.51,.035,.037);
+      box('brick',-.58,9.19,2.23,3.48,.27,.16);
+      box('stone',-.58,9.34,2.23,3.52,.080,.24);
+    });
+    for(const [key,name,material,ink] of [
+      ['stone','公寓阳台挑板与水房石檐','ShoreStone',inkMat(.31,false,['#72786e','#b0afa0'])],
+      ['brick','公寓屋面矮墙与砖砌水房','Masonry',inkMat(.31,false,['#776d5e','#a99c87'])],
+      ['rail','公寓开敞阳台与晒杆铁作','Slate',inkMat(.23,false,['#465750','#758178'])],
+      ['wood','公寓半幅纸褐木百叶','BoatLoad',inkMat(.35,false,['#726450','#ab9879'])],
+    ]) {
+      if (!batches[key].l.length) continue;
+      const mesh=batches[key].mesh(ink,false);
+      mesh.name='汉阳茶棚后'+name;
+      mesh.userData.landscapeSurface={group,name:mesh.name,material};
+      mesh.userData.detailSize=1.24;
+      scene.add(mesh);
+    }
   }
 
   function buildHanyangBridgeCourts(lots) {
@@ -3196,6 +3304,7 @@
     dressNeighborhoodCourts(lots);
     buildBridgeQuarterDetails(lots);
     buildHanyangBridgeCourts(lots);
+    buildHanyangTeaStreetApartments(lots);
     buildWuchangStreetEaves(lots);
     const streets = streetsMesh.mesh(inkMat(.42, false, ['#b3a895', '#dfd8c7']), false);
     streets.name = 'City streets';
