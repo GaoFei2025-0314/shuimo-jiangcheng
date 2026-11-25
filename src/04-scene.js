@@ -668,6 +668,7 @@
       FaceClay:inkMat(.31,false,['#846b57','#cbb49a']),
       Ink:inkMat(.21,false,['#463b33','#756558']),
       Paper:inkMat(.53,false,['#9a896c','#e3d4af']),
+      AgedWood:inkMat(.24,false,['#544b40','#988674']),
       BoatAccent:inkMat(.22,false,['#774d3c','#ac7856']),
       Slate:inkMat(.22,false,['#495954','#859287']),
       ShoreStone:inkMat(.17,false,['#4e5952','#7b8279']),
@@ -677,7 +678,7 @@
       BankStone:inkMat(.22,false,['#786c62','#b2a08f']),
       BoatCanopy:inkMat(.26,true,['#74674e','#b7a581']),
     };
-    for (const key of ['BoatAccent','Ink']) {
+    for (const key of ['AgedWood','Ink']) {
       colors[key].defines={COURT_TIMBER:1};
       colors[key].uniforms.uMaterialAtlas={value:fabricAtlas};
     }
@@ -985,7 +986,7 @@
       const {point,yaw}=front;
       detail.box('Ink',point(across,.023,height*.5+.035),width,height,.035,yaw);
       for (const side of [-1,1]) {
-        detail.box('BoatAccent',point(across+side*(width*.5+.025),.031,height*.5+.034),.035,height+.029,.058,yaw);
+        detail.box('AgedWood',point(across+side*(width*.5+.025),.031,height*.5+.034),.035,height+.029,.058,yaw);
       }
       detail.box('Masonry',point(across,.05,height+.056),width+.12,.071,.105,yaw);
       detail.box('Masonry',point(across,.13,.059),width+.11,.094,.31,yaw);
@@ -1009,10 +1010,10 @@
       const center=1.12;
       detail.box('Ink',point(across,.014,center),width,height,.027,yaw);
       for (const r of [-1,-.33,.33,1]) {
-        detail.box('BoatAccent',point(across+r*width*.48,.035,center),.027,height,.026,yaw);
+        detail.box('AgedWood',point(across+r*width*.48,.035,center),.027,height,.026,yaw);
       }
       for (const r of [-1,0,1]) {
-        detail.box('BoatAccent',point(across,.035,center+r*height*.49),width,.029,.026,yaw);
+        detail.box('AgedWood',point(across,.035,center+r*height*.49),width,.029,.026,yaw);
       }
     }
     function person(detail,front,u,d,turn,size,outfit,stride,pose={}) {
@@ -1655,14 +1656,14 @@
         const bearing=depth-.167;
         for (const side of [-1.038,-2.59]) {
           const post=point(side,bearing,0);
-        closeContact(post,yaw,.161,.168,undefined,.096);
+          closeContact(post,yaw,.161,.168,undefined,.096);
           details.box('ShoreStone',post.clone().add(V(0,.075,0)),.143,.150,.155,yaw);
-          cane(details,'BoatAccent',[post.clone().add(V(0,.113,0)),post.clone().add(V(0,1.27,0)),
+          cane(details,'AgedWood',[post.clone().add(V(0,.113,0)),post.clone().add(V(0,1.27,0)),
             point(side,bearing,1.566)],.047);
-          cane(details,'BoatAccent',[point(side,bearing,1.28),point(side,depth*.70,1.493),
+          cane(details,'AgedWood',[point(side,bearing,1.28),point(side,depth*.70,1.493),
             point(side,depth*.46,1.642)],.027);
         }
-        details.box('BoatAccent',point(-1.82,bearing,1.565),1.73,.075,.112,yaw);
+        details.box('AgedWood',point(-1.82,bearing,1.565),1.73,.075,.112,yaw);
         const bed=depth*.53;
         details.box('ShoreStone',point(-1.82,bed,.035),1.63,.119,depth*.98,yaw);
         for (const [i,x] of [-2.33,-1.82,-1.31].entries()) {
@@ -1753,16 +1754,16 @@
         foot.box('Masonry',point(offset-.016,.48,.031),width+.22,.082,.19,yaw);
         for (const side of [-1,1]) {
           const jamb=offset+side*(width*.5+.045);
-          foot.box('BoatAccent',point(jamb,.073,height*.52),.069,height-.06,.138,yaw);
+          foot.box('AgedWood',point(jamb,.073,height*.52),.069,height-.06,.138,yaw);
           foot.box('ShoreStone',point(jamb,.078,.13),.118,.215,.162,yaw);
         }
         foot.show();
         // Narrow inner leaves break the deep reveal, while the threshold remains flush.
         for (const side of [-1,1]) {
           const leaf=offset+side*width*.245;
-          detail.box('BoatAccent',point(leaf,.046,height*.41+.04),width*.445,height*.73,.023,yaw);
+          detail.box('AgedWood',point(leaf,.046,height*.41+.04),width*.445,height*.73,.023,yaw);
           detail.box('Ink',point(leaf,.062,height*.47+.04),width*.308,height*.46,.012,yaw);
-          detail.box('BoatAccent',point(leaf,.079,height*.47+.04),width*.31,.028,.016,yaw);
+          detail.box('AgedWood',point(leaf,.079,height*.47+.04),width*.31,.028,.016,yaw);
         }
         detail.box('Slate',point(offset+.045,.082,height*.43),.04,.043,.032,yaw);
         latticeWindow(detail,face,...window);
@@ -1986,11 +1987,11 @@
         }
         court.box('ShoreStone',point(side*.757,.241,.073),.23,.151,.51,yaw);
         court.box('Ink',point(side*.588,.042,.694),.065,1.25,.082,yaw);
-        court.box('BoatAccent',point(side*.305,.041,.635),.56,1.14,.055,yaw);
+        court.box('AgedWood',point(side*.305,.041,.635),.56,1.14,.055,yaw);
         court.box('BoatGlass',point(side*.302,.071,.813),.416,.526,.024,yaw);
-        court.box('BoatAccent',point(side*.302,.085,.785),.43,.041,.035,yaw);
+        court.box('AgedWood',point(side*.302,.085,.785),.43,.041,.035,yaw);
         court.box('Ink',point(side*.302,.072,.364),.427,.256,.023,yaw);
-        court.box('BoatAccent',point(side*.302,.085,.364),.354,.192,.034,yaw);
+        court.box('AgedWood',point(side*.302,.085,.364),.354,.192,.034,yaw);
         court.box('BoatLoad',point(side*.089,.091,.624),.024,.136,.041,yaw);
       }
       for (let i=0;i<11;i++) {
@@ -2014,7 +2015,7 @@
             point(.615*Math.cos(angle),.103,1.117+.415*Math.sin(angle)),.024);
         }
       }
-      court.box('BoatAccent',point(0,.082,1.110),1.28,.068,.104,yaw);
+      court.box('AgedWood',point(0,.082,1.110),1.28,.068,.104,yaw);
       court.box('BoatAccent',point(-.966,.117,.82),.23,.24,.25,yaw);
       court.box('Ink',point(-.966,.21,.865),.174,.028,.022,yaw);
       court.box('ShoreStone',point(-.966,.16,.952),.262,.036,.16,yaw,.09);
@@ -2056,7 +2057,7 @@
           frames.box('Slate',point(u+side*(w*.5-.012),depth+.037,low+h*.51),.051,h+.016,.081,yaw);
           frames.box('Slate',point(u,depth+.048,low+h*.50+side*(h*.5-.026)),w+.021,.057,.083,yaw);
         }
-        frames.box('BoatAccent',point(u-.052,depth+.050,low+h*.51),.047,h-.079,.063,yaw);
+        frames.box('AgedWood',point(u-.052,depth+.050,low+h*.51),.047,h-.079,.063,yaw);
         frames.box('BoatLoad',point(u,depth+.050,low+h*.656),w-.055,.054,.062,yaw);
         frames.box('BankStone',point(u,depth+.069,low-.040),w+.15,.076,.24,yaw);
       }
@@ -2121,7 +2122,7 @@
       for (const u of [-1.03,1.08]) closeContact(point(u,.16),yaw,.42,.22,paving);
       // Recessed timber leaves and narrow divisions follow the openings of this specific front.
       entry.box('Ink',point(0,.022,.81),.75,1.55,.046,yaw);
-      entry.box('BoatAccent',point(0,.064,1.60),.82,.073,.11,yaw);
+      entry.box('AgedWood',point(0,.064,1.60),.82,.073,.11,yaw);
       const awning=(u,v)=>point((u-.5)*1.27,.05+.48*v,1.88-.17*v+.027*Math.cos(u*6.1)-.018*v*v);
       fabric(entry,'Ink',(u,v)=>awning(u,v).add(V(0,-.040,0)),12,7);
       for (let tile=0;tile<10;tile++) {
@@ -2133,16 +2134,16 @@
         const lip=awning((tile+.5)/10,1).add(V(0,.016+spread,0));
         entry.round('ShoreStone',dripTile,lip,.117,.102,.14,yaw);
       }
-      cane(entry,'BoatAccent',[awning(.01,.93).add(V(0,-.044,0)),awning(.46,.96).add(V(0,-.052,0)),
+      cane(entry,'AgedWood',[awning(.01,.93).add(V(0,-.044,0)),awning(.46,.96).add(V(0,-.052,0)),
         awning(.99,.94).add(V(0,-.045,0))],.032);
       for (const side of [-1,1]) {
-        cane(entry,'BoatAccent',[point(side*.54,.077,1.345),point(side*.54,.185,1.53),
+        cane(entry,'AgedWood',[point(side*.54,.077,1.345),point(side*.54,.185,1.53),
           point(side*.54,.317,1.63),point(side*.54,.457,1.71)],.037);
         entry.box('Ink',point(side*.54,.067,1.37),.089,.18,.084,yaw);
-        entry.box('BoatAccent',point(side*.38,.061,.80),.075,1.54,.118,yaw);
-        entry.box('BoatAccent',point(side*.175,.047,.79),.315,1.46,.031,yaw);
+        entry.box('AgedWood',point(side*.38,.061,.80),.075,1.54,.118,yaw);
+        entry.box('AgedWood',point(side*.175,.047,.79),.315,1.46,.031,yaw);
         entry.box('Ink',point(side*.175,.067,.98),.221,.69,.021,yaw);
-        entry.box('BoatAccent',point(side*.175,.082,.97),.208,.035,.024,yaw);
+        entry.box('AgedWood',point(side*.175,.082,.97),.208,.035,.024,yaw);
         entry.box('Ink',point(side*.086,.080,.695),.087,.122,.021,yaw);
         const ring=Array.from({length:13},(_,i)=>{
           const angle=i*Math.PI/6;
@@ -2158,9 +2159,9 @@
         const u=(center+.75)*widthScale, w=.40*widthScale, h=.95*heightScale, y=base+1.125*heightScale;
         const jamb=.032;
         for (const side of [-1,1]) {
-          entry.box('BoatAccent',point(u+side*(w*.5-jamb*.5),.039,y),jamb,h+.012,.052,yaw);
+          entry.box('AgedWood',point(u+side*(w*.5-jamb*.5),.039,y),jamb,h+.012,.052,yaw);
         }
-        entry.box('BoatAccent',point(u,.042,y-h*.11),w,.034,.055,yaw);
+        entry.box('AgedWood',point(u,.042,y-h*.11),w,.034,.055,yaw);
         entry.box('Slate',point(u,.036,y+h*.5),w+.045,.044,.049,yaw);
       }
       entry.box('Masonry',point(0,.21,.067),.91,.13,.48,yaw);
@@ -2581,6 +2582,94 @@
     roof.setAttribute('position',new THREE.Float32BufferAttribute(sheets,3));
     roof.computeVertexNormals();
     add(new THREE.Mesh(roof,tile),'武昌两段青瓦薄檐','Masonry');
+  }
+
+  function buildHanyangBridgeCourts(lots) {
+    const hosts=[[-209.77,-34.30],[-193.02,-30.39],[-193.96,-17.07]];
+    if(!hosts.every(([x,z])=>lots.wharf.some(({elements:e})=>
+      Math.hypot(x-e[12],z-e[14])<.07))) return;
+    const routes=[...cityGround.streets,...cityGround.courtyardPaths].filter(({a,b})=>
+      Math.min(a.x,b.x)<-186 && Math.max(a.x,b.x)>-206 &&
+      Math.min(a.z,b.z)<-20 && Math.max(a.z,b.z)>-35);
+    const walls=new Acc(), coping=new Acc(), flags=new Acc(), timber=new Acc(), tiles=[];
+    function ground(x,z,r=.15) {
+      if (!offBridge(x,z) || cityGround.occupied(x,z,r) ||
+        routes.some(path=>distanceToPath(x,z,path)<path.width*.5+r)) return null;
+      return plantingSurface(x,z);
+    }
+    function line(batch,a,b,height,width,cap=false) {
+      const dx=b[0]-a[0], dz=b[1]-a[1], x=(a[0]+b[0])*.5,z=(a[1]+b[1])*.5;
+      if ([a,b,[x,z]].some(([x,z])=>ground(x,z,width*.56)===null)) return;
+      const y=ground(x,z,width*.56);
+      const yaw=Math.atan2(-dz,dx), length=Math.hypot(dx,dz);
+      batch.box(length,height,width,x,y+height*.5-.015,z,yaw);
+      if (cap) coping.box(length+.045,.11,width+.095,x,y+height+.016,z,yaw);
+    }
+    function apron(x,z,width,depth) {
+      const columns=Math.ceil(width/.78),rows=Math.ceil(depth/.64);
+      for(let column=0;column<columns;column++) for(let row=0;row<rows;row++) {
+        const px=x+((column+.5)/columns-.5)*width;
+        const pz=z+((row+.5)/rows-.5)*depth;
+        const y=ground(px,pz,.40);
+        if(y===null)continue;
+        flags.box(width/columns-.022,.055,depth/rows-.024,px,y+.025,pz);
+      }
+    }
+    // The small side court opens toward the street, between two actual old lots.
+    line(walls,[-204.31,-34.80],[-204.19,-29.40],1.29,.28,true);
+    line(walls,[-204.19,-29.40],[-202.46,-29.16],1.13,.26,true);
+    line(walls,[-200.89,-28.93],[-199.66,-28.73],.97,.25,true);
+    line(walls,[-199.66,-28.73],[-199.82,-33.47],1.10,.25,true);
+    line(walls,[-204.29,-34.73],[-202.83,-34.46],1.07,.26,true);
+    apron(-201.97,-31.58,3.82,4.35);
+    apron(-201.73,-28.97,1.28,1.81);
+    // Across the group a shallow lean-to leaves the adjoining yard open on its east side.
+    const head=[-200.05,-24.38], tail=[-193.83,-23.12], depth=2.54;
+    const dx=tail[0]-head[0],dz=tail[1]-head[1], length=Math.hypot(dx,dz);
+    const el=ground(head[0],head[1]), er=ground(tail[0],tail[1]);
+    if(el!==null && er!==null) {
+      const roof=(u,v,lift=0)=>V(head[0]+dx*u-dz/length*(v-.5)*depth,
+        THREE.MathUtils.lerp(el,er,u)+2.56-.61*v+lift,
+        head[1]+dz*u+dx/length*(v-.5)*depth);
+      const side=(u,v)=>{const {x,z}=roof(u,v);return [x,z];};
+      line(walls,side(.06,.11),side(.94,.11),2.40,.21);
+      line(walls,side(.07,.12),side(.07,.78),1.95,.20);
+      for(const t of [.10,.49,.91]){
+        const cap=roof(t,.85,-.11),y=ground(cap.x,cap.z);
+        if(y===null) continue;
+        coping.box(.26,.18,.26,cap.x,y+.08,cap.z);
+        timber.beam(V(cap.x,y+.14,cap.z),cap,.148);
+      }
+      timber.beam(roof(.05,.85,-.12),roof(.95,.85,-.12),.127);
+      const courses=Math.ceil(length/.21);
+      for(let j=0;j<courses;j++) {
+        const a=j/courses,b=(j+1)/courses,m=(a+b)*.5;
+        for(const [v,w] of [[0,.35],[.346,.69],[.688,1]]){
+          const x=roof(a,v),y=roof(b,v),z=roof(a,w),t=roof(b,w);
+          const rib=roof(m,(v+w)*.5,.065);
+          for(const pt of [x,z,rib,x,rib,y,y,rib,t,t,rib,z]) tiles.push(...pt.toArray());
+        }
+      }
+      apron(-197.22,-22.83,4.83,2.32);
+      line(walls,[-199.73,-22.68],[-198.32,-21.82],.79,.23,true);
+    }
+    const group='汉阳古桥边罩房与两进院';
+    function show(mesh,name,material) {
+      mesh.name=name;
+      mesh.userData.landscapeSurface={group,name,material};
+      mesh.userData.detailSize=1.20;
+      scene.add(mesh);
+    }
+    show(walls.mesh(inkMat(.31,false,['#696b61','#a4a092']),false),'汉阳桥边两进院旧砖墙','Masonry');
+    show(coping.mesh(inkMat(.28,false,['#58675f','#969d92']),false),'汉阳桥边两进院灰石压顶','ShoreStone');
+    show(flags.mesh(inkMat(.37,false,['#737b6a','#a8a18a']),false),'汉阳桥边院内旧石埕','Path');
+    if (tiles.length) {
+      show(timber.mesh(inkMat(.32,false,['#665849','#9a876e']),false),'汉阳桥边后罩短木作','BoatLoad');
+      const geometry=new THREE.BufferGeometry();
+      geometry.setAttribute('position',new THREE.Float32BufferAttribute(tiles,3));
+      geometry.computeVertexNormals();
+      show(new THREE.Mesh(geometry,inkMat(.29,true,['#485b52','#869286'])),'汉阳桥边后罩青瓦薄檐','Masonry');
+    }
   }
 
   function buildBridgeQuarterDetails(lots) {
@@ -3106,6 +3195,7 @@
     dressRiverfrontGround(lots);
     dressNeighborhoodCourts(lots);
     buildBridgeQuarterDetails(lots);
+    buildHanyangBridgeCourts(lots);
     buildWuchangStreetEaves(lots);
     const streets = streetsMesh.mesh(inkMat(.42, false, ['#b3a895', '#dfd8c7']), false);
     streets.name = 'City streets';
