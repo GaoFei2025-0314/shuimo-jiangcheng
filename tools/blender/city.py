@@ -566,31 +566,40 @@ def freight_view(scene, wake, camera_group):
     return camera
 
 
-def bridgehead_views(scene, camera_group):
-    """Frame each approach and its receiving street from the river side."""
-    views = []
-    for prefix, suffix, file_prefix in (("", "接地铺装", "wuhan"), ("鹦鹉洲", "车行面", "yingwuzhou")):
+def bridgehead_views(scene, camera_group, landmark_roots):
+    """Follow the river, then frame each bridge structure and its actual street junction."""
+    def make_view(name, target, back, width):
+        back.normalize()
+        camera = scene.camera.copy()
+        camera.data = camera.data.copy()
+        camera.name = camera.data.name = name
+        camera_group.objects.link(camera)
+        camera.location = target + back * 650
+        camera.rotation_euler = (-back).to_track_quat('-Z', 'Y').to_euler()
+        camera.data.ortho_scale = width
+        return camera
+
+    river = make_view("长江双桥 · 沿江鸟瞰", Vector((-121,-20,4)), Vector((-.45,-1,.93)), 335)
+    views = [(river, "bridge-river.png")]
+    for key, prefix, suffix, file_prefix in (("bridge", "", "接地铺装", "wuhan"),
+                                             ("yingwuzhou", "鹦鹉洲", "车行面", "yingwuzhou")):
+        centre = landmark_roots[key].matrix_world.translation
         for bank, file_bank in (("武昌", "wuchang"), ("汉阳", "hanyang")):
-            road = scene.objects.get(f"{prefix}{bank}引道 · {suffix}")
-            if road is None:
-                continue
+            road = scene.objects[f"{prefix}{bank}引道 · {suffix}"]
             vertices = road.data.vertices
-            ends = [road.matrix_world @ ((vertices[i].co + vertices[i+1].co) / 2)
-                    for i in (0, len(vertices)-2)]
-            along = ends[1] - ends[0]
+            start, end = [road.matrix_world @ ((vertices[i].co + vertices[i+1].co) / 2)
+                          for i in (0, len(vertices)-2)]
+            along = end - centre
             along.z = 0
-            length = along.length
             along.normalize()
             side = Vector((-along.y, along.x, 0))
-            back = (-.47 * along + .74 * side + Vector((0,0,1.15))).normalized()
-            target = ends[0].lerp(ends[1], .75) + along * 4
-            camera = scene.camera.copy()
-            camera.data = camera.data.copy()
-            camera.name = camera.data.name = (prefix or "武汉长江大桥") + " · " + bank + "桥头"
-            camera_group.objects.link(camera)
-            camera.location = target + back * 170
-            camera.rotation_euler = (-back).to_track_quat('-Z', 'Y').to_euler()
-            camera.data.ortho_scale = max(97, length * 1.9)
+            if side.y > 0:
+                side.negate()
+            back = -.16 * along + .93 * side + Vector((0,0,.8))
+            near = start.lerp(centre, .51 if prefix else .72)
+            far = end + along * 9
+            name = (prefix or "武汉长江大桥") + " · " + bank + "桥头"
+            camera = make_view(name, (near+far)/2, back, (far-near).length * 1.26)
             views.append((camera, f"bridge-{file_prefix}-{file_bank}.png"))
     return views
 
@@ -703,6 +712,7 @@ def build():
             "Boat":"aa9980", "BoatHull":"536e63", "BoatBottom":"995d48", "BoatDeck":"ab9b82", "BoatCabin":"ddd3b7",
             "BoatGlass":"486767", "BoatRail":"7b8271", "BoatAccent":"ae6550", "BoatCargo":"788969",
             "BoatLoad":"776956", "BoatCanopy":"a9ad83"}.items()}
+        mats["SuspensionOrange"] = mesh.material("suspensionOrange")
         if any("deckPigment" in item for item in capture["meshes"]):
             # The apron begins in deck asphalt and ends in the receiving street's paving.
             tree = mats["ApproachPaving"].node_tree
@@ -746,7 +756,7 @@ def build():
         if park_roots:
             camera, corners = park_view(scene, park_roots, landmark_roots["tower"], group("镜头与光"))
             export_park(scene, camera, corners)
-        detail_views = bridgehead_views(scene, group("镜头与光"))
+        detail_views = bridgehead_views(scene, group("镜头与光"), landmark_roots)
         if capture.get("wakes"):
             camera = freight_view(scene, capture["wakes"][0], group("镜头与光"))
             detail_views.append((camera, "river-freighter.png"))
