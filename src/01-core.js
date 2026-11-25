@@ -375,6 +375,17 @@
                 }
                 glass *= .78 + .22*smoothstep(.01,.14,pane.y);
                 vec3 trim = mix(vec3(.29,.26,.21), vec3(.71,.64,.51), .40 + .26*d + .14*grain);
+                // Diffuse daylight through the street flat's glazing joins the drawn rooms across both floors.
+                if (uApartmentWindow>.5 && distance(vW.xz,vec2(-40.09,71.99))<8.) {
+                  float value=density(glass);
+                  vec3 inkedRoom=mix(vec3(.32,.35,.32),vec3(.66,.65,.56),smoothstep(.13,.80,value));
+                  glass=mix(glass,inkedRoom,.48);
+                  // The three front openings already have modeled wooden mullions.
+                  bool lowerFrame=vCityPosition.z>3.27 && vCityPosition.y<2.03 && vCityPosition.x>.29;
+                  bool upperFrame=vCityPosition.z>2.55 && vCityPosition.z<2.62 &&
+                    vCityPosition.y>3.01 && vCityPosition.y<4.08 && vCityPosition.x>2.26;
+                  if (lowerFrame || upperFrame) wood=moulding*.76;
+                }
                 vec3 sash = mix(glass, trim, wood) * mix(.78,1.,vSky);
                 col = mix(col, sash, cityNear * .91);
               }

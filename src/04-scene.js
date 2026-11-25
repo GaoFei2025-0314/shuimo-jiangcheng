@@ -1476,7 +1476,7 @@
         closeContact(p,yaw,.151,.146,teaPaving);
       }
       footing.show();
-      const roof=(u,v)=>point((u-.5)*2.34,.041+1.77*v,
+      const roof=(u,v)=>point(u*2.58-1.17,.041+1.77*v,
         2.058-.401*v-.047*Math.sin(Math.PI*v)+.014*Math.cos(u*6.7+v*2.1));
       for (const u of [-1.02,1.02]) {
         cane(counter,'BoatLoad',[point(u*.987,1.59,-.012),point(u,1.61,.84),point(u*.999,1.60,1.70)],.050);
@@ -1486,7 +1486,7 @@
       }
       counter.box('Ink',point(0,.072,1.994),2.21,.117,.14,yaw);
       for (const u of [-1.015,-.51,-.02,.47,1.02]) {
-        const a=.5+u/2.34;
+        const a=(u+1.17)/2.58;
         cane(counter,'BoatLoad',[roof(a,.02).add(V(0,-.054,0)),roof(a,.52).add(V(0,-.055,0)),
           roof(a,1).add(V(0,-.034,0))],.027);
       }
@@ -1824,12 +1824,43 @@
     // The other bank has a quieter house gate, with short caps and an open way into the courtyard.
     const east=laneFront(-59.58,75.26,false);
     if (east) {
-      const group='武昌滨水街巷生活', {point,yaw}=east;
-      laneApron(group,'武昌里分门前石径接支巷',east,3.3,1.43);
+      const group='武昌滨水街巷生活', {yaw}=east;
+      // Keep the portal beside the end wall so its opening looks through the block.
+      const point=(u,d,h)=>east.point(u-4.95,d,h);
+      const passage={...east,point};
+      const branch=cityGround.riverfrontPaths.filter(p=>p.name==='武昌滨水通街支巷');
+      const approach=streetLip(branch,point(.10,6.75));
+      const laneEnd=point(-1.29,-5.24);
+      const walkName='武昌里分门前石径接支巷';
+      const controls=[V(-47,0,77.2),V(-49.15,0,76.42),V(-50.6,0,75.72),laneEnd,
+        point(-.98,-2.7),point(-.55,-.28),point(-.08,1.24),point(0,2.25),
+        point(.031,3.37),point(.46,5.10),point(.61,6.80)];
+      if (approach) controls.push(approach);
+      paveAlley(group,walkName,controls,48,
+        t=>.72+.10*Math.sin(t*Math.PI),{material:'BankStone',liftAt:()=>.074,routeName:'武昌里分门后纵巷'});
+      paveAlley(group,'武昌里分门后住家廊前石径',
+        [point(-.08,1.24),point(1.32,.89),east.point(2.26,.73),east.point(.02,.16)],
+        13,t=>THREE.MathUtils.lerp(.51,.43,t),{material:'Path',liftAt:()=>.067});
+      const wall=blocks(group,'武昌里分透光纵巷灰石边墙与门后侧院');
+      const runs=[
+        {stations:[[-1.56,1.04],[-1.67,-.13],[-1.91,-1.30],[-2.08,-2.67],[-2.26,-3.66]],
+          heights:[.84,.77,.69,.52]},
+        {stations:[[.85,.95],[.52,-.13],[.30,-1.25],[.18,-2.55]],heights:[.63,.55,.46]},
+      ];
+      for (const {stations,heights} of runs) for (let i=0;i<heights.length;i++) {
+        const p=point(...stations[i]), q=point(...stations[i+1]);
+        const courseYaw=Math.atan2(p.z-q.z,q.x-p.x);
+        const base=p.clone().lerp(q,.5);
+        const length=Math.hypot(q.x-p.x,q.z-p.z), rise=heights[i];
+        wall.box('BankStone',base.clone().add(V(0,.05,0)),length+.04,.13,.29,courseYaw);
+        wall.box('Masonry',base.clone().add(V(0,rise*.5,0)),length+.03,rise,.193,courseYaw);
+        wall.box('ShoreStone',base.clone().add(V(0,rise+.026,0)),length+.053,.073,.252,courseYaw);
+      }
+      wall.show();
       const gate=blocks(group,'武昌青砖里分门楼');
       const gateZ=2.25;
       const paving=scene.getObjectByName('武昌里分门前石径接支巷');
-      gateTreads(group,'武昌门楼三级过门石',east,paving,[
+      gateTreads(group,'武昌门楼三级过门石',passage,paving,[
         [.006,2.26,1.39,.40,.083],[-.024,2.68,1.30,.35,.035],[.028,3.06,1.18,.30,.014],
       ]);
       for (const side of [-1,1]) closeContact(point(side*.85,gateZ),yaw,.265,.27,paving);
@@ -1843,7 +1874,7 @@
             .260+(row%2)*.030,.107,.331,yaw);
         }
         gate.box('ShoreStone',point(side*.85,gateZ,1.752),.37,.115,.46,yaw);
-        gate.box('Ink',point(side*.738,2.54,.451),.095,.81,.584,yaw+side*.21);
+        gate.box('AgedWood',point(side*.811,2.30,.438),.064,.72,.40,yaw+side*.06);
       }
       // The timber head and sign sit above the open passage between the brick piers.
       gate.box('Ink',point(0,gateZ,1.824),1.97,.166,.285,yaw);
@@ -1876,11 +1907,11 @@
       latticeWindow(gate,east,2.80,.45,.49);
       gate.show();
       const planter=blocks(group,'武昌开敞院门靠墙釉盆');
-      courtyardPlant(planter,east,-1.93,1.82,1.13,'ShoreStone');
+      courtyardPlant(planter,passage,1.73,1.75,1.13,'ShoreStone');
       planter.show();
       const life=blocks(group,'武昌入巷同行');
-      person(life,east,-.52,3.64,Math.PI*.12,1.07,'Slate',.83);
-      person(life,east,.36,4.33,Math.PI*.04,.91,'BoatAccent',-.53);
+      person(life,passage,-.52,3.64,Math.PI*.12,1.07,'Slate',.83);
+      person(life,passage,.36,4.33,Math.PI*.04,.91,'BoatAccent',-.53);
       life.show();
     }
 
@@ -2051,8 +2082,6 @@
       ]) {
         const u=(center+1.05)*widthScale, w=1.60*widthScale, low=base+sill*heightScale;
         const h=(sill<1?1.54:1.03)*heightScale;
-        frames.box('Ink',point(u,depth-.024,low+h*.50),w+.060,h+.065,.055,yaw);
-        frames.box('BoatGlass',point(u,depth+.009,low+h*.50),w-.068,h-.088,.038,yaw);
         for (const side of [-1,1]) {
           frames.box('Slate',point(u+side*(w*.5-.012),depth+.037,low+h*.51),.051,h+.016,.081,yaw);
           frames.box('Slate',point(u,depth+.048,low+h*.50+side*(h*.5-.026)),w+.021,.057,.083,yaw);
@@ -2600,6 +2629,113 @@
     roof.setAttribute('position',new THREE.Float32BufferAttribute(sheets,3));
     roof.computeVertexNormals();
     add(new THREE.Mesh(roof,tile),'武昌两段青瓦薄檐','Masonry');
+  }
+
+  function tieHanyangTeaLane() {
+    const street=cityGround.riverfrontPaths.filter(p=>p.name==='汉阳滨水通街支巷');
+    const court=cityGround.riverfrontPaths.filter(p=>p.name==='汉阳后巷步道'&&p.a.x>-228&&p.a.x<-224&&p.a.z<35);
+    if (!street.length || !court.length ||
+        !scene.getObjectByName('汉阳茶棚后院透气筛廊 · Masonry') ||
+        !scene.getObjectByName('汉阳茶案前埕接支巷')) return;
+    const routes=[...new Set([...cityGround.streets,...cityGround.courtyardPaths])].filter(({a,b})=>
+      Math.min(a.x,b.x)<-200 && Math.max(a.x,b.x)>-238 &&
+      Math.min(a.z,b.z)<45 && Math.max(a.z,b.z)>24);
+    const skirting=new Acc(), coping=new Acc(), stones=new Acc();
+    function grade(x,z,r) {
+      if (!offBridge(x,z) || cityGround.occupied(x,z,r) ||
+        routes.some(p=>distanceToPath(x,z,p)<p.width*.5+r)) return null;
+      return plantingSurface(x,z);
+    }
+    function coursing(a,b,height,width,core,lip) {
+      const dx=b[0]-a[0],dz=b[1]-a[1],run=Math.hypot(dx,dz),yaw=Math.atan2(-dz,dx);
+      const count=Math.ceil(run/(height>.25 ? 1.20 : .85));
+      for(let i=0;i<count;i++){
+        const x=a[0]+(i+.5)/count*dx,z=a[1]+(i+.5)/count*dz;
+        const y=grade(x,z,width*.61);
+        if(y===null || [-.5,.5].some(t=>grade(x+t*dx/count,z+t*dz/count,width*.55)===null)) continue;
+        const step=run/count;
+        core.box(step-.022,height,width,x,y+height*.5-.021,z,yaw);
+        if(lip) lip.box(step-.010,.077,width+.061,x,y+height+.012,z,yaw);
+      }
+    }
+    const timber=new Acc(), tiles=[];
+    // An open gate between the drying court and the narrow tea-house side apron.
+    const gate=[[-224.22,26.45],[-222.78,26.22]];
+    const [left,right]=gate.map(([x,z])=>V(x,grade(x,z,.12)??LAND_Y,z));
+    for (const p of [left,right]) {
+      if (grade(p.x,p.z,.12)===null) continue;
+      coping.box(.25,.21,.25,p.x,p.y+.09,p.z);
+      timber.beam(p.clone().add(V(0,.18,0)),p.clone().add(V(0,1.88,0)),.087);
+    }
+    timber.beam(left.clone().add(V(0,1.88,0)),right.clone().add(V(0,1.88,0)),.089);
+    const across=right.clone().sub(left).setY(0).normalize();
+    for (const [p,sign] of [[left,1],[right,-1]]) {
+      timber.beam(p.clone().add(V(0,1.59,0)),
+        p.clone().addScaledVector(across,sign*.27).add(V(0,1.86,0)),.053);
+    }
+    const sill=left.clone().lerp(right,.5), sillGrade=grade(sill.x,sill.z,.24);
+    if(sillGrade!==null)
+      stones.box(1.27,.061,.34,sill.x,sillGrade+.024,sill.z,Math.atan2(-across.z,across.x));
+    coursing([-225.03,26.60],gate[0],.55,.23,skirting,coping);
+    coursing(gate[1],[-222.61,25.38],.74,.23,skirting,coping);
+    coursing([-222.61,25.38],[-221.48,25.87],.74,.23,skirting,coping);
+    coursing([-221.48,25.87],[-220.39,26.52],.64,.24,skirting,coping);
+    const yard=[[-223.57,26.41],[-222.62,26.90],[-221.70,27.62],[-220.60,28.12],[-220.06,28.98]];
+    for(let i=0;i+1<yard.length;i++){
+      const a=yard[i],b=yard[i+1];
+      const dx=b[0]-a[0],dz=b[1]-a[1],run=Math.hypot(dx,dz);
+      for(const shift of [-.24,.24]){
+        const offset=([x,z])=>[x-dz/run*shift,z+dx/run*shift];
+        coursing(offset(a),offset(b),.053,.44,stones);
+      }
+    }
+    const a=[-220.30,26.75],b=[-219.29,30.39],width=1.14;
+    const dx=b[0]-a[0],dz=b[1]-a[1],run=Math.hypot(dx,dz);
+    function roof(u,v,rise=0) {
+      const across=(v-.50)*width;
+      return V(a[0]+u*dx-dz/run*across,LAND_Y+2.20-.33*v+rise,a[1]+u*dz+dx/run*across);
+    }
+    for(const u of [.05,.52,.92]){
+      const e=roof(u,.84),y=grade(e.x,e.z,.10);
+      if(y===null) continue;
+      coping.box(.21,.15,.21,e.x,y+.07,e.z);
+      timber.beam(V(e.x,y+.13,e.z),e.clone().add(V(0,-.07,0)),.103);
+    }
+    for(const side of [.10,.83])
+      timber.beam(roof(.018,side,-.076),roof(.974,side,-.076),.081);
+    const count=Math.ceil(run/.20);
+    for(let i=0;i<count;i++){
+      const a=i/count,b=(i+1)/count;
+      for(const [near,far] of [[.01,.50],[.498,.99]]){
+        const [p,q,r,t]=[roof(a,near),roof(b,near),roof(a,far),roof(b,far)];
+        const rib=roof((a+b)*.5,(near+far)*.5,.069);
+        for(const k of [p,r,rib,p,rib,q,q,rib,t,t,rib,r])tiles.push(...k.toArray());
+      }
+    }
+    coursing([-221.00,27.03],[-220.11,28.60],.063,.97,stones);
+    coursing([-220.11,28.60],[-219.52,30.13],.063,1.04,stones);
+    const group='汉阳滨水街巷 · 茶棚后院转江巷';
+    for(const [acc,name,material,ink] of [
+      [skirting,'汉阳接水院顺巷旧砖墙','Masonry',inkMat(.36,false,['#746f61','#b1a895'])],
+      [coping,'汉阳茶棚后院斜灰石压顶','ShoreStone',inkMat(.29,false,['#5e6b62','#949991'])],
+      [stones,'汉阳茶棚侧巷连续落脚石','BankStone',inkMat(.33,false,['#828372','#a6a18c'])],
+      [timber,'汉阳晒院后门与浅檐木作','BoatLoad',inkMat(.29,false,['#5f5145','#9b876f'])],
+    ]) {
+      if (!acc.l.length) continue;
+      const mesh=acc.mesh(ink,false);
+      mesh.name=name;
+      mesh.userData.landscapeSurface={group,name,material};
+      mesh.userData.detailSize=1.24;
+      scene.add(mesh);
+    }
+    const geometry=new THREE.BufferGeometry();
+    geometry.setAttribute('position',new THREE.Float32BufferAttribute(tiles,3));
+    geometry.computeVertexNormals();
+    const roofMesh=new THREE.Mesh(geometry,inkMat(.31,true,['#53675c','#899187']));
+    roofMesh.name='汉阳茶屋侧墙转角青瓦短檐';
+    roofMesh.userData.landscapeSurface={group,name:roofMesh.name,material:'Masonry'};
+    roofMesh.userData.detailSize=1.24;
+    scene.add(roofMesh);
   }
 
   function buildHanyangTeaStreetApartments(lots) {
@@ -3300,6 +3436,7 @@
     }
     cityGround.occupied = (x, z, radius) => occupied(x, z, radius);
     buildRiverfrontAlleys(lots);
+    tieHanyangTeaLane();
     dressRiverfrontGround(lots);
     dressNeighborhoodCourts(lots);
     buildBridgeQuarterDetails(lots);
