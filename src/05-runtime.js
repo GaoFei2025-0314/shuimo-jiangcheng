@@ -63,12 +63,26 @@
   const cardTitle = document.getElementById('cardTitle'), cardText = document.getElementById('cardText'), card = document.getElementById('card');
   const buttons = Array.from(document.querySelectorAll('#nav button'));
   let activeView = 'core', cameraMode = 'preset', flight = null, flightStart=0;
-  // Nameplate centers are in the same local axes as the baked Blender meshes.
+  // Close-up camera targets use the local axes of the baked Blender meshes.
   const bridgeInscriptions = {
     bridge: { model: bridge, at: V(11.98,10.19,-82), front: V(1,.20,.10), width: 7.4, distance: 13, plate: 'bridge-name' },
     yingwuzhou: { model: yingwuzhou, at: V(0,34.25,1.09), front: V(.12,.07,1), width: 17, distance: 23, plate: 'yingwuzhou-detail' }
   };
-  let readingBridgeName = false;
+  const bridgeCraft = {
+    bridge: {
+      model: bridge, at: V(5.90,12.57,49.80435), front: V(-1,.19,.19), width: 2.9, distance: 3.35,
+      plate: 'bridge-craft', label: '铸铁栏花',
+      caption: '荷叶旁，一尾鲤鱼游过铸铁栏板。沿桥再走几步，还能找到花枝上的喜鹊和梅枝下的小鹿。'
+    },
+    yingwuzhou: {
+      model: yingwuzhou, at: V(7.40,10.6,34), front: V(.66,.28,-.70), width: 11.8, distance: 11,
+      // Leave the full drop from cable clamp to girder above the desktop navigation.
+      landscape: { at: V(7.40,9.9,34), front: V(1,.54,-.35), distance: 16.5 },
+      plate: 'yingwuzhou-craft', label: '主缆与吊杆',
+      caption: '沿着橙红色主缆找到索夹，顺成对的吊杆向下看，杆脚的锚套和耳板扣在桥面外侧的边梁上。'
+    }
+  };
+  let bridgeCloseView = 'whole';
   let layoutDirty = true, safeRect = null, uiBlocks = [], layoutSignature = '', markFarScale = 1;
   const walkSelect=document.getElementById('walk-view');
   const layout = createMapLayout(() => { layoutDirty = true; }, leaveWalk);
@@ -93,12 +107,14 @@
   viewBounds.core = [viewBounds.tower, viewBounds.qc, viewBounds.tv, ...bridgeBounds];
   const isFramed = key => layout.compact || (key !== 'home' && key !== 'lake');
   function viewFor(key) {
-    const inscription = readingBridgeName && activeView === key && bridgeInscriptions[key];
-    if (inscription) {
-      const target = inscription.model.localToWorld(inscription.at.clone());
-      const front = inscription.front.clone().applyQuaternion(inscription.model.quaternion).normalize();
+    const close = activeView === key && (bridgeCloseView === 'name' ? bridgeInscriptions[key]
+      : bridgeCloseView === 'craft' && bridgeCraft[key]);
+    if (close) {
+      const pose = (!layout.compact && W >= H && close.landscape) || close;
+      const target = close.model.localToWorld(pose.at.clone());
+      const front = pose.front.clone().applyQuaternion(close.model.quaternion).normalize();
       const halfFov = THREE.MathUtils.degToRad(camera.fov / 2);
-      const distance = Math.max(inscription.distance, inscription.width * H / (2 * W * Math.tan(halfFov)));
+      const distance = Math.max(pose.distance, close.width * H / (2 * W * Math.tan(halfFov)));
       return { target, pos: target.clone().addScaledVector(front, distance) };
     }
     // 竖屏沿龟蛇两山的轴线取景，让地标前后展开。
@@ -193,7 +209,8 @@
     if (walkSelect.hidden) return;
     walkSelect.hidden=true;
     cameraMode=walkReturn.mode;
-    readingBridgeName=walkReturn.readName;
+    bridgeCloseView=walkReturn.bridgeCloseView;
+    layout.setBridgeDetail(bridgeCloseView === 'craft');
     controls.maxPolarAngle=Math.PI*.47;
     controls.minDistance=walkReturn.minDistance;
     controls.maxDistance=walkReturn.maxDistance;
@@ -208,11 +225,12 @@
   function visitWalk(key) {
     if (!Object.hasOwn(walkViews,key)) return false;
     if (walkSelect.hidden) walkReturn={
-      mode:cameraMode, readName:readingBridgeName, minDistance:controls.minDistance, maxDistance:controls.maxDistance,
+      mode:cameraMode, bridgeCloseView, minDistance:controls.minDistance, maxDistance:controls.maxDistance,
       pos:camera.position.clone(), target:controls.target.clone()
     };
     stopFlight();
-    readingBridgeName=false; cameraMode='manual';
+    bridgeCloseView='whole'; cameraMode='manual';
+    layout.setBridgeDetail(false);
     controls.maxPolarAngle=Math.PI*.55;
     controls.minDistance=22;
     controls.enableDamping=false;
@@ -240,19 +258,21 @@
   }
   window.addEventListener('hashchange',restoreWalkFromHash);
   app.cleanups.push(()=>window.removeEventListener('hashchange',restoreWalkFromHash));
-  function flyTo(key, readName = false) {
+  function flyTo(key, mode = 'whole') {
     if (app.state !== 'ready' || !VIEWS[key]) return;
     if (!walkSelect.hidden) layout.setPainting(false);
     stopFlight();
     // 消除上一次手势的惯性，防止它与新镜头竞争。
     controls.enableDamping = false; controls.update(); controls.enableDamping = !reduce;
-    readingBridgeName = readName && Boolean(bridgeInscriptions[key]);
-    controls.minDistance = readingBridgeName ? 6 : 22;
+    bridgeCloseView = bridgeInscriptions[key] && (mode === 'name' || mode === 'craft') ? mode : 'whole';
+    layout.setBridgeDetail(bridgeCloseView === 'craft');
+    controls.minDistance = bridgeCloseView === 'craft' ? 2 : bridgeCloseView === 'name' ? 6 : 22;
     activeView = key; cameraMode = 'preset';
     const navKey = ['chutian','xingyin'].includes(key) ? 'lake' : key;
     buttons.forEach(b => b.setAttribute('aria-pressed', String(b.dataset.view === navKey)));
     cardTitle.textContent = COPY[key][0];
-    cardText.textContent = readingBridgeName && key === 'bridge'
+    cardText.textContent = bridgeCloseView === 'craft' ? bridgeCraft[key].caption
+      : bridgeCloseView === 'name' && key === 'bridge'
       ? '桥头堡拱窗上方的六字铭牌为本图游览增设。沿青绿色桁梁望去，上层是公路，下层是双线铁路。'
       : COPY[key][1];
     refreshLayout(false);
@@ -270,13 +290,18 @@
     if (COPY[atlasView(key)]) atlasSite.add(new Option(COPY[atlasView(key)][0], key));
   }
   const nameButton = document.getElementById('atlas-name'), locateButton = document.getElementById('atlas-locate');
+  const craftButton = document.getElementById('atlas-craft');
   let plateMode = 'whole';
   function showPlate(mode = 'whole') {
     const key = atlasSite.value, detail = details[key], inscription = bridgeInscriptions[key];
     plateMode = mode;
     const detailView = mode === 'detail', nameView = mode === 'name';
-    const plateKey = nameView ? inscription.plate : detailView ? detail[0] : key;
-    atlasPlate.alt = COPY[atlasView(key)][0] + ' · ' + (nameView ? '桥名题字' : detailView ? detail[1].slice(1) : '建筑全貌');
+    const craft = bridgeCraft[key], craftView = mode === 'craft';
+    const plateKey = craftView ? craft.plate : nameView ? inscription.plate : detailView ? detail[0] : key;
+    craftButton.hidden = !craft;
+    craftButton.textContent = craftView ? '看全貌' : craft ? '看'+craft.label : '';
+    craftButton.setAttribute('aria-pressed', String(craftView));
+    atlasPlate.alt = COPY[atlasView(key)][0] + ' · ' + (craftView ? craft.label : nameView ? '桥名题字' : detailView ? detail[1].slice(1) : '建筑全貌');
     atlasPlate.src = 'data:image/jpeg;base64,' + LANDMARK_PLATES[plateKey];
     detailButton.hidden = !detail;
     detailButton.textContent = detailView ? '看全貌' : detail ? detail[1] : '';
@@ -285,18 +310,19 @@
     nameButton.hidden = !inscription;
     nameButton.textContent = nameView ? '看全貌' : '看桥名';
     nameButton.setAttribute('aria-pressed', String(nameView));
-    locateButton.textContent = nameView ? '在地图中看桥名' : '在地图中查看';
+    locateButton.textContent = craftView ? '在地图中看构件' : nameView ? '在地图中看桥名' : '在地图中查看';
   }
   atlasTrigger.addEventListener('click', () => {
     atlasSite.value = activeView === 'xingyin' ? 'lake' : LANDMARK_PLATES[activeView] ? activeView : 'tower';
-    showPlate(readingBridgeName ? 'name' : 'whole');
+    showPlate(bridgeCloseView);
     atlas.showModal();
   });
   atlasSite.addEventListener('change', () => showPlate());
   detailButton.addEventListener('click', () => showPlate(plateMode === 'detail' ? 'whole' : 'detail'));
+  craftButton.addEventListener('click', () => showPlate(plateMode === 'craft' ? 'whole' : 'craft'));
   nameButton.addEventListener('click', () => showPlate(plateMode === 'name' ? 'whole' : 'name'));
   document.getElementById('atlas-close').addEventListener('click', () => atlas.close());
-  locateButton.addEventListener('click', () => { atlas.close(); flyTo(atlasView(atlasSite.value), plateMode === 'name'); });
+  locateButton.addEventListener('click', () => { atlas.close(); flyTo(atlasView(atlasSite.value), plateMode); });
   document.getElementById('atlas-walk').addEventListener('click',()=>{
     atlas.close();
     visitWalk('hy-in');
@@ -310,7 +336,10 @@
     if (event.clientX < rect.left || event.clientX > rect.right || event.clientY < rect.top || event.clientY > rect.bottom) atlas.close();
   } });
   app.cleanups.push(() => { if (atlas.open) atlas.close(); });
-  controls.addEventListener('start', () => { stopFlight(); cameraMode = 'manual'; readingBridgeName = false; });
+  controls.addEventListener('start', () => {
+    stopFlight(); cameraMode = 'manual';
+    if (bridgeCloseView === 'name') bridgeCloseView = 'whole';
+  });
   motionPreference.addEventListener('change', event => {
     reduce = event.matches;
     sceneDirty = true;
@@ -699,6 +728,11 @@
     camU.uCam.value.copy(camera.position);
 
     const dist = camera.position.distanceTo(controls.target);
+    if (bridgeCloseView === 'craft' && cameraMode === 'manual' && dist > 50) {
+      bridgeCloseView = 'whole';
+      layout.setBridgeDetail(false);
+      cardText.textContent = COPY[activeView][1];
+    }
     // A high aerial view needs enough depth precision to separate the water and low banks.
     // Limit the near plane by both height and viewing distance when descending or zooming in.
     const clipNear = THREE.MathUtils.clamp(.01 * Math.min(camera.position.y - floorY, dist), .5, 12);

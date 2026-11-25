@@ -95,6 +95,64 @@ test('each atlas plate opens for its own model, with two architectural detail vi
   await expect(page.locator('#atlas-open')).toBeFocused();
 });
 
+test('both bridge craft plates locate their modelled joints in desktop and portrait views', async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await ready(page);
+  const dialog = page.getByRole('dialog', { name: '建筑图录' });
+  const bridges = [
+    { key: 'bridge', label: '铸铁栏花', at: [5.90, 12.57, 49.80435] },
+    { key: 'yingwuzhou', label: '主缆与吊杆', at: [7.40, 10.6, 34] }
+  ];
+  for (const { key, label, at } of bridges) {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.locator('#b-'+key).click();
+    await page.locator('#atlas-open').click();
+    await dialog.getByRole('button', { name: '看'+label }).click();
+    await expect(dialog.getByRole('img')).toHaveAttribute('alt', new RegExp(label+'$'));
+    expect(await dialog.getByRole('img').evaluate(async img => {
+      await img.decode();
+      return img.naturalWidth;
+    })).toBeGreaterThanOrEqual(1000);
+    await dialog.getByRole('button', { name: '看桥名' }).click();
+    await expect(dialog.getByRole('img')).toHaveAttribute('alt', /桥名题字$/);
+    await dialog.getByRole('button', { name: '看'+label }).click();
+    await dialog.getByRole('button', { name: '在地图中看构件' }).click();
+    await expect(page.locator('#labels')).toBeHidden();
+    await expect(page.locator('#poem')).toBeHidden();
+    for (const viewport of [{ width: 1440, height: 900 }, { width: 390, height: 844 }]) {
+      await page.setViewportSize(viewport);
+      const pose = await page.evaluate(async ({key, at}) => {
+        await new Promise(done => requestAnimationFrame(() => requestAnimationFrame(done)));
+        const model = window.__testScene.children.find(o => o.userData.modelKey === key);
+        const target = model.localToWorld(new THREE.Vector3(...at));
+        const distance = target.distanceTo(window.__testControls.target);
+        const camera = window.__testCamera;
+        const ndc = target.project(camera);
+        // The middle pair in this main span runs from the clamp to the edge-girder plate.
+        const ends = key === 'yingwuzhou' ? [[7.34, 11.4, 35.75], [7.69, 7.50, 35.75]] : [at];
+        const blocks = ['#title', '#poem', '#dock'].map(id => document.querySelector(id).getBoundingClientRect());
+        const clear = ends.every(point => {
+          const screen = model.localToWorld(new THREE.Vector3(...point)).project(camera);
+          const x = (1+screen.x)*innerWidth/2, y = (1-screen.y)*innerHeight/2;
+          return Math.abs(screen.x)<1 && Math.abs(screen.y)<1 &&
+            blocks.every(rect => x<rect.left || x>rect.right || y<rect.top || y>rect.bottom);
+        });
+        return { distance, visible: Math.abs(ndc.z)<1 && clear };
+      }, { key, at: key === 'yingwuzhou' && viewport.width > viewport.height ? [7.40, 9.9, 34] : at });
+      expect(pose.distance).toBeLessThan(.01);
+      expect(pose.visible).toBe(true);
+    }
+    await page.locator('#atlas-open').click();
+    await expect(dialog.locator('#atlas-craft')).toHaveAttribute('aria-pressed', 'true');
+    await page.keyboard.press('Escape');
+    await page.locator('#b-'+key).click();
+    await page.locator('#atlas-open').click();
+    await expect(dialog.getByRole('img')).toHaveAttribute('alt', /建筑全貌$/);
+    await expect(page.locator('#labels')).toBeVisible();
+    await page.keyboard.press('Escape');
+  }
+});
+
 test('both inscribed bridge names are legible in the atlas and on the physical models', async ({ page }) => {
   await page.emulateMedia({ reducedMotion: 'reduce' });
   await ready(page);
