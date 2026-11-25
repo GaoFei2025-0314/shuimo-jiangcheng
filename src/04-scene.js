@@ -597,10 +597,11 @@
   }
   const walkJointInk=inkMat(.49,false,['#827866','#b4ab91']);
   const walkEdgeInk=inkMat(.41,false,['#a49b84','#c8b99a']);
+  const insetStoneInk=inkMat(.38,false,['#797e70','#b6b09b']);
   const walkSlabInk=inkMat(.51,false,['#aaa28a','#c9c2a8']);
 
   // Tooling follows the sampled walking surface so the joints sit exactly on the laid stone.
-  function layWalkDetails(group,name,rows,active = null,small=false) {
+  function layWalkDetails(group,name,rows,active = null,small=false,inset=false) {
     const joints=[], edge=[], slabs=[];
     const point=(i,t,u,lift)=>{
       const side=u<0 ? 0 : 2, a=rows[i], b=rows[i+1];
@@ -610,7 +611,8 @@
       return p;
     };
     function panel(batch,i,[t0,t1],[u0,u1],lift) {
-      const p=point(i,t0,u0,lift), q=point(i,t1,u0,lift), r=point(i,t0,u1,lift), t=point(i,t1,u1,lift);
+      const [h0,h1]=Array.isArray(lift)?lift:[lift,lift];
+      const p=point(i,t0,u0,h0), q=point(i,t1,u0,h0), r=point(i,t0,u1,h1), t=point(i,t1,u1,h1);
       if (triangleOnLand(p,q,r)) batch.push(...p,...q,...r);
       if (triangleOnLand(r,q,t)) batch.push(...r,...q,...t);
     }
@@ -630,13 +632,22 @@
         if (j>0 && (i+j)%3!==0)
           panel(joints,i,[.025,.96],[u0-.014/width,u0+.014/width],.016);
       }
-      if ((i%5)!==3 || small) {
+      if (inset) {
+        // A few long exposed stones remain where the edge has not sunk back into the soil.
+        for (const side of [-1,1]) {
+          if ((i*2+side+10)%5<2) continue;
+          const inner=.89+.031*Math.sin(i*1.71+side), outer=.995;
+          const u=side<0 ? [-outer,-inner] : [inner,outer];
+          const heights=side<0 ? [.002,.014] : [.014,.002];
+          panel(edge,i,[.05+(i%3)*.021,.94-(i%4)*.026],u,heights);
+        }
+      } else if ((i%5)!==3 || small) {
         panel(edge,i,[.04,.96],[-.985,-.83],.011);
         panel(edge,i,[.06,.93],[.83,.985],.012);
       }
     }
     for (const [label,material,ink,positions] of [
-      ['石缝','ShoreStone',walkJointInk,joints],['镶边','BankStone',walkEdgeInk,edge],['错缝铺石','Masonry',walkSlabInk,slabs],
+      ['石缝','ShoreStone',walkJointInk,joints],['镶边','BankStone',inset?insetStoneInk:walkEdgeInk,edge],['错缝铺石','Masonry',walkSlabInk,slabs],
     ]) {
       if (!positions.length) continue;
       const geo=new THREE.BufferGeometry();
@@ -774,10 +785,10 @@
       }
       if (!target || nearest>8) return;
       paveAlley(group,name,[start,lip,target],12,t =>
-        THREE.MathUtils.lerp(half,.47,THREE.MathUtils.smoothstep(t,.25,1)));
+        THREE.MathUtils.lerp(half,.47,THREE.MathUtils.smoothstep(t,.25,1)),{inset:true});
     }
     function paveAlley(group,name,controls,count,halfWidth,{
-      material='Path', liftAt=t=>THREE.MathUtils.lerp(.092,.071,t), routeName,
+      material='Path', liftAt=t=>THREE.MathUtils.lerp(.092,.071,t), routeName, inset=false,
     } = {}) {
       const curve=new THREE.CatmullRomCurve3(controls.map(p=>p.clone().setY(0)));
       const points=curve.getSpacedPoints(count), vertices=[], indices=[], sections=[];
@@ -806,13 +817,13 @@
       geometry.setIndex(indices); geometry.computeVertexNormals();
       const ink=riverfrontPavingInk(material==='BankStone' ? M.bankStone : M.bankPath);
       add(group,name,material,new THREE.Mesh(geometry,ink));
-      layWalkDetails(group,name,sections,null,true);
+      layWalkDetails(group,name,sections,null,true,inset);
     }
     const dripTile=new THREE.CylinderGeometry(.50,.45,1,7,1,false,Math.PI*.5,Math.PI).rotateX(Math.PI*.5);
     const closeTilePalette=[
-      ['Slate',.15,['#293731','#7a8579']],
-      ['ShoreStone',.13,['#35423c','#858e7f']],
-      ['BankStone',.09,['#38463d','#8d9181']],
+      ['Slate',.15,['#3a443d','#7c877b']],
+      ['ShoreStone',.15,['#414b43','#80897b']],
+      ['BankStone',.14,['#464d45','#848b7b']],
     ].map(([key,tone,tint])=>{
       const ink=inkMat(tone,false,tint);
       // Stipple into the baked roof over the mid range without changing depth order.
@@ -827,8 +838,8 @@
       `);
       ink.fragmentShader=ink.fragmentShader.replace('vec3 col = mix(uInk, uPaper, tone);',`
         vec3 col = mix(uInk, uPaper, tone);
-        float clayGrain = (vnoise(vW.xz * 16.) - .5) * .085;
-        float clayWear = (vnoise(vW.xz * 3.6) - .5) * .095;
+        float clayGrain = (vnoise(vW.xz * 16.) - .5) * .105;
+        float clayWear = (vnoise(vW.xz * 3.6) - .5) * .115;
         col *= 1. + (clayGrain + clayWear) * (1. - smoothstep(20., 40., vD));
       `);
       return {key,ink};
@@ -845,7 +856,7 @@
           for (let i=0;i<=ribs;i++) {
             const u=i/ribs, cross=(u-.5)*width*taper;
             const v=side*(course+.008*Math.sin(Math.PI*u+seed)*t);
-            const h=roofHeight(v)+lift+arching(u)*(.93+.12*t)+.025*t*t*t;
+            const h=roofHeight(v)+lift+arching(u)*(.97+.06*t)+.011*t*t*t;
             positions.push(...point(x+cross,h,v).toArray());
           }
         }
@@ -859,8 +870,8 @@
         for (let i=0;i<=ribs;i++) {
           const v=side*(end+.008*Math.sin(Math.PI*i/ribs+seed));
           const xEdge=x+(i/ribs-.5)*width*1.056;
-          const h=roofHeight(v)+lift+arching(i/ribs)*1.05+.025;
-          positions.push(...point(xEdge,end>2.93?roofHeight(v)-.017:h-.027,v-side*.014).toArray());
+          const h=roofHeight(v)+lift+arching(i/ribs)*1.03+.011;
+          positions.push(...point(xEdge,end>2.93?roofHeight(v)-.009:h-.012,v-side*.014).toArray());
         }
         for (let i=0;i<ribs;i++) {
           const a=front+i,b=a+1,c=underside+i,d=c+1;
@@ -879,10 +890,10 @@
               Math.abs(x-feature.u)<margin+(feature.kind==='dormer'?.62:feature.kind==='chimney'?.31:.19) &&
               Math.abs((start+end)*.5-Math.abs(feature.v))<(feature.kind==='dormer'?.63:.32));
             const cover=layers[Math.sin(key)>.54?2:1];
-            if (clear(u,.074)) tile(cover,u,start,end,side,.151,.043,
-              t=>.077*Math.sin(Math.PI*t),key);
-            if (run<10 && clear(u+pitch*.5,.13)) tile(layers[0],u+pitch*.5,start-.005,end,side,.261,.019,
-              t=>.033*(2*t-1)**2,key);
+            if (clear(u,.074)) tile(cover,u,start,end,side,.163,.025,
+              t=>.042*Math.sin(Math.PI*t),key);
+            if (run<10 && clear(u+pitch*.5,.13)) tile(layers[0],u+pitch*.5,start-.005,end,side,.264,.014,
+              t=>.018*(2*t-1)**2,key);
           }
         }
       }
@@ -1640,16 +1651,18 @@
             roof(u,.91).add(V(0,.011,0))],.025);
         }
         details.box('Ink',point(-1.831,.073,1.815),1.72,.11,.147,yaw);
+        // Keep the timber bearing behind the drip and below the underside of the roofing.
+        const bearing=depth-.167;
         for (const side of [-1.038,-2.59]) {
-          const post=point(side,depth-.107,0);
+          const post=point(side,bearing,0);
         closeContact(post,yaw,.161,.168,undefined,.096);
           details.box('ShoreStone',post.clone().add(V(0,.075,0)),.143,.150,.155,yaw);
           cane(details,'BoatAccent',[post.clone().add(V(0,.113,0)),post.clone().add(V(0,1.27,0)),
-            point(side,depth-.107,1.64)],.047);
-          cane(details,'BoatAccent',[point(side,depth-.107,1.28),point(side,depth*.70,1.52),
-            point(side,depth*.46,1.68)],.027);
+            point(side,bearing,1.566)],.047);
+          cane(details,'BoatAccent',[point(side,bearing,1.28),point(side,depth*.70,1.493),
+            point(side,depth*.46,1.642)],.027);
         }
-        details.box('BoatAccent',point(-1.82,depth-.08,1.631),1.76,.081,.108,yaw);
+        details.box('BoatAccent',point(-1.82,bearing,1.565),1.73,.075,.112,yaw);
         const bed=depth*.53;
         details.box('ShoreStone',point(-1.82,bed,.035),1.63,.119,depth*.98,yaw);
         for (const [i,x] of [-2.33,-1.82,-1.31].entries()) {
@@ -1685,7 +1698,7 @@
           stoneFoot(pads,front,[[-2.63,-.96,.039]]);
           pads.box('BankStone',point(-2.10,.66,.099),.51,.041,.49,yaw);
           pads.box('Masonry',point(-2.10,.66,.049),.47,.071,.45,yaw);
-          for (const u of [-1.038,-2.59]) pads.box('Masonry',point(u,depth-.107,.027),.219,.083,.226,yaw);
+          for (const u of [-1.038,-2.59]) pads.box('Masonry',point(u,bearing,.027),.219,.083,.226,yaw);
           closeContact(point(-2.10,.66),yaw,.305,.27,undefined,.092);
           pads.show();
           // The opposite wall's return is also a seat, tied into its stone foot rather than freestanding.
@@ -1960,7 +1973,7 @@
       const {point,yaw}=middle;
       paveAlley(backGroup,'武昌公寓门前转入后巷',
         [point(0,.04),point(0,.96),V(-43.55,0,76.5),V(-45.35,0,77.15),bend],
-        18,t=>THREE.MathUtils.lerp(1.05,.52,THREE.MathUtils.smoothstep(t,.25,.87)),{routeName});
+        18,t=>THREE.MathUtils.lerp(1.05,.52,THREE.MathUtils.smoothstep(t,.25,.87)),{routeName,inset:true});
       const court=blocks(backGroup,'武昌公寓转角短院墙');
       court.box('Masonry',point(.03,.25,.065),1.90,.13,.63,yaw);
       court.box('Slate',point(.03,.61,.041),1.63,.077,.29,yaw);
@@ -2012,10 +2025,11 @@
       court.box('Slate',point(2.95,.97,.52),.31,.074,2.04,yaw);
       court.box('Masonry',point(.72,1.91,.323),.24,.647,.31,yaw);
       court.box('ShoreStone',point(.72,1.91,.665),.32,.070,.38,yaw);
-      court.box('ShoreStone',point(.71,1.91,.048),.37,.095,.43,yaw);
+      court.box('ShoreStone',point(.71,1.91,.030),.31,.082,.38,yaw);
       for (const [u,d,w,l] of [[1.8,1.91,2.24,.30],[2.95,.97,.29,2.04]]) {
         const base=point(u,d,.035);
-        court.box('Slate',base,w,.068,l,yaw);
+        court.box('ShoreStone',base,w,.059,l,yaw);
+        closeContact(base,yaw,w*.58+.06,l*.58+.06,null);
         groundContacts.push({x:base.x,z:base.z,rx:w*.59,rz:l*.59,c:Math.cos(yaw),s:Math.sin(yaw),tree:false});
       }
       const {widthScale,heightScale,base}=middle;
