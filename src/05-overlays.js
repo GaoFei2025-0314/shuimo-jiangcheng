@@ -82,6 +82,10 @@
     const coreSubjects = new Set(['tower', 'tv', 'bridge', 'qc']);
     const lakeSubjects = new Set(['chutian', 'xingyin']);
     const lakeOrder = [...MARKS].sort((a,b) => Number(lakeSubjects.has(b.key)) - Number(lakeSubjects.has(a.key)));
+    // At the river junction, keep the two crossing points legible from either bank.
+    const riverKeys = ['tower', 'bridge', 'tv', 'yingwuzhou', 'qc', 'customs'];
+    const riverOrder = [...riverKeys.map(key => MARKS.find(m => m.key === key)),
+      ...MARKS.filter(m => !riverKeys.includes(m.key))];
     function projectedRect(bounds, w, h) {
       projection.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
       const { min, max } = projectedTower.copy(bounds).applyMatrix4(projection);
@@ -95,14 +99,19 @@
       if (activeView === 'bridge' || (w < h && activeView === 'tv')) towerRect = projectedRect(tvPodium, w, h);
       if (w < h && activeView === 'core') towerRect = projectedRect(towerSilhouette, w, h);
       const focused = MARKS.find(m => m.el === document.activeElement);
-      const priority = activeView === 'lake' ? lakeOrder : MARKS;
+      const riverView = activeView === 'core';
+      const overview = activeView === 'home';
+      const priority = activeView === 'lake' ? lakeOrder : riverView ? riverOrder : MARKS;
+      const limit = riverView ? 4 : overview ? 3 : activeView === 'lake' ? 3 : 1;
       const ordered = focused ? [focused, ...priority.filter(m => m !== focused)] : priority;
       ordered.forEach(m => {
         const lakeSubject = activeView === 'lake' && lakeSubjects.has(m.key);
         const r = screenRect(m, false), d = camera.position.distanceTo(m.v), far = FAR[lakeSubject ? 1 : m.tier];
         // 远端按层级淡出，再随紧凑取景拉远的全城距离等比放宽，两级之比不变：全城视角下二级牌仍隐去
         const o = THREE.MathUtils.smoothstep(d, 90, 170) * (1 - THREE.MathUtils.smoothstep(d, far[0] * farScale, far[1] * farScale));
-        const visible = o > .35 && m.key !== activeView && r.inDepth && within(r, w, h)
+        const relevant = m === focused || ((!riverView || riverKeys.includes(m.key)) && (!overview || m.tier === 1)
+          && !(activeView === 'honglou' && m.key === 'tower'));
+        const visible = relevant && placed.length < limit && o > .35 && m.key !== activeView && r.inDepth && within(r, w, h)
           && !(towerRect && (activeView === 'core' ? m.tier > 1 && m !== focused : m.key === 'qc')
             && collides(r, towerRect))
           && ![...blocks, ...placed].some(block => collides(r, block));
@@ -117,15 +126,21 @@
       return placed;
     }
     function drawLabels(w, h, marks, blocks, activeView) {
+      const placed = [];
+      const broadView = activeView === 'home' || activeView === 'core' || activeView === 'lake';
       LABELS.forEach(L => {
         const r = screenRect(L, true), d = camera.position.distanceTo(L.v), range = RANGE[L.kind];
         const o = THREE.MathUtils.smoothstep(d, range[0] * .55, range[0]) * (1 - THREE.MathUtils.smoothstep(d, range[1], range[1] * 1.35));
-        const visible = !(activeView === 'qc' && L.el.textContent === '汉水') && o > .01 && L.width > 0 && r.inDepth && within(r, w, h)
-          && ![...marks, ...blocks].some(block => collides(r, block));
+        const visible = (L.kind !== 'town' || broadView) && (activeView !== 'home' || L.kind !== 'hill') && !(activeView === 'qc' && L.el.textContent === '汉水') && o > .01 && L.width > 0 && r.inDepth && within(r, w, h)
+          && ![...marks, ...blocks, ...placed].some(block => collides(r, block));
         L.el.style.visibility = visible ? 'visible' : 'hidden';
         L.el.style.opacity = visible ? o.toFixed(3) : '0';
-        if (visible) L.el.style.transform = `translate(-50%,-50%) translate(${r.x}px,${r.y}px)`;
+        if (visible) {
+          L.el.style.transform = `translate(-50%,-50%) translate(${r.x}px,${r.y}px)`;
+          placed.push(r);
+        }
       });
+      return placed;
     }
 
     /* 罗盘与比例尺 */
@@ -170,8 +185,14 @@
           });
           sizesDirty = false;
         }
-        const marks = drawMarks(w, h, activeView, blocks, farScale);
-        drawLabels(w, h, marks, blocks, activeView); drawTools(h);
+        if (activeView === 'home') {
+          const geography = drawLabels(w, h, [], blocks, activeView);
+          drawMarks(w, h, activeView, [...blocks, ...geography], farScale);
+        } else {
+          const marks = drawMarks(w, h, activeView, blocks, farScale);
+          drawLabels(w, h, marks, blocks, activeView);
+        }
+        drawTools(h);
         lastView = activeView; lastFocus = focus;
         lastWorld.copy(camera.matrixWorld); lastProjection.copy(camera.projectionMatrix);
         dirty = false;

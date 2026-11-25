@@ -23,7 +23,7 @@
     hongshan:   orbit(AT.hongshan, terrainTop(AT.hongshan.x, AT.hongshan.z) + 11, 125, 18, 18),
     watertower: orbit(AT.watertower, 12, 95, 38, 15),
     museum:     orbit(AT.museum, 6, 150, 146, 20),
-    honglou:    orbit(AT.honglou, terrainTop(AT.honglou.x, AT.honglou.z) + 7, 120, 17, 26),
+    honglou:    orbit(AT.honglou, terrainTop(AT.honglou.x, AT.honglou.z) + 7, 120, 34, 19),
     yingwuzhou: orbit(AT.yingwuzhou, 14, 300, -24, 11),
     guiyuan:    orbit(AT.guiyuan, 5, 135, 18, 22),
     qintai:     orbit(AT.qintai, 4, 110, 25, 23)
@@ -99,16 +99,18 @@
     if (landscapeBridge) base = orbit(AT.bridge, 6.2, 174, 140, 10);
     if (portraitBridge) base = orbit(AT.bridge, 6.2, 174, -100, 11);
     if (!isFramed(key)) return base;
-    const redChamberContext = key === 'honglou' && !layout.compact;
-    const bounds = key === 'tower' ? [viewBounds.tower, ...towerPark.assetBounds] : key === 'bridge' ? bridgeBounds :
-      redChamberContext ? [viewBounds.honglou, viewBounds.tower] : viewBounds[key];
+    const bounds = key === 'tower' ? [viewBounds.tower, ...towerPark.assetBounds] : key === 'bridge' ? bridgeBounds : viewBounds[key];
     let fill = .8;
     if (portraitLake) fill = .96;
-    if (redChamberContext) fill = 1;
+    if (key === 'honglou' && !layout.compact) fill = .68;
     if (key === 'qc') fill = layout.compact ? .97 : 1.13;
     if (key === 'museum' || key === 'tower' || (key === 'bridge' && !layout.compact)) fill = .97;
     if (layout.compact && (key === 'home' || key === 'bridge')) fill = portraitBridge ? .99 : .92;
     const view = fittedView(base, bounds, safeRect, W, H, camera.fov, fill);
+    if (key === 'honglou' && !layout.compact) {
+      view.pos.y += 1.8;
+      view.target.y += 1.8;
+    }
     if (landscapeBridge) {
       // Frame the truss against the river, with Yellow Crane Tower at the left bank.
       const back = view.pos.clone().sub(view.target).normalize();
@@ -414,8 +416,14 @@
       camera.near = clipNear;
       camera.updateProjectionMatrix();
     }
-    const near = Math.max(55, dist * .45);
-    fogU.uNear.value = near; fogU.uFar.value = near + Math.max(420, dist * 2.3);
+    // The ridge is close behind the Red Chamber. Keep the brick facade clear and wash the farther slope.
+    const atRedChamber = 1 - THREE.MathUtils.smoothstep(Math.hypot(
+      controls.target.x-honglou.position.x, controls.target.z-honglou.position.z), 10, 32);
+    const courtyard = atRedChamber * (1-THREE.MathUtils.smoothstep(dist, 120, 220));
+    const cityNear = Math.max(55, dist * .45);
+    const near = THREE.MathUtils.lerp(cityNear, dist * .88, courtyard);
+    fogU.uNear.value = near;
+    fogU.uFar.value = THREE.MathUtils.lerp(cityNear + Math.max(420, dist * 2.3), dist + 77, courtyard);
     scene.fog.near = near; scene.fog.far = fogU.uFar.value;
 
     controls.update();

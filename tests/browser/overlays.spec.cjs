@@ -107,3 +107,22 @@ test('second-tier landmarks stay out of the city view and appear on approach', a
   await expect.poll(async () => (await shown()).some(n => tier2.includes(n))).toBe(true);
   await expect.poll(() => collisions(page)).toEqual([]);
 });
+
+test('river inscriptions stay sparse and Red Chamber owns its close view', async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await ready(page);
+  await expect(page.locator('.mark:visible').first()).toBeVisible();
+  expect(await page.locator('.mark:visible').count()).toBeLessThanOrEqual(4);
+  await page.locator('#b-honglou').click();
+  const span = await page.evaluate(() => {
+    const house = window.__testScene.children.find(node => node.userData.modelKey === 'honglou');
+    const box = new THREE.Box3().setFromObject(house), xs = [];
+    for (const x of [box.min.x, box.max.x]) for (const y of [box.min.y, box.max.y]) for (const z of [box.min.z, box.max.z]) {
+      xs.push(new THREE.Vector3(x,y,z).project(window.__testCamera).x);
+    }
+    return (Math.max(...xs) - Math.min(...xs)) / 2;
+  });
+  expect(span).toBeGreaterThan(.26);
+  expect(span).toBeLessThan(.75);
+  await expect(page.getByRole('button', { name:'移至黄鹤楼', exact:true })).toBeHidden();
+});
