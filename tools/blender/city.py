@@ -127,7 +127,8 @@ def imported_mesh(item, mat, dest, parent=None):
     else:
         obj.parent = parent
         obj.matrix_basis = placement(item["matrix"])
-    if item["material"] in ("Streets", "ApproachPaving", "RoadPaint") or item["group"] in (
+    waterfront_paving = item["name"].endswith(("两桥滨水步道", "桥头接岸步道", "滨水通街支巷"))
+    if waterfront_paving or item["material"] in ("Streets", "ApproachPaving", "RoadPaint") or item["group"] in (
             "汉阳桥头街坊", "武昌桥头街坊", "汉阳两桥街道", "武昌两桥街道"):
         # Thin paving ribbons meet at intersections; their pigment casts no extra shadow.
         obj.visible_shadow = False
@@ -607,6 +608,25 @@ def bridgehead_views(scene, camera_group, landmark_roots):
     return views
 
 
+def waterfront_views(scene, camera_group):
+    """From either bank, follow the waterfront towards each bridge."""
+    views = []
+    for name, filename, eye, target, lens in (
+            ("汉阳江岸 · 望武汉长江大桥", "hanyang-wuhan", (-184,-23,6.1), (-137,59,1.5), 26),
+            ("汉阳江岸 · 望鹦鹉洲长江大桥", "hanyang-yingwuzhou", (-183,-32,5.6), (-191,-109,3), 23),
+            ("武昌江岸 · 望武汉长江大桥", "wuchang-wuhan", (-85,-45,5.9), (-81,23,2), 25),
+            ("武昌江岸 · 望鹦鹉洲长江大桥", "wuchang-yingwuzhou", (-88,-65,6.4), (-120,-139,4), 24)):
+        data = bpy.data.cameras.new(name)
+        data.lens = lens
+        data.clip_end = scene.camera.data.clip_end
+        camera = bpy.data.objects.new(name, data)
+        camera_group.objects.link(camera)
+        camera.location = eye
+        camera.rotation_euler = (Vector(target) - camera.location).to_track_quat('-Z', 'Y').to_euler()
+        views.append((camera, f"waterfront-{filename}.png"))
+    return views
+
+
 def park_view(scene, park_roots, tower_root, camera_group):
     parts = [part for root in [tower_root, *park_roots] for part in root.children if part.type == 'MESH']
     corners = [part.matrix_world @ Vector(point) for part in parts for point in part.bound_box]
@@ -772,6 +792,7 @@ def build():
             camera, corners = park_view(scene, park_roots, landmark_roots["tower"], group("镜头与光"))
             export_park(scene, camera, corners)
         detail_views = bridgehead_views(scene, group("镜头与光"), landmark_roots)
+        detail_views.extend(waterfront_views(scene, group("镜头与光")))
         if capture.get("wakes"):
             camera = freight_view(scene, capture["wakes"][0], group("镜头与光"))
             detail_views.append((camera, "river-freighter.png"))
