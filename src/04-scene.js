@@ -504,7 +504,38 @@
   buildLakeGreenway();
 
   // The planting pass queries the completed street grid and building footprints.
-  const cityGround = { occupied: () => false, streets: [], verges: [], bridgeGardens: [] };
+  const cityGround = { occupied: () => false, streets: [], verges: [], bridgeGardens: [], riverfrontPaths: [] };
+
+  // Loose groups behind the river walks keep the low shore open between both bridges.
+  const riverfrontBlocks = [
+    {
+      yaw:1.82,
+      openings:[[-203.6,54.5,7,5.4],[-197.6,40.1,12,9.5],[-189.1,23.6,8,6]],
+      homes:[[-203,21],[-218,29],[-227,27],[-222,45],[-226,55],[-218,63],[-207,65],[-222,72]],
+      groves:[
+        { species:'willow', positions:[[-191,19],[-196,18],[-202,19],[-203,23]] },
+        { species:'broadleaf', positions:[[-212,31],[-219,32],[-227,32],[-226,40]] },
+        { species:'willow', positions:[[-205,55],[-209,57],[-216,56],[-209,62],[-215,65]] },
+      ],
+    },
+    {
+      yaw:-1.80,
+      openings:[[-89.1,112.8,8.5,6],[-87,92.3,12,10.5],[-81.7,61.2,9,8.5],
+        [-81.4,39.9,2.5,6.5],[-92.45,124.3,1.1,1.2]],
+      homes:[[-71,46],[-65,54],[-76,63],[-65,67],[-73,76],[-56,85],[-72,96],[-61,107],[-69,118],[-80,131],[-66,25,'lane']],
+      groves:[
+        { species:'willow', positions:[[-80,49],[-78,52],[-74,52],[-72,55]] },
+        { species:'broadleaf', positions:[[-69.1,38.2],[-70.75,36.25],[-67.75,40]] },
+        { species:'broadleaf', positions:[[-82,71],[-83,75],[-79,77],[-74,78]] },
+        { species:'willow', positions:[[-86,105],[-81,105],[-77,107],[-78,114]] },
+        { species:'broadleaf', positions:[[-85,125],[-81.3,127.4],[-81.1,132],[-79,127]] },
+      ],
+    },
+  ];
+  function riverfrontOpening(x,z,margin = 0) {
+    return riverfrontBlocks.some(({openings}) => openings.some(([cx,cz,hx,hz]) =>
+      ((x-cx)/(hx+margin))**2 + ((z-cz)/(hz+margin))**2 < 1));
+  }
 
   /* ═════════ 九、三镇市廛 ═════════ */
   // 以街坊为单位，里分顺巷成排、临江商埠与厂房成带，现代楼群在内街起伏。
@@ -516,6 +547,7 @@
     const cells = new Map(), cellSize = 14;
     const streetsMesh = new Acc(), streetSurface = new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2);
     const plannedStreets = [], routeEnds = [], districtPaving = new Map(), protectedPaths = new Map();
+    const deferredRiverfront = [];
     let citySeed = 571;
     const cityRandom = () => (citySeed = (citySeed * 16807) % 2147483647) / 2147483647;
     const halfWidth = 5.25, halfDepth = 3.95;
@@ -525,11 +557,11 @@
       const t = THREE.MathUtils.clamp(((x-a.x)*dx+(z-a.z)*dz)/(dx*dx+dz*dz), 0, 1);
       return Math.hypot(x-a.x-dx*t, z-a.z-dz*t);
     };
-    function occupied(x, z, radius = 0) {
+    function occupiedIn(lotsByCell, x, z, radius = 0) {
       const cx = Math.floor(x / cellSize), cz = Math.floor(z / cellSize);
       const cellsToCheck = Math.ceil((radius + 9) / cellSize);
       for (let i = cx - cellsToCheck; i <= cx + cellsToCheck; i++) for (let j = cz - cellsToCheck; j <= cz + cellsToCheck; j++) {
-        const lotsInCell = cells.get(i + ',' + j);
+        const lotsInCell = lotsByCell.get(i + ',' + j);
         if (lotsInCell && lotsInCell.some(p => {
           const dx = x - p.x, dz = z - p.z;
           const u = Math.max(0, Math.abs(p.c * dx - p.s * dz) - halfWidth * p.scale);
@@ -539,6 +571,7 @@
       }
       return false;
     }
+    const occupied = occupiedIn.bind(null,cells);
     function pavedLine(a, b, width) {
       const dx = b.x - a.x, dz = b.z - a.z, length = Math.hypot(dx, dz);
       if (length < .15) return;
@@ -574,10 +607,11 @@
       dummy.rotation.set(0, yaw, 0);
       dummy.scale.set(scale, height, scale);
       dummy.updateMatrix();
-      lots[kind].push(dummy.matrix.clone());
+      const matrix = dummy.matrix.clone();
+      lots[kind].push(matrix);
       const key = Math.floor(x / cellSize) + ',' + Math.floor(z / cellSize);
       if (!cells.has(key)) cells.set(key, []);
-      cells.get(key).push({ x, z, c: Math.cos(yaw), s: Math.sin(yaw), scale });
+      cells.get(key).push({ x, z, c: Math.cos(yaw), s: Math.sin(yaw), scale, matrix });
       return true;
     }
     const skylineClearance = [[AT.tower, 51], [AT.tv, 57], [AT.qc, 46], [AT.customs, 47], [AT.watertower, 29],
@@ -683,6 +717,14 @@
     const port = ['wharf', 'wharf', 'lane', 'arcade'];
     const suburbs = ['lane', 'apartment', 'apartment'];
     function reservePath(path, registerStreet = true) {
+      if (path.riverfront) {
+        deferredRiverfront.push({path,registerStreet});
+        cityGround.riverfrontPaths.push(path);
+        return;
+      }
+      registerPath(path,registerStreet);
+    }
+    function registerPath(path, registerStreet) {
       if (registerStreet) cityGround.streets.push(path);
       const reserve = path.width/2+8;
       const x0 = Math.floor((Math.min(path.a.x,path.b.x)-reserve)/cellSize);
@@ -696,7 +738,7 @@
       }
     }
 
-    function districtRoute({ name, group, points, width, widthAt, planted = false, material = 'Path', terrace = false, earthy = false, connect = false, gradeStart = null, entryHeight = null, plain = false, surfaceLift = 0, junctionLift = 0 }) {
+    function districtRoute({ name, group, points, width, widthAt, planted = false, riverfront = false, material = 'Path', terrace = false, earthy = false, connect = false, gradeStart = null, entryHeight = null, plain = false, surfaceLift = 0, junctionLift = 0 }) {
       const vertices = [], indices = [];
       const rows = [];
       for (let i = 0; i < points.length-1; i++) {
@@ -740,8 +782,7 @@
           }
         }
         if (active) {
-          const path = { a: rows[i], b: rows[i+1], width: widths[i], group, name, planted };
-          reservePath(path);
+          reservePath({ a: rows[i], b: rows[i+1], width: widths[i], group, name, planted, riverfront });
           if (gradeStart !== null) {
             // Two embedded embankment faces close the gap between the leveled deck and grade.
             for (const j of [0,2]) {
@@ -798,6 +839,49 @@
         if (clear) { target = p; nearest = distance; }
       }
       if (target && nearest > .15) districtRoute({ ...route, points:[point,target] });
+    }
+    // Add the waterfront walks after the original blocks and street endpoints have settled.
+    // Original vegetation reads that same city layout before nearby conflicts are removed.
+    cityGround.occupiedBeforeRiverfront = occupiedIn.bind(null,new Map(cells));
+    const removed = new Set();
+    for (const {path,registerStreet} of deferredRiverfront) registerPath(path,registerStreet);
+    function walkCutsLot({a,b,width}, {x,z,c,s,scale}) {
+      // Clip the segment to the lot rectangle, expanded by the walk's half-width.
+      const u = p => c*(p.x-x)-s*(p.z-z);
+      const v = p => s*(p.x-x)+c*(p.z-z);
+      const clearance = width/2+.22;
+      let enter=0, leave=1;
+      for (const [start,end,bound] of [[u(a),u(b),halfWidth*scale+clearance],
+        [v(a),v(b),halfDepth*scale+clearance]]) {
+        const d = end-start;
+        if (Math.abs(d)<1e-5) {
+          if (Math.abs(start)>bound) return false;
+          continue;
+        }
+        const low=(-bound-start)/d, high=(bound-start)/d;
+        enter=Math.max(enter,Math.min(low,high));
+        leave=Math.min(leave,Math.max(low,high));
+      }
+      return enter<=leave;
+    }
+    for (const [key, places] of cells) {
+      const walks = protectedPaths.get(key)?.filter(path => path.riverfront);
+      cells.set(key,places.filter(place => {
+        if (!walks?.some(path => walkCutsLot(path,place))) return true;
+        removed.add(place.matrix);
+        return false;
+      }));
+    }
+    for (const [kind, matrices] of Object.entries(lots)) lots[kind] = matrices.filter(matrix => !removed.has(matrix));
+    for (const { yaw, homes } of riverfrontBlocks) {
+      for (const [i,[x,z,kind]] of homes.entries()) {
+        const scale = .58 + (i%3)*.045;
+        const radius = Math.hypot(halfWidth,halfDepth)*scale+.38;
+        if (riverfrontOpening(x,z,radius) || localStreets.some(street =>
+          distanceToPath(x,z,street)<street.width/2+radius)) continue;
+        const rotation = yaw+(i%3-1)*.11;
+        buildLot(kind ?? (i%4===2 ? 'arcade' : 'lane'),{x,z},rotation,scale,.5+(i%3)*.1);
+      }
     }
     cityGround.occupied = (x, z, radius) => occupied(x, z, radius);
     const streets = streetsMesh.mesh(inkMat(.42, false, ['#b3a895', '#dfd8c7']), false);

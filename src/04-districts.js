@@ -11,6 +11,7 @@
       return pairs.map(([x,z]) => site.localToWorld(V(x,0,z)));
     }
 
+    const bridgeStreets = new Map();
     // The two bridges feed a continuous street on each bank. The first span
     // continues the actual bridgehead cross street at the same width and tangent.
     for (const [side, group, name, bends] of [
@@ -22,6 +23,7 @@
       const lead = start.clone().addScaledVector(tangent, 2.4);
       const curve = new THREE.CatmullRomCurve3([lead, ...bends.map(([x,z]) => V(x,0,z))]);
       const centerline = [start, ...curve.getSpacedPoints(Math.ceil(curve.getLength()/2))];
+      bridgeStreets.set(side, centerline);
       route({ group, name, points:centerline, width:3.9, surfaceLift:.022 });
       // Leave the junctions open and group verge trees along the intervening blocks.
       for (let k=6; k<centerline.length-4; k+=5) {
@@ -180,7 +182,7 @@
     const vergeSoil=vergeWash(.30,['#858e7a','#d5d2b6']);
     const vergeGravel=vergeWash(.34,['#a29b86','#dcd3bb']);
     const vergeOutline=[.95,1.05,.98,.87,.98,.91,.78,.82,1.06,.99,.90,1.02,.97,.86,.90];
-    function slopeVerge(group,name,material,ink,x,z,yaw,length,width,relief) {
+    function slopeVerge(group,name,material,ink,x,z,yaw,length,width,relief,clear=()=>true) {
       const vertices=[], coverage=[], faces=[], sides=vergeOutline.length;
       function point(u,v,raise) {
         const px=x+Math.cos(yaw)*u+Math.sin(yaw)*v, pz=z-Math.sin(yaw)*u+Math.cos(yaw)*v;
@@ -206,7 +208,7 @@
         }
       }
       const valid=faces.filter(face=>triangleOnLand(...face.map(i=>vertices[i])) &&
-        face.every(i=>(roadAt(vertices[i][0],vertices[i][2])?.distance ?? Infinity)>approachHalfWidth+1.05));
+        face.every(i=>(roadAt(vertices[i][0],vertices[i][2])?.distance ?? Infinity)>approachHalfWidth+1.05 && clear(vertices[i])));
       if (!valid.length) return;
       const geometry=new THREE.BufferGeometry();
       geometry.setAttribute('position',new THREE.Float32BufferAttribute(vertices.flat(),3));
@@ -262,4 +264,202 @@
     route({ name: '武大老斋舍台阶接樱园', group: '珞珈山', width: 2.28, terrace: true,
       points: local(wuda,[-25,13],[-12,13],[0,13],[12,13],[25,13],[34,12]) });
     buildYingwuzhouRoads(route, reservePath, lot);
+
+    const smooth=THREE.MathUtils.smoothstep;
+    const rounded=(controls,spacing=1.1)=>{
+      const curve=new THREE.CatmullRomCurve3(controls);
+      return curve.getSpacedPoints(Math.ceil(curve.getLength()/spacing));
+    };
+    const streetEdge=(side, z, landward)=>{
+      const line=bridgeStreets.get(side);
+      let i=line.findIndex((p,j)=>j>0 && p.z<=z && line[j-1].z>z);
+      if (i<1) i=Math.max(1,line.length-2);
+      const a=line[i-1], b=line[i], point=a.clone().lerp(b,THREE.MathUtils.clamp((z-a.z)/(b.z-a.z),0,1));
+      const tangent=b.clone().sub(a).setY(0).normalize();
+      const outside=V(tangent.z,0,-tangent.x);
+      return point.addScaledVector(outside, 1.90*Math.sign(outside.x)*landward);
+    };
+    const treadInk=inkMat(.25,false,['#74796c','#aca58c']);
+    const shoreGrass=vergeWash(.18,['#687769','#bec0a3']);
+    function landingSteps(group,name,frame,walkEdge,width,stone) {
+      const foot=frame.shore.clone().lerp(frame.cap,.61);
+      const run=walkEdge.distanceTo(foot), steps=Math.max(5,Math.ceil(run/1.0));
+      const positions=[], faces=[], joints=[], seams=[];
+      const section=(center,half)=>[-1,1].map(sign=>center.clone().addScaledVector(frame.tangent,sign*half));
+      const grade=(p)=>(plantingSurface(p.x,p.z) ?? LAND_Y);
+      function surface(a,b,vertices=positions,indices=faces) {
+        const first=vertices.length/3;
+        vertices.push(...a[0].toArray(),...a[1].toArray(),...b[0].toArray(),...b[1].toArray());
+        const normal=a[1].clone().sub(a[0]).cross(b[0].clone().sub(a[0]));
+        if (normal.y<0) indices.push(first,first+2,first+1,first+1,first+2,first+3);
+        else indices.push(first,first+1,first+2,first+1,first+3,first+2);
+      }
+      let previous;
+      for (let i=0;i<steps;i++) {
+        const start=i/steps, stop=(i+1)/steps;
+        const a=walkEdge.clone().lerp(foot,start), b=walkEdge.clone().lerp(foot,stop);
+        const half=width*.5*(1-.18*start), near=section(a,half), far=section(b,half);
+        const top=Math.max(...near.map(grade),...far.map(grade),grade(a),grade(b))+.039;
+        near.forEach(p=>p.y=top); far.forEach(p=>p.y=top);
+        if (![...near,...far].every(p=>onLand(p.x,p.z))) continue;
+        if (previous) {
+          surface(previous,near);
+          if (previous[0].y-top>.025 || i===steps-1) {
+            const joint=depth=>section(a.clone().lerp(b,depth),half-.055).map(p=>p.setY(top+.007));
+            surface(joint(.10),joint(.19),joints,seams);
+          }
+        }
+        surface(near,far);
+        // The downhill faces close the tread to the bank surface.
+        for (const j of [0,1]) {
+          const toe=p=>p.clone().setY(grade(p)-.025);
+          const top=[near[j],far[j]], below=top.map(toe);
+          const [from,to]=j ? [top,below] : [below,top];
+          surface(from,to);
+        }
+        previous=far;
+        reservePath({a,b,width:2*half,group,name,planted:true,riverfront:true});
+      }
+      for (const [label,kind,ink,vertices,indices] of [
+        [name,stone ? 'BankStone' : 'Path',stone ? M.bankStone : M.bankPath,positions,faces],
+        [name+' · 踏步石缝','ShoreStone',treadInk,joints,seams],
+      ]) {
+        if (!indices.length) continue;
+        const geometry=new THREE.BufferGeometry();
+        geometry.setAttribute('position',new THREE.Float32BufferAttribute(vertices,3));
+        geometry.setIndex(indices); geometry.computeVertexNormals();
+        const mesh=new THREE.Mesh(geometry,ink);
+        mesh.name=label;
+        mesh.userData.landscapeSurface={group,name:label,material:kind};
+        scene.add(mesh);
+      }
+    }
+    const riversideStone=inkMat(.26,false,['#817b68','#c4b8a1']);
+    function shorelineFurniture(side,group,frame,center,walkWidth) {
+      const blocks=new Acc(), yaw=Math.atan2(-frame.tangent.z,frame.tangent.x);
+      const floor=(p)=>(plantingSurface(p.x,p.z) ?? LAND_Y);
+      let name;
+      if (side<0) {
+        name='汉阳下台系船石';
+        const rim=frame.shore.clone().lerp(frame.cap,.75);
+        for (const offset of [-1.72,1.84]) {
+          const p=rim.clone().addScaledVector(frame.tangent,offset), y=floor(p);
+          blocks.cyl(.26,.23,p.x,y+.02,p.z);
+          blocks.cyl(.18,.30,p.x,y+.21,p.z);
+          blocks.cyl(.235,.09,p.x,y+.365,p.z);
+        }
+      } else {
+        name='武昌滨水分节石凳';
+        const rim=center.clone().addScaledVector(frame.inland,walkWidth*.5+.52);
+        for (const offset of [-.84,.77]) {
+          const p=rim.clone().addScaledVector(frame.tangent,offset), y=floor(p);
+          for (const foot of [-.43,.43]) {
+            const leg=p.clone().addScaledVector(frame.tangent,foot);
+            blocks.box(.28,.33,.45,leg.x,floor(leg)+.13,leg.z,yaw);
+          }
+          blocks.box(1.44,.14,.59,p.x,y+.36,p.z,yaw);
+        }
+      }
+      const mesh=blocks.mesh(riversideStone,false);
+      mesh.name=name;
+      mesh.userData.landscapeSurface={group,name,material:'Masonry'};
+      scene.add(mesh);
+    }
+    const riverfronts=[
+      {
+        side:-1, bank:'汉阳', edge:yangtzeUpperWest, first:152.75, last:159, setback:3.7, walkWidth:1.65,
+        openings:[
+          {station:154.5, spread:1.95, before:4.2, after:6.3, steps:true},
+          {station:155.75, spread:2.45, before:6.6, after:4.7, steps:true},
+          {station:157.25, spread:1.75, before:4.1, after:5.3, steps:true},
+        ],
+        branch:{station:156.25, streetZ:34, bends:[[-212,35],[-228,36],[-244,34]]},
+        wuhanLink:[[-223,-34],[-216,-25],[-208,-13],[-196,0],[-186,5]],
+        yingwuzhouLink:[[-254.5,60.3],[-251.8,58.1],[-242,58.3],[-232,59.4],[-224,63.3],[-219.5,68.1]],
+      },
+      {
+        side:1, bank:'武昌', edge:yzE, first:151.25, last:161.25, setback:4.5, walkWidth:2.15,
+        openings:[
+          {station:152.5, spread:2.45, before:5.8, after:4.4, steps:true},
+          {station:154.25, spread:3.25, before:6.8, after:7.7, steps:false},
+          {station:157, spread:2.85, before:4.6, after:6.7, steps:true},
+        ],
+        branch:{station:155.25, streetZ:81, bends:[[-77,84],[-59,85],[-44,83],[-30,81]]},
+        wuhanLink:[[-32,20],[-41,22],[-52,21],[-63,19],[-69,17]],
+        yingwuzhouLink:[[-47,146.8],[-62,144],[-74,136],[-86,130]],
+      },
+    ];
+    for (const {side,bank,edge,first,last,setback,walkWidth,openings,branch,wuhanLink,yingwuzhouLink} of riverfronts) {
+      const firstPath=cityGround.riverfrontPaths.length;
+      const group=bank+'两桥滨水岸线', stationCount=Math.round((last-first)*4);
+      const frames=Array.from({length:stationCount+1},(_,i)=>riverBankFrame(edge,first+i/4));
+      const stations=frames.map((frame,i)=>{
+        const s=first+i/4;
+        const open=Math.max(...openings.map(({station})=>1-smooth(Math.abs(s-station),.06,.47)));
+        return frame.cap.clone().addScaledVector(frame.inland,setback+.56*Math.sin(1.34*s)-.7*open);
+      });
+      const at=s=>Math.round((s-first)*4);
+      let distance=0;
+      const distances=stations.map((p,i)=>{
+        if (i) distance+=p.distanceTo(stations[i-1]);
+        return distance;
+      });
+      const widthAt=d=>walkWidth+Math.max(...openings.map(({station,spread,before,after})=>{
+        const gap=d-distances[at(station)];
+        return spread*(1-smooth(Math.abs(gap),1.05,gap<0?before:after));
+      }));
+      const material=side<0?'Path':'BankStone';
+      route({name:bank+'两桥滨水步道',group,width:walkWidth,widthAt,material,planted:true,riverfront:true,points:stations});
+
+      // Connect to the river-facing sides of the two pre-existing bridgehead walks.
+      const rows=wuhanApproachFeatures[side<0?1:0].stations;
+      const row=rows[Math.round((rows.length-1)*(side<0?.33:.13))];
+      const direction=side<0?1:-1, curb=row.edges[side<0?1:0].outer;
+      const lead=curb.clone().addScaledVector(row.normal,direction*2.25);
+      const toShore=(name,controls,entryHeight,width)=>route({
+        name:bank+name,group:bank+name, width, material, entryHeight, planted:true, riverfront:true,
+        points:rounded(controls)
+      });
+      toShore('大桥桥头接岸步道',[curb,lead,...wuhanLink.map(([x,z])=>V(x,0,z)),stations.at(-1)],curb.y,1.32);
+      const orange=yingwuzhouRiverWalkEnds.get(side);
+      if (orange) {
+        const center=edge=>edge[0].clone().lerp(edge[1],.5);
+        const end=center(orange.edge), before=center(orange.previous);
+        const lead=end.clone().addScaledVector(end.clone().sub(before).setY(0).normalize(),1.7);
+        route({name:bank+'鹦鹉洲桥头接岸步道',group:bank+'鹦鹉洲桥头接岸步道',width:1.32,
+          widthAt:d=>THREE.MathUtils.lerp(orange.edge[0].distanceTo(orange.edge[1]),1.32,smooth(d,0,3.4)),
+          material, entryHeight:end.y, planted:true, riverfront:true,
+          points:rounded([end,lead,...yingwuzhouLink.map(([x,z])=>V(x,0,z)),stations[0]])});
+      }
+
+      const join=streetEdge(side,branch.streetZ,-side);
+      route({name:bank+'滨水通街支巷',group:bank+'滨水通街支巷',width:1.48,material:'BankStone',planted:true,riverfront:true,
+        points:rounded([stations[at(branch.station)],...branch.bends.map(([x,z])=>V(x,0,z)),join])});
+
+      // Selected pockets continue to the lower bank shelf.
+      for (const [i,{station,steps}] of openings.entries()) {
+        if (!steps) continue;
+        const k=at(station), frame=frames[k], width=widthAt(distances[k]);
+        const start=stations[k].clone().addScaledVector(frame.inland,-width*.5+.14);
+        landingSteps(group,bank+'滨水亲水石阶 '+(i+1),frame,start,side<0?1.92:2.44,side>0);
+      }
+      const viewStation=at(openings[1].station);
+      shorelineFurniture(side,group,frames[viewStation],stations[viewStation],widthAt(distances[viewStation]));
+
+      const shorePaths=cityGround.riverfrontPaths.slice(firstPath);
+      const clearVerge=([x,,z])=>shorePaths.every(({a,b,width})=>{
+        const dx=b.x-a.x, dz=b.z-a.z;
+        const t=THREE.MathUtils.clamp(((x-a.x)*dx+(z-a.z)*dz)/(dx*dx+dz*dz),0,1);
+        return Math.hypot(x-a.x-t*dx,z-a.z-t*dz)>width*.5+.22;
+      });
+      const shoulders=side<0 ? [[153.94,1.26,4.1,.76],[155.09,7.0,5.4,1.5],[156.31,1.36,3.55,.66],[158.29,7.55,5.2,1.85]]
+                             : [[152.98,1.36,4.2,.76],[153.46,8.45,5.7,1.83],[156.27,1.47,4.0,.84],[157.82,8.2,6.8,1.95]];
+      for (const [i,[s,offset,length,width]] of shoulders.entries()) {
+        const frame=riverBankFrame(edge,s), p=frame.cap.clone().addScaledVector(frame.inland,offset);
+        slopeVerge(group,bank+'滨水草土岸肩 '+(i+1),'BankGrass',shoreGrass,p.x,p.z,
+          Math.atan2(-frame.tangent.z,frame.tangent.x),length,width,.061,clearVerge);
+      }
+
+
+    }
   }

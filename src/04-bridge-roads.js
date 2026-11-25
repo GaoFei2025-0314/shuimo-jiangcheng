@@ -37,6 +37,8 @@
     return yingwuzhou.localToWorld(V(side < 0 ? 18 : 28.8, 0, side * 150));
   }
 
+  const yingwuzhouRiverWalkEnds = new Map();
+
   function buildYingwuzhouRoads(route, reservePath, lot) {
     yingwuzhou.updateMatrixWorld(true);
     const group = '鹦鹉洲长江大桥';
@@ -278,6 +280,12 @@
           p.y=mix(a.y,grade+.03,smooth(t,.04,1));
           const across=V(along.z,0,-along.x).normalize().multiplyScalar(half);
           corners.push([p.clone().sub(across).toArray(),p.clone().add(across).toArray()]);
+        }
+        if (direction === side) {
+          yingwuzhouRiverWalkEnds.set(side, {
+            edge: corners.at(-1).map(p => V(...p)),
+            previous: corners.at(-2).map(p => V(...p)),
+          });
         }
         ribbon(corners,returns,returnTris);
         ribbon(corners.map(([left,right])=>{

@@ -223,7 +223,7 @@
     const keyAt = (x, z) => x + ',' + z;
     const trunks = new Map(), roadCells = new Map();
     const parkCourts = towerPark.courts.map(court=>court.polygon.map(p=>[p.x,p.z]));
-    for (const road of cityGround.streets) {
+    function indexRoad(road) {
       const { a, b, width } = road, margin = width / 2 + 6;
       const [x0, z0] = cell(Math.min(a.x, b.x) - margin, Math.min(a.z, b.z) - margin);
       const [x1, z1] = cell(Math.max(a.x, b.x) + margin, Math.max(a.z, b.z) + margin);
@@ -233,6 +233,8 @@
         roadCells.get(key).push(road);
       }
     }
+    for (const road of cityGround.streets) if (!road.riverfront) indexRoad(road);
+    let occupied = cityGround.occupiedBeforeRiverfront;
     function distanceTo(x, z, a, b) {
       const dx = b.x - a.x, dz = b.z - a.z;
       const t = THREE.MathUtils.clamp(((x - a.x) * dx + (z - a.z) * dz) / (dx * dx + dz * dz || 1), 0, 1);
@@ -251,7 +253,7 @@
           towerPark.assetBounds.some(b => x+radius+.6>b.min.x && x-radius-.6<b.max.x
                                       && z+radius+.6>b.min.z && z-radius-.6<b.max.z) ||
           parkCourts.some(court=>inPoly(court,x,z) || roots.some(([dx,dz])=>inPoly(court,x+dx*radius*.62,z+dz*radius*.62))) ||
-          cityGround.occupied(x, z, radius * .81 + .42) ||
+          occupied(x, z, radius * .81 + .42) ||
           roadCells.get(keyAt(cx, cz))?.some(road => distanceTo(x, z, road.a, road.b) < road.width / 2 + radius * .65 + .48))
         return false;
       for (let i = cx - 1; i <= cx + 1; i++) for (let j = cz - 1; j <= cz + 1; j++)
@@ -498,6 +500,40 @@
     for (const {x,z} of cityGround.bridgeGardens) {
       const spread = .52+.20*frontageTrees();
       plant('broadleaf',x,z,spread,spread*.94,frontageTrees);
+    }
+
+    // Apply the new walks and their clearings after generating the original planting batches.
+    occupied = cityGround.occupied;
+    cityGround.occupiedBeforeRiverfront = null;
+    cityGround.riverfrontPaths.forEach(indexRoad);
+    const removed = new Set();
+    for (const model of Object.values(treeTypes)) {
+      model.instances = model.instances.filter(({elements:e}) => {
+        const x=e[12], z=e[14], radius=model.radius*Math.hypot(e[0],e[2]);
+        const nearWalk = roadCells.get(keyAt(...cell(x,z)))?.some(road =>
+          road.riverfront && distanceTo(x,z,road.a,road.b) < road.width/2+radius*.65+.48);
+        if (!nearWalk && !riverfrontOpening(x,z,1.5) && !occupied(x,z,radius*.81+.42)) return true;
+        removed.add(keyAt(x,z));
+        return false;
+      });
+    }
+    for (let i=groundContacts.length-1;i>=0;i--) {
+      const contact = groundContacts[i];
+      if (contact.tree && removed.has(keyAt(contact.x,contact.z))) groundContacts.splice(i,1);
+    }
+    for (const [key, trees] of trunks) {
+      trunks.set(key,trees.filter(({x,z}) => !removed.has(keyAt(x,z))));
+    }
+
+    const bankShade = seeded(0x2c7bbe);
+    for (const { groves } of riverfrontBlocks) {
+      for (const { species, positions } of groves) {
+        for (const [i,[x,z]] of positions.entries()) {
+          if (riverfrontOpening(x,z,2)) continue;
+          const canopy = i===0 || i===3;
+          plant(canopy ? species : 'broadleaf',x,z,canopy ? .75 : .53,canopy ? .78 : .57,bankShade);
+        }
+      }
     }
 
     // Color stores sRGB floats for the standalone map and the Blender capture.

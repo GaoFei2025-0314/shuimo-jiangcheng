@@ -557,6 +557,17 @@
   }
   const coastCap = riverBanks();
 
+  // Interpolate the exact rendered embankment sections between survey samples.
+  function riverBankFrame(edge, station) {
+    const i=Math.floor(station), t=station-i;
+    const line=(a,b)=>V(a[0],0,a[1]).lerp(V(b[0],0,b[1]),t);
+    const shore=line(edge[i],edge[i+1]);
+    const cap=line(coastCap.get(edge[i]),coastCap.get(edge[i+1]));
+    const inland=cap.clone().sub(shore).normalize();
+    const tangent=V(edge[i+1][0]-edge[i][0],0,edge[i+1][1]-edge[i][1]).normalize();
+    return {shore,cap,inland,tangent};
+  }
+
   // Let the ink outline dissolve with the downstream wash at the edge of the map.
   const coastInk = [lineMat, lineMat2].map(base => {
     const mat = base.clone();

@@ -355,7 +355,7 @@ test('both approach carriageways stay above the terrain through the bridgeheads 
   expect(failures).toEqual([]);
 });
 
-test('street trees and houses leave both curb views of each bridge tower open', async ({ page }) => {
+test('street trees and houses leave the bridgehead and waterfront views open', async ({ page }) => {
   await page.goto('/?debug');
   await page.waitForFunction(() => window.__ready && window.__dbg);
   const blocked = await page.evaluate(() => {
@@ -377,6 +377,18 @@ test('street trees and houses leave both curb views of each bridge tower open', 
         return {name, caster:new THREE.Raycaster(eye,direction.clone().normalize(),0,direction.length())};
       });
     });
+    // From the first tread at either end of each promenade, see the river and the two spans.
+    for (const bank of ['汉阳','武昌']) for (const landing of [1,3]) {
+      const name = bank+'滨水亲水石阶 '+landing;
+      const p = scene.getObjectByName(name).geometry.attributes.position;
+      const eye = new THREE.Vector3().fromBufferAttribute(p,0)
+        .lerp(new THREE.Vector3().fromBufferAttribute(p,1),.5);
+      eye.y += 1.55;
+      for (const target of [[-60.561,12.635,-19.678],[-97.819,32.275,131.607],[-143,0,60]]) {
+        const direction = new THREE.Vector3(...target).sub(eye);
+        rays.push({name,caster:new THREE.Raycaster(eye,direction.clone().normalize(),0,direction.length())});
+      }
+    }
     const face = new THREE.MeshBasicMaterial({side:THREE.DoubleSide});
     const sphere = new THREE.Sphere(), hits = [];
     for (const batch of scene.children) {
@@ -495,6 +507,58 @@ test('both riverbanks have continuous paved streets between the two bridge junct
     return failures;
   });
   expect(failures).toEqual([]);
+});
+
+test('each riverfront walk joins both bridgeheads and a neighborhood street on dry, clear paving', async ({ page }) => {
+  await page.goto('/?debug');
+  await page.waitForFunction(() => window.__ready && window.__dbg);
+  const problems = await page.evaluate(() => {
+    const {scene,cityGround,onLand,plantingSurface} = __dbg;
+    const material = new THREE.MeshBasicMaterial({side:THREE.DoubleSide});
+    const ray = new THREE.Raycaster(), down = new THREE.Vector3(0,-1,0);
+    const issues = [];
+    const gap = (a,b) => Math.hypot(a.x-b.x,a.z-b.z);
+    const segments = name => cityGround.streets.filter(s => s.name===name);
+    for (const bank of ['汉阳','武昌']) {
+      const names = ['两桥滨水步道','大桥桥头接岸步道','鹦鹉洲桥头接岸步道','滨水通街支巷'].map(s => bank+s);
+      const [waterfront,wuhan,orange,lane] = names.map(segments);
+      if (![waterfront,wuhan,orange,lane].every(s => s.length>2)) {
+        issues.push({bank,reason:'missing path'});
+        continue;
+      }
+      const joins = [
+        gap(waterfront.at(-1).b,wuhan.at(-1).b),
+        gap(waterfront[0].a,orange.at(-1).b),
+        Math.min(...waterfront.map(s=>gap(s.a,lane[0].a))),
+      ];
+      const street = segments(bank+'桥间街道');
+      const toStreet = Math.min(...street.map(s => {
+        const line = new THREE.Line3(new THREE.Vector3(s.a.x,0,s.a.z),new THREE.Vector3(s.b.x,0,s.b.z));
+        const end = new THREE.Vector3(lane.at(-1).b.x,0,lane.at(-1).b.z);
+        return line.closestPointToPoint(end,true,new THREE.Vector3()).distanceTo(end)-s.width/2;
+      }));
+      if (joins.some(n=>n>.06) || toStreet>.05) issues.push({bank,joins,toStreet});
+      for (const name of names) {
+        const path = segments(name);
+        const surface = new THREE.Mesh(scene.getObjectByName(name).geometry,material);
+        for (const [i,{a,b,width}] of path.entries()) {
+          if (i && gap(a,path[i-1].b)>.06) issues.push({name,i,reason:'missing span'});
+          const length=gap(a,b);
+          for (const side of [-.37,0,.37]) {
+            const x=(a.x+b.x)/2+(b.z-a.z)*width*side/length;
+            const z=(a.z+b.z)/2-(b.x-a.x)*width*side/length;
+            ray.set(new THREE.Vector3(x,65,z),down);
+            const hit=ray.intersectObject(surface)[0];
+            if (!onLand(x,z) || !hit || hit.point.y<plantingSurface(x,z)-.015 || cityGround.occupied(x,z))
+              issues.push({name,i,side,reason:'unusable paving'});
+          }
+        }
+      }
+    }
+    material.dispose();
+    return issues.slice(0,16);
+  });
+  expect(problems).toEqual([]);
 });
 
 test('the bridge sidewalks clear the hillside and the painted crossings at their landings', async ({ page }) => {
