@@ -152,20 +152,27 @@ def cables():
     sockets = Part("Yingwuzhou / hanger clevises and edge-girder anchorage", "vermilion")
     maintenance = Part("Yingwuzhou / main-cable access handlines", "suspensionOrange")
     for x in (-CABLE_X, CABLE_X):
-        path, suspended, access_spans = [], [], []
+        path, hung, walk_spans = [], [], []
         for i, ((start, z0), (stop, z1)) in enumerate(zip(SADDLES, SADDLES[1:])):
             main = i in (1, 2)
             samples = 48 if main else 12
             sag = 22.75 if main else .79
-            if main:
-                access_spans.append(range(len(path) + 1, len(path) + samples))
+            span = []
             for k in range(samples):
-                t = k/samples
-                y = start + (stop-start)*t
-                z = z0 + (z1-z0)*t - sag*4*t*(1-t)
-                path.append((y, z))
-                if main and 1 < k < samples-1 and k%2 == 0:
-                    suspended.append(len(path)-1)
+                # Add curved half-stations in the main-span belly, where the low camera sees the sag.
+                offsets = (0, .5) if main and 12 <= k < 36 else (0,)
+                for offset in offsets:
+                    t = (k+offset)/samples
+                    y = start + (stop-start)*t
+                    z = z0 + (z1-z0)*t - sag*4*t*(1-t)
+                    index = len(path)
+                    path.append((y, z))
+                    if main and offset == 0 and 0 < k < samples:
+                        span.append(index)
+                        if 1 < k < samples-1 and k%2 == 0:
+                            hung.append(index)
+            if main:
+                walk_spans.append(span)
         path.append(SADDLES[-1])
 
         def ring(index, radius, sides=8, along=0):
@@ -178,18 +185,18 @@ def cables():
                      y+(dz*radius*sin(j*tau/sides)+dy*along)/length,
                      z+(-dy*radius*sin(j*tau/sides)+dz*along)/length) for j in range(sides)]
 
-        loft(cables, [ring(i, .248) for i in range(len(path))])
-        # Inspection handlines follow both sides of the cable between tower platforms.
-        for span in access_spans:
+        loft(cables, [ring(i, .248, sides=10) for i in range(len(path))])
+        # Preserve post stations while doubling the rail's axial sampling.
+        for span in walk_spans:
             for side in (-1, 1):
                 loft(maintenance, [[(px + side * .31, py, pz + .44)
                                    for px, py, pz in ring(index, .038, 4)]
-                                  for index in span[::2]])
+                                  for index in span])
                 for index in span[::8]:
                     y, z = path[index]
                     maintenance.beam((x + side * .18, y, z + .02),
                                      (x + side * .31, y, z + .44), .052)
-        for index in suspended:
+        for index in hung:
             y, z = path[index]
             # The split clamp sleeves follow the actual cable tangent in both main spans.
             loft(clamps, [ring(index, radius, sides=6, along=along)
@@ -197,10 +204,19 @@ def cables():
             sockets.box((x, y, z-.30), (.33, .43, .24))
             bottom = road_height(y)
             # One common side plate carries both sockets down to the outside of the box girder.
-            edge = CABLE_X+.35
-            outboard = edge if x > 0 else -edge
+            sign = 1 if x > 0 else -1
+            outboard = sign*(CABLE_X+.35)
             sockets.box((outboard, y, bottom-.20), (.24, .64, .52))
             hangers.box(((x+outboard)/2, y, bottom+.017), (.56, .63, .16))
+            # Two small sloping ribs seat the projecting top flange against the plate.
+            profile = [(sign*7.60, bottom-.36), (sign*7.94, bottom+.037), (sign*7.55, bottom+.041)]
+            if sign < 0:
+                profile.reverse()
+            for dy in (-.215, .215):
+                vertices = [(px, y+dy+offset, pz)
+                            for offset in (-.034, .034) for px, pz in profile]
+                sockets.solid(vertices, [(0, 1, 2), (5, 4, 3), (0, 3, 4, 1),
+                                         (1, 4, 5, 2), (2, 5, 3, 0)])
             for dy in (-.13, .13):
                 hangers.cylinder(x, y+dy, bottom+.08, z-.39, .057, 6)
                 sockets.cylinder(x, y+dy, bottom+.023, bottom+.44, .102, 6)
