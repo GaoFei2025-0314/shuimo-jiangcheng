@@ -967,6 +967,8 @@
     const leafInk=inkMat(.34,true,['#606d51','#a4a473']);
     const stalkInk=inkMat(.37,true,['#736d4f','#b7a476']);
     const ink=vergeWash(.34,['#6f7a5e','#a5a788']);
+    const rootSoil=vergeWash(.46,['#726d55','#a39c7e']);
+    const rootInk=inkMat(.37,false,['#5e5846','#8f8065']);
     const paths=[...cityGround.streets,...cityGround.courtyardPaths];
     const beds=[
       ['汉阳滨水街巷地面',[
@@ -998,6 +1000,52 @@
       mesh.userData.vergePlanting=true;
       scene.add(mesh);
     };
+    for (const [group,x,z,spread] of [
+      ['汉阳滨水街巷地面',-226,40,1.08],
+      ['武昌滨水街巷地面',-50.70,79.20,.82],
+      ['武昌滨水街巷地面',-83.10,105.60,1.26],
+    ]) {
+      const soil=[],alpha=[],roots=new Acc(), root=V(x,plantingSurface(x,z)??LAND_Y,z);
+      const edge=(dx,dz,lift)=>{
+        const px=x+dx,pz=z+dz, y=plantingSurface(px,pz);
+        if (y===null || cityGround.occupied(px,pz,.05) || paths.some(path=>
+          distanceToPath(px,pz,path)<path.width*.5+.18)) return null;
+        return V(px,y+lift,pz);
+      };
+      const rings=[.38,.70,1].map(r=>Array.from({length:18},(_,i)=>{
+        const angle=i*Math.PI/9, radius=r*spread*(.86+.12*Math.sin(angle*3+x)+.09*Math.cos(angle*5+z));
+        return edge(radius*Math.cos(angle),radius*Math.sin(angle)*.82,.048-.023*r);
+      }));
+      const push=(a,b,c,x,y,z)=>{
+        if (!a||!b||!c) return;
+        soil.push(...a.toArray(),...b.toArray(),...c.toArray());
+        alpha.push(x,y,z);
+      };
+      for (let i=0;i<18;i++) {
+        const j=(i+1)%18;
+        push(root.clone().add(V(0,.052,0)),rings[0][j],rings[0][i],.92,.79,.79);
+        for (const [k,inner,outer] of [[0,.79,.44],[1,.44,0]]) {
+          const [a,b]=[rings[k][i],rings[k][j]], [c,d]=[rings[k+1][i],rings[k+1][j]];
+          push(a,b,c,inner,inner,outer); push(b,d,c,inner,outer,outer);
+        }
+      }
+      for (let i=0;i<4;i++) {
+        const a=i*2.39+z*.41, len=spread*(.42+.15*Math.sin(a*2)**2);
+        const nodes=[0,.28,.63,1].map(t=>edge((.08+len*t)*Math.cos(a+t*.29),
+          (.08+len*t)*Math.sin(a+t*.29),.115*(1-t)**1.7+.014));
+        if (nodes.every(Boolean)) roots.push(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(nodes),
+          9,.039*spread,5,false));
+      }
+      show(group,'旧树浅根盘 · '+x,'BankGrass',rootSoil,soil,alpha);
+      if (roots.l.length) {
+        const mesh=roots.mesh(rootInk,false);
+        mesh.name=group+' · 外露根须 · '+x;
+        mesh.userData.landscapeSurface={group,name:mesh.name,material:'BoatLoad'};
+        mesh.userData.detailSize=.65;
+        mesh.userData.vergePlanting=true;
+        scene.add(mesh);
+      }
+    }
     for (const [group,locations] of beds) {
       const soil=[],alpha=[],blades=[],stalks=[];
       for (const [cx,cz,rx,rz,yaw] of locations) {
@@ -1041,17 +1089,26 @@
           const p=point(r*rx*Math.cos(a),r*rz*Math.sin(a));
           if (!p) continue;
           for (let j=0,n=2+Math.floor(sample()*4);j<n;j++) {
-            const turn=a+j*2.399+sample(), h=.07+sample()*.22, wide=.014+sample()*.025;
+            const turn=a+j*2.399+sample(), stalk=j===0 && i%5===0;
+            const h=(stalk?.16:.056)+sample()*(stalk?.21:.12);
+            const wide=stalk?.009:.022+sample()*.029;
             const side=V(-Math.sin(turn)*wide,0,Math.cos(turn)*wide);
-            const bias=V(Math.cos(turn),0,Math.sin(turn));
-            const root=p.clone().addScaledVector(bias,.045*sample());
-            const mid=root.clone().addScaledVector(bias,h*.24).add(V(0,h*.62,0));
-            const tip=root.clone().addScaledVector(bias,h*.64).add(V(0,h,0));
-            const left=root.clone().addScaledVector(side,-.18),right=root.clone().addScaledVector(side,.18);
-            const d=mid.clone().sub(side),e=mid.clone().add(side);
-            const stroke=j===0 && i%3===0 ? stalks : blades;
-            stroke.push(...left.toArray(),...right.toArray(),...d.toArray(),...d.toArray(),...right.toArray(),...e.toArray(),
-              ...d.toArray(),...e.toArray(),...tip.toArray());
+            const direction=V(Math.cos(turn),0,Math.sin(turn));
+            const root=p.clone().addScaledVector(direction,.045*sample());
+            const bend=stalk?h*.67:h*1.42;
+            const section=(t,w)=>{
+              const center=root.clone().addScaledVector(direction,bend*t*t)
+                .add(V(0,h*Math.sin(t*(stalk?1.30:2.36)),0));
+              return [center.clone().addScaledVector(side,-w),center.clone().addScaledVector(side,w)];
+            };
+            const stroke=stalk?stalks:blades;
+            let [left,right]=section(0,.19);
+            for (const [t,w] of [[.28,.66],[.52,1],[.77,.68]]) {
+              const [a,b]=section(t,w);
+              stroke.push(...left.toArray(),...right.toArray(),...a.toArray(),...a.toArray(),...right.toArray(),...b.toArray());
+              left=a; right=b;
+            }
+            stroke.push(...left.toArray(),...right.toArray(),...section(1,0)[0].toArray());
           }
         }
       }

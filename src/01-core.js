@@ -397,8 +397,13 @@
               float upright = 1. - smoothstep(.18,.65,abs(localNormal.y));
               #ifdef CITY_BRICK
                 vec2 stoneGrain = vec2(face+height*.41, height-face*.28);
-                vec3 wash=paintedSurface(stoneGrain*vec2(.37,.39),vec2(1.,1.));
-                col=mix(col,col*(.87+.34*density(wash)),cityNear*upright*.82);
+                vec3 lime=paintedSurface(stoneGrain*vec2(.37,.39),vec2(1.,1.));
+                // Exposed courses use the painted brick quadrant. Lime survives in broader patches.
+                vec2 brickUV=vec2(face*.255,height*.35)+vW.xz*.012;
+                vec3 fired=paintedSurface(brickUV,vec2(0.,1.));
+                float exposed=.34+.52*smoothstep(.31,.66,grain);
+                float weather=mix(.87+.34*density(lime),.74+.82*density(fired),exposed);
+                col=mix(col,col*weather,cityNear*upright);
               #else
                 vec3 wash=paintedSurface(vec2(face*.20,height*.22),vec2(1.,1.));
                 col=mix(col,col*(.45+.82*density(wash)),cityNear*upright*.89);

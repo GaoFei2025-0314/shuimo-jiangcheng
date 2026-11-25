@@ -368,7 +368,37 @@
           float trace = 1.-smoothstep(.08,.50,abs(lateralTail-.48-.10*aft));
           trace *= smoothstep(.14,1.10,aft)*(1.-smoothstep(4.,9.5,aft));
           trace *= mix(.12,1.,smoothstep(-.55,.42,sin(.88*aft+1.7*pier-.68*time+tail.y)));
-          return vec2(bow,trace);
+          // The granite batter is already below the surface. Place its ink outside the stone.
+          vec2 rowAxis = normalize(uCutwaterRow.zw);
+          vec2 footing = abs(vec2(dot(delta,vec2(-rowAxis.y,rowAxis.x)),dot(delta,rowAxis)));
+          float flank = 1.05*(1.-smoothstep(2.95,4.98,footing.x));
+          float lip = (1.-smoothstep(.10,1.16,abs(footing.y-flank-.33)))
+                    * (1.-smoothstep(3.85,5.25,footing.x));
+          // Occasional seam downstream of the cutwater; leave clear gaps between successive marks.
+          float reach=hash(vec2(pier,8.7));
+          float span=1.-smoothstep(.48,1.,abs(aft-9.-4.*reach)/(4.2+3.5*reach));
+          float seam=1.-smoothstep(.12,.66,abs(tail.y-(reach-.5)*2.8-.06*aft-.25*sin(aft*.42-time*.13)));
+          return vec2(bow,max(max(trace,lip*1.30),seam*span*reach*.91));
+        }
+        // The three orange tower plinths have chamfered plans, with a longer centre footing.
+        float towerWaterline(vec2 p,vec4 axis,vec4 bounds,float time) {
+          if(bounds.x<=0.) return 0.;
+          vec2 normal=vec2(-axis.w,axis.z);
+          vec2 delta=p-axis.xy;
+          float crossDeck=dot(delta,normal);
+          if(abs(crossDeck)>18.) return 0.;
+          // Side-elevation bounds include the 200-unit deck plus the .20 border at either end.
+          float scale=bounds.x/200.4, station=dot(delta,axis.zw);
+          float tower=clamp(floor(station/(71.5*scale)+.5),-1.,1.);
+          vec2 local=vec2(crossDeck,station-tower*71.5*scale);
+          vec2 edge=abs(local)-vec2(11.44,(mix(16.5,8.9,abs(tower))*.5+.12)*scale);
+          float rim=max(max(edge.x,edge.y),(edge.x+edge.y+1.16)*.7071);
+          if(rim<-.1 || rim>5.6) return 0.;
+          float grain=vnoise(local*vec2(.33,.48)+tower);
+          float contact=(1.-smoothstep(.16,1.28,abs(rim-.34)))*(.63+.37*grain);
+          float breakUp=smoothstep(.27,.72,vnoise(local*vec2(.22,.8)+time*.019));
+          float echo=(1.-smoothstep(.18,1.12,abs(rim-2.22-.62*grain)))*breakUp;
+          return .35*contact+.16*echo;
         }
         // Only the exposed, river-facing shoulders catch a stroke; leave quiet water in the inlets.
         vec2 quayBrush(vec2 p, float time){
@@ -409,7 +439,9 @@
           uv += vec2(ripple*(.12+.35*uv.y),ripple*.22)/bounds.xy;
           float body = texture2D(silhouette,clamp(uv,.001,.999)).r;
           float broken = smoothstep(-.70,.69,ripple+.69*ribbon)*smoothstep(.17,.62,vnoise(band*.57));
-          return body*(.055+.55*broken)*(.55+.45*vnoise(waterAt*vec2(.23,.69)))*(1.-.38*uv.y);
+          // A short, denser base makes the reflection meet the real pier at low viewing angles.
+          float grounded=1.-smoothstep(.015,.32,uv.y);
+          return body*(.085+.64*broken+grounded*.20)*(.70+.30*vnoise(waterAt*vec2(.23,.69)))*(1.-.46*uv.y);
         }
         void main(){
           vec2 p = vW.xz;
@@ -471,7 +503,8 @@
               float pierDetail = (1.-smoothstep(145.,290.,vD))*smoothstep(.012,.075,shore);
               vec2 brush = cutwaterBrush(p,ambientDriftTime)*pierDetail;
               paperLight = .30*brush.x;
-              ink += .125*brush.y;
+              ink += .235*brush.y;
+              ink += towerWaterline(p,uBridgeAxis[1],uBridgeBounds[1],ambientDriftTime)*pierDetail;
             }
             vec2 quayDelta = abs(p-uQuaySpurs[1].xy);
             if(vD<185. && max(quayDelta.x,quayDelta.y)<38. && lake<.001){
@@ -504,10 +537,10 @@
           }
           vec3 col = mix(base,uInk,wet*ink);
           col = mix(col,uPaper,wet*paperLight);
-          if(lake<.05 && vD<420. && uCam.y<90.){
-            float weight = wet*(1.-smoothstep(240.,420.,vD))*(1.-smoothstep(30.,90.,uCam.y));
-            col=mix(col,vec3(.30,.40,.39),weight*.56*bridgeWash(p,uBridgeAxis[0],uBridgeBounds[0],uTrussInk));
-            col=mix(col,vec3(.48,.32,.25),weight*.55*bridgeWash(p,uBridgeAxis[1],uBridgeBounds[1],uTowerInk));
+          if(lake<.05 && vD<420. && uCam.y<175.){
+            float weight = wet*(1.-smoothstep(240.,420.,vD))*(1.-.38*smoothstep(30.,85.,uCam.y))*(1.-smoothstep(90.,175.,uCam.y));
+            col=mix(col,vec3(.30,.40,.39),weight*.73*bridgeWash(p,uBridgeAxis[0],uBridgeBounds[0],uTrussInk));
+            col=mix(col,vec3(.48,.32,.25),weight*.73*bridgeWash(p,uBridgeAxis[1],uBridgeBounds[1],uTowerInk));
           }
           float foam = 0.;
           for(int i=0;i<6;i++){
