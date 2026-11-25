@@ -4,6 +4,8 @@ from math import cos, hypot, pi, sin, tau
 
 import bmesh
 import bpy
+from mathutils import Vector
+from mathutils.geometry import tessellate_polygon
 
 from mesh import Part
 
@@ -233,43 +235,88 @@ def cast_flower_panel(part, x, y, motif):
         stem([(-.69,.411),(-.60,.385),(-.39,.342),(-.23,.325),(-.04,.333),
               (.16,.368),(.30,.394),(.46,.402),(.58,.428),(.69,.47)], depth=.031)
         stem([(.44,.398),(.48,.53),(.51,.64)], depth=.060)
-        silhouette([(-.534,.843),(-.478,.820),(-.471,.875),(-.409,.813),
-                    (-.441,.902),(-.394,.860),(-.354,.950),(-.327,.860),
-                    (-.284,.909),(-.309,.819),(-.257,.866),(-.263,.805),
-                    (-.350,.766),(-.442,.777)])
-        def eased(points, corners):
-            outline = []
-            for i, (u, h) in enumerate(points):
-                if i not in corners:
-                    outline.append((u, h))
-                    continue
-                before, after = points[i-1], points[(i+1) % len(points)]
-                def shoulder(p):
-                    d = min(.032, .29*hypot(p[0]-u,p[1]-h))
-                    t = d/hypot(p[0]-u,p[1]-h)
-                    return u+(p[0]-u)*t, h+(p[1]-h)*t
-                left, right = shoulder(before), shoulder(after)
-                outline.extend((left, right))
-            silhouette(outline)
+        def casting(outline, center, depth, hole=None):
+            # Narrow shoulders curve into the face of the casting. The eye is a separate
+            # inner wall of the same shell, so head and body have one continuous surface.
+            outline = list(outline)
+            area = sum(a[0]*b[1]-a[1]*b[0] for a,b in zip(outline,outline[1:]+outline[:1]))
+            if area < 0:
+                outline.reverse()
+            count = len(outline)
+            rim = [(u*.89+center[0]*.11,h*.89+center[1]*.11) for u,h in outline]
+            rows = [(-depth,rim),(-depth*.52,outline),(depth*.52,outline),(depth,rim)]
+            vertices = [(x+d,y+u,z+h) for d,row in rows for u,h in row]
+            faces = []
+            for j in range(3):
+                for i in range(count):
+                    a,b = j*count+i,j*count+(i+1)%count
+                    faces.append((a,b,b+count,a+count))
+            if hole is None:
+                faces.extend((tuple(reversed(range(count))),tuple(range(3*count,4*count))))
+            else:
+                # Triangulate both annular caps with opposite windings and join the bore.
+                hole_count = len(hole)
+                vertices.extend((x+d,y+u,z+h) for d in (-depth,depth) for u,h in hole)
+                loops = [[Vector(v) for v in row] for row in (rim,hole)]
+                for triangle in tessellate_polygon(loops):
+                    cap = list(triangle)
+                    a,b,c = [(rim+hole)[i] for i in cap]
+                    if (b[0]-a[0])*(c[1]-a[1]) < (b[1]-a[1])*(c[0]-a[0]):
+                        cap.reverse()
+                    bottom = lambda i: i if i<count else 4*count+i-count
+                    top = lambda i: 3*count+i if i<count else 4*count+hole_count+i-count
+                    faces.extend((tuple(bottom(i) for i in reversed(cap)),tuple(top(i) for i in cap)))
+                for i in range(hole_count):
+                    a,b = 4*count+i,4*count+(i+1)%hole_count
+                    faces.append((a,b,b+hole_count,a+hole_count))
+            part.solid(vertices, faces)
 
-        eased([(-.42,.620),(-.385,.672),(-.32,.718),(-.205,.739),(-.106,.719),
-               (-.052,.686),(-.111,.658),(-.185,.628),(-.287,.609)], {0,2,3,5,8})
-        eased([(.153,.551),(.159,.691),(.193,.728),(.215,.733),(.227,.702),
-                    (.269,.685),(.233,.739),(.323,.752),(.451,.729),
-                    (.525,.680),(.672,.766),(.636,.663),(.663,.568),(.512,.627),
-                    (.437,.560),(.301,.522),(.251,.463),(.223,.459),(.233,.528),(.192,.531)], {1,7,8,9,14,15,19})
-        # Form both faces and the inner wall of the eye, leaving a true aperture.
-        head = [(.211,.633),(.188,.697),(.122,.707),(.071,.683),
-                (.044,.632),(.061,.585),(.122,.550),(.179,.562)]
-        eye = [(.120+.026*cos(i*tau/8), .632+.025*sin(i*tau/8)) for i in range(8)]
-        rings = [[(x+dx, y+u, z+h) for u,h in loop]
-                 for dx in (-.032,.032) for loop in (head,eye)]
-        faces = []
-        for i in range(8):
-            j = (i+1)%8
-            faces.extend(((j,i,i+8,j+8),(i+16,j+16,j+24,i+24),
-                          (i,j,j+16,i+16),(j+8,i+8,i+24,j+24)))
-        part.solid([v for ring in rings for v in ring], faces)
+        def relief(path, depth, width):
+            # A low rounded rib emerges from each cast face, with thinner ends.
+            for side in (-1,1):
+                rings = []
+                for i,(u,h) in enumerate(path):
+                    a,b = path[max(i-1,0)],path[min(i+1,len(path)-1)]
+                    du,dh = b[0]-a[0],b[1]-a[1]
+                    length = hypot(du,dh)
+                    scale = max(.0135,width*(.82 if i in (0,len(path)-1) else 1))
+                    rings.append([(x+side*(depth-.008)+.022*cos(k*tau/6),
+                                   y+u+dh/length*scale*sin(k*tau/6),
+                                   z+h-du/length*scale*sin(k*tau/6)) for k in range(6)])
+                vertices = [v for ring in rings for v in ring]
+                faces = []
+                for j in range(len(rings)-1):
+                    for i in range(6):
+                        a,b = 6*j+i,6*j+(i+1)%6
+                        faces.append((a,b,b+6,a+6))
+                for start, (u,h) in [(0,path[0]),(6*(len(rings)-1),path[-1])]:
+                    center = len(vertices)
+                    vertices.append((x+side*(depth-.008),y+u,z+h))
+                    for i in range(6):
+                        a,b = start+i,start+(i+1)%6
+                        faces.append((center,b,a) if start==0 else (center,a,b))
+                part.solid(vertices, faces)
+
+        casting([(-.540,.854),(-.509,.850),(-.479,.824),(-.482,.874),(-.467,.901),
+                 (-.435,.880),(-.411,.832),(-.401,.886),(-.377,.934),(-.352,.953),
+                 (-.332,.929),(-.328,.871),(-.310,.824),(-.293,.880),(-.264,.908),
+                 (-.243,.887),(-.246,.848),(-.267,.807),(-.301,.778),(-.350,.765),
+                 (-.407,.772),(-.457,.789),(-.511,.818)], (-.387,.826), .039)
+        casting([(-.445,.623),(-.400,.666),(-.352,.707),(-.283,.733),(-.219,.740),
+                 (-.151,.727),(-.090,.702),(-.054,.671),(-.111,.649),(-.181,.622),
+                 (-.257,.602),(-.330,.599),(-.397,.609)], (-.252,.662), .042)
+        relief([(-.407,.624),(-.352,.642),(-.292,.662),(-.221,.688),(-.157,.704)], .042, .010)
+
+        fish = [(.047,.610),(.040,.642),(.065,.675),(.106,.702),(.161,.721),
+                (.219,.739),(.292,.759),(.364,.758),(.436,.739),(.489,.712),
+                (.528,.688),(.579,.728),(.642,.770),(.662,.765),(.656,.734),
+                (.630,.675),(.644,.626),(.674,.578),(.656,.562),(.604,.582),
+                (.531,.622),(.479,.593),(.418,.561),(.343,.540),(.278,.535),
+                (.233,.526),(.177,.541),(.117,.552),(.076,.573)]
+        eye = [(.124+.028*cos(i*tau/8),.649-.030*sin(i*tau/8)) for i in range(8)]
+        casting(fish, (.339,.644), .047, eye)
+        relief([(.217,.706),(.232,.677),(.235,.642),(.222,.605),(.200,.580)], .047, .014)
+        relief([(.263,.614),(.291,.598),(.314,.579),(.328,.558)], .047, .013)
     else:  # A deer framed by plum branches.
         stem([(-.69,.414),(-.52,.550),(-.49,.756),(-.35,.895),(-.12,1.024)], .027, depth=.060)
         stem([(-.49,.758),(-.621,.869),(-.69,.967)], depth=.044)

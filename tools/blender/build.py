@@ -30,10 +30,12 @@ def encode_scene(scene):
     """Indexed signed 1/128-unit coordinates, with Blender Z-up rotated into Three.js Y-up."""
     batches = {}
     unique = {}
+    smooth_ranges = {}
     for obj in scene.objects:
         if obj.type != "MESH" or "ink_material" not in obj:
             continue
         positions, indices = batches.setdefault(obj["ink_material"], ({}, []))
+        start = len(indices)
         geo = obj.data
         geo.calc_loop_triangles()
         verts = []
@@ -52,6 +54,8 @@ def encode_scene(scene):
             if face not in seen:
                 indices.extend(positions.setdefault(p, len(positions)) for p in points)
                 seen.add(face)
+        if len(indices) > start and all(face.use_smooth for face in geo.polygons):
+            smooth_ranges.setdefault(obj["ink_material"], []).extend((start, len(indices)))
 
     # Bake sky visibility once. It preserves deep eaves, open trusses and arcades in the ink shader.
     world_points, triangles = [], []
@@ -76,6 +80,8 @@ def encode_scene(scene):
             raise ValueError(f"{key} exceeds 16-bit index budget")
         result[key] = [packed("h", [v for p in points for v in p]), packed("H", indices),
                        packed("B", [open_sky(p) for p in points])]
+        if key in smooth_ranges:
+            result[key].append(packed("I", smooth_ranges[key]))
     return result
 
 

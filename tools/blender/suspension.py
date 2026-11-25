@@ -152,27 +152,27 @@ def cables():
     sockets = Part("Yingwuzhou / hanger clevises and edge-girder anchorage", "vermilion")
     maintenance = Part("Yingwuzhou / main-cable access handlines", "suspensionOrange")
     for x in (-CABLE_X, CABLE_X):
-        path, hung, walk_spans = [], [], []
+        path, hung, walks = [], [], []
         for i, ((start, z0), (stop, z1)) in enumerate(zip(SADDLES, SADDLES[1:])):
             main = i in (1, 2)
             samples = 48 if main else 12
             sag = 22.75 if main else .79
-            span = []
+            supports = []
             for k in range(samples):
-                # Add curved half-stations in the main-span belly, where the low camera sees the sag.
-                offsets = (0, .5) if main and 12 <= k < 36 else (0,)
-                for offset in offsets:
-                    t = (k+offset)/samples
+                # Sample the same parabola between the original hanger stations.
+                subdivisions = 3 if main else 1
+                for sub in range(subdivisions):
+                    t = (k+sub/subdivisions)/samples
                     y = start + (stop-start)*t
                     z = z0 + (z1-z0)*t - sag*4*t*(1-t)
                     index = len(path)
                     path.append((y, z))
-                    if main and offset == 0 and 0 < k < samples:
-                        span.append(index)
+                    if main and sub == 0 and 0 < k < samples:
+                        supports.append(index)
                         if 1 < k < samples-1 and k%2 == 0:
                             hung.append(index)
             if main:
-                walk_spans.append(span)
+                walks.append(supports)
         path.append(SADDLES[-1])
 
         def ring(index, radius, sides=8, along=0):
@@ -186,20 +186,22 @@ def cables():
                      z+(-dy*radius*sin(j*tau/sides)+dz*along)/length) for j in range(sides)]
 
         loft(cables, [ring(i, .248, sides=10) for i in range(len(path))])
-        # Preserve post stations while doubling the rail's axial sampling.
-        for span in walk_spans:
+        # Decimate the denser cable stations for the thin handlines, keeping both ends and every post.
+        for supports in walks:
+            span = sorted(set(range(supports[0], supports[-1]+1, 2)) |
+                          set(supports[::8]) | {supports[-1]})
             for side in (-1, 1):
                 loft(maintenance, [[(px + side * .31, py, pz + .44)
                                    for px, py, pz in ring(index, .038, 4)]
                                   for index in span])
-                for index in span[::8]:
+                for index in supports[::8]:
                     y, z = path[index]
                     maintenance.beam((x + side * .18, y, z + .02),
                                      (x + side * .31, y, z + .44), .052)
         for index in hung:
             y, z = path[index]
             # The split clamp sleeves follow the actual cable tangent in both main spans.
-            loft(clamps, [ring(index, radius, sides=6, along=along)
+            loft(clamps, [ring(index, radius, sides=8, along=along)
                           for along, radius in ((-.24, .254), (-.18, .301), (.18, .301), (.24, .254))])
             sockets.box((x, y, z-.30), (.33, .43, .24))
             bottom = road_height(y)
@@ -221,7 +223,11 @@ def cables():
                 hangers.cylinder(x, y+dy, bottom+.08, z-.39, .057, 6)
                 sockets.cylinder(x, y+dy, bottom+.023, bottom+.44, .102, 6)
     for part in (cables, hangers, clamps, sockets, maintenance):
-        part.finish()
+        obj = part.finish()
+        # Native shading follows the round tubes; the web export derives normals from indexed rings.
+        if part in (cables, maintenance):
+            for polygon in obj.data.polygons:
+                polygon.use_smooth = True
 
 
 def deck():

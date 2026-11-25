@@ -81,7 +81,7 @@
     return values;
   }
   function architectureParts(name) {
-    return Object.entries(ARCHITECTURE[name]).map(([key, [vertices, faces, light]]) => {
+    return Object.entries(ARCHITECTURE[name]).map(([key, [vertices, faces, light, smooth]]) => {
       const coordinates = Float32Array.from(decodeWords(vertices, Int16Array), n => n / 128);
       const indexed = new THREE.BufferGeometry();
       indexed.setAttribute('position', new THREE.BufferAttribute(coordinates, 3));
@@ -92,6 +92,21 @@
       if (key==='cityShade') geometry.setAttribute('cityPane',
         new THREE.Float32BufferAttribute(cityPaneCoordinates(coordinates,triangles),4));
       geometry.computeVertexNormals();
+      if (smooth) {
+        // Average normals within each smooth Blender object, keeping adjoining steelwork flat.
+        const ranges = decodeWords(smooth, Uint32Array);
+        const flatNormals = geometry.getAttribute('normal');
+        for (let i=0; i<ranges.length; i+=2) {
+          const start = ranges[i], end = ranges[i+1];
+          indexed.setIndex(new THREE.BufferAttribute(triangles.subarray(start,end),1));
+          indexed.computeVertexNormals();
+          const tubeNormals = indexed.getAttribute('normal');
+          for (let corner=start; corner<end; corner++) {
+            const v = triangles[corner];
+            flatNormals.setXYZ(corner, tubeNormals.getX(v), tubeNormals.getY(v), tubeNormals.getZ(v));
+          }
+        }
+      }
       let material = architectureMaterials[key];
       if (name==='apartment' && key==='cityShade') material = apartmentWindow;
       if ((name==='bridge' || name==='yingwuzhou') && bridgeFinishes[key]) material = bridgeFinishes[key];

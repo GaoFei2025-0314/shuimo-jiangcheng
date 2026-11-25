@@ -81,15 +81,28 @@ test('a failing minifier falls back to checked uncompressed output', t => {
 test('exported bridges and west garden models retain valid triangles on the web coordinate grid', () => {
   const source = fs.readFileSync(path.join(root, 'src/architecture.gen.js'), 'utf8');
   const models = require('node:vm').runInNewContext(source + '\nARCHITECTURE');
+  assert.ok(models.yingwuzhou.suspensionOrange[3], 'round main cables retain their authored shading');
   const materialCounts = { bridge: 5, yingwuzhou: 5, park_paifang: 8, park_stupa: 3, park_cranes: 5, park_pavilion: 6 };
   for (const [name, minimum] of Object.entries(materialCounts)) {
     const batches = Object.entries(models[name]);
     assert.ok(batches.length >= minimum, name);
-    for (const [material, [coordinates, triangles, visibility]] of batches) {
+    for (const [material, [coordinates, triangles, visibility, smooth]] of batches) {
       const points = Buffer.from(coordinates, 'base64'), index = Buffer.from(triangles, 'base64');
       const count = points.length / 6, seen = new Set();
       assert.equal(Buffer.from(visibility, 'base64').length, count);
       assert.equal(index.length % 6, 0);
+      if (smooth) {
+        const ranges = Buffer.from(smooth, 'base64');
+        assert.equal(ranges.length % 8, 0);
+        let previousEnd = 0;
+        for (let i=0; i<ranges.length; i+=8) {
+          const start = ranges.readUInt32LE(i), end = ranges.readUInt32LE(i+4);
+          assert.ok(start >= previousEnd && start < end && end <= index.length/2);
+          assert.equal(start % 3, 0);
+          assert.equal(end % 3, 0);
+          previousEnd = end;
+        }
+      }
       for (let k = 0; k < index.length; k += 6) {
         const ids = [0, 2, 4].map(delta => index.readUInt16LE(k + delta));
         assert.ok(ids.every(i => i < count), name + '/' + material);
