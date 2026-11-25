@@ -327,6 +327,8 @@
   window.addEventListener('resize', resize); resize();
 
   const clock = new THREE.Clock();
+  const lowViewLanes = cityGround.riverfrontPaths.filter(path =>
+    path.name?.endsWith('滨水通街支巷') || path.name?.endsWith('后巷步道'));
   let sceneTime = 0;
   let frameId = 0;
   app.cleanups.push(() => {
@@ -434,16 +436,24 @@
     });
 
     const ground = plantingSurface(camera.position.x, camera.position.z) ?? 0;
-    let clearance = 7;
+    let clearance = 7, laneCloseness = 0;
     if (cameraMode === 'manual' && camera.position.y < ground + clearance) {
       // Lower the camera floor gradually near a lookout so the steps and street can share the foreground.
       for (const lookout of riverfrontLookouts) {
         const radius = Math.hypot(camera.position.x - lookout.x, camera.position.z - lookout.z);
         clearance = Math.min(clearance, 2.2 + 4.8 * THREE.MathUtils.smoothstep(radius, 5, 18));
       }
+      for (const lane of lowViewLanes) {
+        const fromEdge = distanceToPath(camera.position.x, camera.position.z, lane) - lane.width/2;
+        laneCloseness = Math.max(laneCloseness, 1 - THREE.MathUtils.smoothstep(fromEdge, 0, 3.5));
+      }
     }
+    clearance = Math.min(clearance, 7 - 4.8 * laneCloseness);
     const floorY = ground + clearance;
     if (camera.position.y < floorY) camera.position.y = floorY;
+    // At walking height, keep the opposite facade solid while a wall touching the camera still dissolves.
+    const streetView = laneCloseness * (1 - THREE.MathUtils.smoothstep(camera.position.y-ground, 3.8, 7));
+    cityCloseFade.value.set(6 - 5.4*streetView, 14 - 11.5*streetView);
     camU.uCam.value.copy(camera.position);
 
     const dist = camera.position.distanceTo(controls.target);

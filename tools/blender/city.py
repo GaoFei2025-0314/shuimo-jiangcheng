@@ -150,7 +150,9 @@ def imported_mesh(item, mat, dest, parent=None):
         obj.parent = parent
         obj.matrix_basis = placement(item["matrix"])
     waterfront_paving = item["name"].endswith(("两桥滨水步道", "桥头接岸步道", "滨水通街支巷"))
-    if waterfront_paving or item["material"] in ("Streets", "ApproachPaving", "RoadPaint") or item["group"] in (
+    courtyard_paving = (item["group"] in ("汉阳滨水街巷生活", "汉阳茶棚后街坊", "武昌滨水街巷生活")
+                       and item["material"] in ("Path", "BankStone"))
+    if courtyard_paving or waterfront_paving or item["material"] in ("Streets", "ApproachPaving", "RoadPaint") or item["group"] in (
             "汉阳桥头街坊", "武昌桥头街坊", "汉阳两桥街道", "武昌两桥街道"):
         # Thin paving ribbons meet at intersections; their pigment casts no extra shadow.
         obj.visible_shadow = False
@@ -639,7 +641,11 @@ def waterfront_views(scene, camera_group):
             ("武昌江岸 · 望武汉长江大桥", "wuchang-wuhan", (-85,-45,5.9), (-81,23,2), 25),
             ("武昌江岸 · 望鹦鹉洲长江大桥", "wuchang-yingwuzhou", (-88,-65,6.4), (-120,-139,4), 24),
             ("汉阳水阶 · 系船石与街巷", "hanyang-mooring", (-187.8,-47.8,2.7), (-197.8,-39.5,1.2), 27),
-            ("武昌江岸 · 石凳与街巷", "wuchang-bench", (-96,-97.8,3), (-80,-89.5,1.3), 29)):
+            ("武昌江岸 · 石凳与街巷", "wuchang-bench", (-96,-97.8,3), (-80,-89.5,1.3), 29),
+            ("汉阳通街支巷 · 入巷望茶棚", "hanyang-tea-lane", (-206,-35,2.8), (-230,-34,2), 25),
+            ("武昌通街支巷 · 入巷望里分", "wuchang-courtyard-lane", (-72,-86,3.35), (-43,-72,2.1), 31),
+            ("汉阳通街支巷 · 回望武汉长江大桥", "hanyang-lane-to-bridge", (-205,-35,2.9), (-143,37,4), 25),
+            ("武昌通街支巷 · 回望鹦鹉洲长江大桥", "wuchang-lane-to-bridge", (-74,-84,3.3), (-126,-134,7), 26)):
         data = bpy.data.cameras.new(name)
         data.lens = lens
         data.clip_end = scene.camera.data.clip_end

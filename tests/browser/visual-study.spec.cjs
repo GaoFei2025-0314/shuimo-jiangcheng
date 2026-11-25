@@ -355,7 +355,7 @@ test('both approach carriageways stay above the terrain through the bridgeheads 
   expect(failures).toEqual([]);
 });
 
-test('manual close views can descend at the six waterfront landings and rise back to the city view', async ({ page }) => {
+test('manual close views stay low on waterfront landings and back lanes and rise away from them', async ({ page }) => {
   await page.emulateMedia({reducedMotion:'reduce'});
   await page.goto('/?debug');
   await page.waitForFunction(() => window.__dbg && window.__ready);
@@ -377,10 +377,12 @@ test('manual close views can descend at the six waterfront landings and rise bac
       levels.push(await clearance(x,z));
     }
     const transition = await clearance(-209.6,40.1);
-    const inland = await clearance(-223,40.1);
+    for (const [x,z] of [[-226.1,29.3],[-47.0,68.5]]) levels.push(await clearance(x,z));
+    const fade = __dbg.scene.getObjectByName('City / lane').material.uniforms.uFade.value.toArray();
+    const inland = await clearance(-223,61);
     __dbg.flyTo('core');
     await frame();
-    return {levels, transition, inland, overview:camera.position.y};
+    return {levels, transition, inland, fade, overview:camera.position.y};
   });
   for (const height of result.levels) {
     expect(height).toBeGreaterThan(1.8);
@@ -389,6 +391,7 @@ test('manual close views can descend at the six waterfront landings and rise bac
   expect(result.transition).toBeGreaterThan(3);
   expect(result.transition).toBeLessThan(7);
   expect(result.inland).toBeCloseTo(7,1);
+  expect(result.fade[1]).toBeLessThan(3);
   expect(result.overview).toBeGreaterThan(60);
 });
 
@@ -635,6 +638,49 @@ test('the tea stall and courtyard entrances meet the riverside lanes at walking 
   });
   expect(error).toEqual([]);
   expect(shaderErrors).toEqual([]);
+});
+
+test('back lane paving reaches the occupied doorways, through lane and old street at walking grade', async ({ page }) => {
+  await page.goto('/?debug');
+  await page.waitForFunction(() => window.__ready && window.__dbg);
+  const errors = await page.evaluate(() => {
+    const {scene,onLand,plantingSurface} = __dbg;
+    const joins = [
+      ['茶棚后院接汉阳滨水支巷',[-225.55,24.03],'汉阳滨水通街支巷'],
+      ['汉阳沿巷小院过门石径',[-222.40,42.13],'汉阳滨水通街支巷'],
+      ['汉阳后排里分入巷石径',[-234.95,45.88],'汉阳滨水通街支巷'],
+      ['武昌后巷绕屋接旧街','武昌滨水通街支巷','City streets'],
+      ['武昌公寓门前转入后巷',[-42.11,74.60],'武昌后巷绕屋接旧街'],
+      ['武昌灰瓦里分门前接旧街',[-36.16,55.87],'City streets'],
+    ];
+    const issues=[], ray=new THREE.Raycaster(), down=new THREE.Vector3(0,-1,0);
+    const material=new THREE.MeshBasicMaterial({side:THREE.DoubleSide});
+    for (const [name,begin,end] of joins) {
+      const positions=scene.getObjectByName(name)?.geometry.attributes.position;
+      if (!positions) { issues.push(name+' missing'); continue; }
+      for (let i=0; i<positions.count; i+=2) {
+        const a=new THREE.Vector3().fromBufferAttribute(positions,i);
+        const b=new THREE.Vector3().fromBufferAttribute(positions,i+1);
+        if (a.distanceTo(b)<.9 || [a,b].some(p=>!onLand(p.x,p.z) || p.y < plantingSurface(p.x,p.z))) {
+          issues.push(name+' buried or too narrow');
+          break;
+        }
+        if (i!==0 && i!==positions.count-2) continue;
+        const center=a.lerp(b,.5), join=i===0 ? begin : end;
+        if (Array.isArray(join)) {
+          if (Math.hypot(center.x-join[0],center.z-join[1])>.25) issues.push(name+' misses door');
+        } else {
+          ray.set(center.clone().addScaledVector(down,-2),down);
+          const road=new THREE.Mesh(scene.getObjectByName(join).geometry,material);
+          const hit=ray.intersectObject(road)[0];
+          if (!hit || Math.abs(hit.point.y-center.y)>.05) issues.push(name+' misses '+join);
+        }
+      }
+    }
+    material.dispose();
+    return issues;
+  });
+  expect(errors).toEqual([]);
 });
 
 test('the bridge sidewalks clear the hillside and the painted crossings at their landings', async ({ page }) => {

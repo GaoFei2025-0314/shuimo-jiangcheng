@@ -538,7 +538,8 @@
       ((x-cx)/(hx+margin))**2 + ((z-cz)/(hz+margin))**2 < 1));
   }
 
-  function buildRiverfrontAlleys(lanes) {
+  function buildRiverfrontAlleys(lots) {
+    const {lane:lanes, apartment:apartments}=lots;
     const colors = {
       Masonry:inkMat(.38,false,['#8d7d6e','#d6c6ac']),
       Ink:inkMat(.21,false,['#463b33','#756558']),
@@ -601,24 +602,35 @@
         target=lip.clone().addScaledVector(toward,Math.max(0,gap-width*.5+.09)/gap).setY(0);
       }
       if (!target || nearest>8) return;
-      const curve=new THREE.CatmullRomCurve3([start.clone().setY(0),lip.clone().setY(0),target]);
-      const points=curve.getSpacedPoints(12), vertices=[], indices=[];
+      paveAlley(group,name,[start,lip,target],12,t =>
+        THREE.MathUtils.lerp(half,.47,THREE.MathUtils.smoothstep(t,.25,1)));
+    }
+    function paveAlley(group,name,controls,count,halfWidth,{
+      material='Path', liftAt=t=>THREE.MathUtils.lerp(.092,.071,t), routeName,
+    } = {}) {
+      const curve=new THREE.CatmullRomCurve3(controls.map(p=>p.clone().setY(0)));
+      const points=curve.getSpacedPoints(count), vertices=[], indices=[];
       for (let i=0;i<points.length;i++) {
         const p=points[i], a=points[Math.max(i-1,0)], b=points[Math.min(i+1,points.length-1)];
-        const axis=V(b.z-a.z,0,a.x-b.x).normalize();
-        const width=THREE.MathUtils.lerp(half,.47,THREE.MathUtils.smoothstep(i,3,12));
+        const axis=V(b.z-a.z,0,a.x-b.x).normalize(), t=i/count;
         for (const sign of [-1,1]) {
-          const q=p.clone().addScaledVector(axis,width*sign);
-          vertices.push(q.x,floor(q)+THREE.MathUtils.lerp(.092,.071,i/12),q.z);
+          const q=p.clone().addScaledVector(axis,halfWidth(t)*sign);
+          vertices.push(q.x,floor(q)+liftAt(t),q.z);
         }
         if (!i) continue;
         const j=2*(i-1);
         indices.push(j,j+2,j+1,j+1,j+2,j+3);
+        if (routeName) {
+          const path={a:points[i-1],b:p,width:2*Math.max(halfWidth((i-1)/count),halfWidth(t)),
+            name:routeName,group,planted:true,riverfront:true};
+          cityGround.riverfrontPaths.push(path);
+          cityGround.streets.push(path);
+        }
       }
       const geometry=new THREE.BufferGeometry();
       geometry.setAttribute('position',new THREE.Float32BufferAttribute(vertices,3));
       geometry.setIndex(indices); geometry.computeVertexNormals();
-      add(group,name,'Path',new THREE.Mesh(geometry,M.bankPath));
+      add(group,name,material,new THREE.Mesh(geometry,material==='BankStone' ? M.bankStone : M.bankPath));
     }
     function doorway(detail,front,across,width,height) {
       const {point,yaw}=front;
@@ -686,6 +698,87 @@
       life.show();
     }
 
+    function hanyangCourtyards() {
+      const group='汉阳茶棚后街坊';
+      const street=cityGround.riverfrontPaths.filter(path=>path.name==='汉阳滨水通街支巷');
+      function courtyardFront(x,z,endWall,opposite,across) {
+        const face=laneFront(x,z,endWall);
+        if (!face) return null;
+        const {tangent,yaw}=face;
+        const origin=opposite ? V(2*x-face.origin.x,0,2*z-face.origin.z) : face.origin.clone();
+        const forward=face.forward.clone().multiplyScalar(opposite ? -1 : 1);
+        origin.addScaledVector(tangent,across);
+        const point=(u,d,h=0)=>{
+          const p=origin.clone().addScaledVector(tangent,u).addScaledVector(forward,d);
+          return p.setY(floor(p)+h);
+        };
+        return {origin,forward,tangent,point,yaw};
+      }
+      function courtWalk(front,name,bends) {
+        const controls=[front.point(0,.12),...bends.map(([x,z])=>V(x,0,z))];
+        const mouth=streetLip(street,controls.at(-1));
+        if (!mouth) return false;
+        controls.push(mouth);
+        const length=new THREE.CatmullRomCurve3(controls.map(p=>p.clone().setY(0))).getLength();
+        paveAlley(group,name,controls,Math.ceil(length/.53),
+          t=>THREE.MathUtils.lerp(.68,.49,THREE.MathUtils.smoothstep(t,.18,.86)),
+          {routeName:'汉阳后巷步道',liftAt:t=>THREE.MathUtils.lerp(.097,.071,t)});
+        return true;
+      }
+      const yards=[
+        {
+          house:[-222.30,20.50,false,false,3.80], name:'汉阳茶棚后院门面', walk:'茶棚后院接汉阳滨水支巷',
+          bends:[[-225.48,24.94],[-226.05,26.73],[-226.12,29.28],[-225.94,32.34],[-225.75,34.56]],
+          walls:[[-228.0,29.53,1.64,.61,.10],[-223.87,29.29,1.25,.51,-.19]],
+          returnToHouse:[[-228.78,27.55],[-228.10,25.88],[-226.75,24.16]],
+          door:[.78,1.60], window:[-1.08,.48,.46],
+        },
+        {
+          house:[-222,45,true,true,0], name:'汉阳沿巷小院山墙门面', walk:'汉阳沿巷小院过门石径',
+          bends:[[-222.56,41.15],[-222.69,39.82],[-222.96,38.31],[-223.18,37.34]],
+          walls:[[-224.79,39.08,1.21,.62,.06],[-221.08,39.19,1.10,.47,-.17]],
+          returnToHouse:[[-225.28,40.45],[-223.64,42.40]],
+          door:[.69,1.37], window:[.88,.44,.44],
+        },
+        {
+          house:[-234.64,48.70,false,true,-.37], name:'汉阳后排里分门面', walk:'汉阳后排里分入巷石径',
+          bends:[[-235.19,44.78],[-235.44,43.22],[-235.86,41.69],[-236.70,39.58],[-237.39,37.18]],
+          walls:[[-237.52,42.13,1.38,.56,.27],[-233.98,42.19,1.22,.43,.08]],
+          returnToHouse:[[-237.87,43.64],[-236.18,46.22]],
+          door:[.83,1.59], window:[1.18,.52,.46],
+        },
+      ];
+      for (const {house,name,walk,bends,walls,returnToHouse,door,window} of yards) {
+        const face=courtyardFront(...house);
+        if (!face || !courtWalk(face,walk,bends)) continue;
+        const detail=blocks(group,name);
+        doorway(detail,face,0,...door);
+        latticeWindow(detail,face,...window);
+        detail.show();
+        const edges=blocks(group,name+'的退让院墙');
+        function lowWall(p,length,height,yaw) {
+          const y=floor(p);
+          edges.box('Masonry',p.clone().setY(y+height*.5-.035),length,height,.145,yaw);
+          edges.box('Masonry',p.clone().setY(y+.023),length,.124,.205,yaw);
+          edges.box('Slate',p.clone().setY(y+height-.02),length+.035,.038,.19,yaw);
+        }
+        for (const [i,[x,z,length,height,yaw]] of walls.entries()) {
+          const p=V(x,0,z);
+          lowWall(p,length,height,yaw);
+          if (i) continue;
+          // Run the setback wall back to the actual house, clear of the gate opening.
+          let end=p.clone().addScaledVector(V(Math.cos(yaw),0,-Math.sin(yaw)),.045-length*.5);
+          for (const [nx,nz] of returnToHouse) {
+            const next=V(nx,0,nz), dx=nx-end.x, dz=nz-end.z;
+            lowWall(end.clone().lerp(next,.5),Math.hypot(dx,dz)+.034,height,Math.atan2(-dz,dx));
+            end=next;
+          }
+        }
+        edges.show();
+      }
+    }
+    hanyangCourtyards();
+
     // The other bank has a quieter house gate, with short caps and an open way into the courtyard.
     const east=laneFront(-59.58,75.26,false);
     if (east) {
@@ -708,11 +801,122 @@
       person(life,east,.36,4.33,Math.PI*.04,.91,'BoatAccent',-.53);
       life.show();
     }
+
+    const backGroup='武昌滨水街巷生活', routeName='武昌后巷步道';
+    function oldThreshold(matrices,x,z,doorX,wallZ) {
+      const matrix=matrices.find(({elements:e})=>Math.hypot(x-e[12],z-e[14])<.28);
+      if (!matrix) return null;
+      const e=matrix.elements;
+      const origin=V(doorX,0,wallZ).applyMatrix4(matrix).setY(0);
+      const tangent=V(e[0],0,e[2]).normalize(), forward=V(e[8],0,e[10]).normalize();
+      const point=(across,along,height=0)=>{
+        const p=origin.clone().addScaledVector(tangent,across).addScaledVector(forward,along);
+        return p.setY(floor(p)+height);
+      };
+      return {point,yaw:Math.atan2(-tangent.z,tangent.x)};
+    }
+    function streetLip(paths,point) {
+      let best=Infinity, lip;
+      for (const {a,b,width} of paths) {
+        const step=V(b.x-a.x,0,b.z-a.z), toward=V(a.x-point.x,0,a.z-point.z);
+        toward.addScaledVector(step,THREE.MathUtils.clamp(-toward.dot(step)/step.lengthSq(),0,1));
+        const gap=toward.length();
+        if (gap>=best || gap<.001) continue;
+        best=gap;
+        lip=point.clone().addScaledVector(toward,Math.max(.04,gap-width*.5+.10)/gap);
+      }
+      return best<4 ? lip : null;
+    }
+    const middle=oldThreshold(apartments,-40.09,71.99,-1.05,3.29);
+    const rear=oldThreshold(lanes,-37.73,58.08,-.75,2.73);
+    const branch=cityGround.riverfrontPaths.filter(p=>p.name==='武昌滨水通街支巷');
+    const oldStreet=cityGround.streets.filter(p=>!p.group);
+    const branchLip=streetLip(branch,V(-46.7,0,80.6));
+    const streetEnd=streetLip(oldStreet,V(-44.1,0,51.2));
+    const bend=V(-47.0,0,77.2);
+    if (branchLip && streetEnd) {
+      paveAlley(backGroup,'武昌后巷绕屋接旧街',
+        [branchLip,V(-46.8,0,79.0),bend,V(-47.25,0,73.8),V(-47.0,0,68.5),
+          V(-46.15,0,63.0),V(-45.85,0,56.8),V(-45.7,0,51.8),streetEnd],
+        55,t=>.53+.12*Math.sin(t*Math.PI),{material:'BankStone',liftAt:()=>.075,routeName});
+    }
+    if (middle && branchLip && streetEnd) {
+      const {point,yaw}=middle;
+      paveAlley(backGroup,'武昌公寓门前转入后巷',
+        [point(0,.04),point(0,.96),V(-43.55,0,76.5),V(-45.35,0,77.15),bend],
+        18,t=>THREE.MathUtils.lerp(1.05,.52,THREE.MathUtils.smoothstep(t,.25,.87)),{routeName});
+      const court=blocks(backGroup,'武昌公寓转角短院墙');
+      court.box('Masonry',point(.03,.25,.065),1.90,.13,.63,yaw);
+      court.box('Slate',point(.03,.61,.041),1.63,.077,.29,yaw);
+      court.box('Ink',point(0,.022,.80),1.41,1.44,.043,yaw);
+      court.box('Slate',point(0,.050,1.36),1.23,.25,.032,yaw);
+      for (const side of [-1,1]) {
+        court.box('Masonry',point(side*.727,.061,.82),.08,1.53,.11,yaw);
+        court.box('Slate',point(side*.317,.052,.66),.607,1.06,.036,yaw);
+        court.box('Ink',point(side*.132,.081,.71),.027,.17,.034,yaw);
+      }
+      court.box('Masonry',point(0,.056,1.59),1.53,.061,.095,yaw);
+      // The entrance faces the turning lane on its open side. A low return screens the other corner.
+      court.box('Masonry',point(1.80,1.91,.31),2.18,.61,.23,yaw);
+      court.box('Slate',point(1.80,1.91,.63),2.25,.08,.31,yaw);
+      court.box('Masonry',point(2.95,.97,.25),.24,.49,1.99,yaw);
+      court.box('Slate',point(2.95,.97,.52),.31,.074,2.04,yaw);
+      court.box('BoatAccent',point(.72,1.91,.418),.20,.82,.24,yaw);
+      for (const [u,d,w,l] of [[1.8,1.91,2.24,.30],[2.95,.97,.29,2.04]]) {
+        const base=point(u,d,.035);
+        court.box('Slate',base,w,.068,l,yaw);
+        groundContacts.push({x:base.x,z:base.z,rx:w*.59,rz:l*.59,c:Math.cos(yaw),s:Math.sin(yaw),tree:false});
+      }
+      for (const [u,w] of [[-2.06,1.34],[2.08,1.34],[4.14,1.19]]) {
+        court.box('Slate',point(u,.071,.157),w,.073,.22,yaw);
+      }
+      court.show();
+    }
+    if (rear) {
+      const {point,yaw}=rear, endpoint=streetLip(oldStreet,point(.12,1.86));
+      if (endpoint) {
+        paveAlley(backGroup,'武昌灰瓦里分门前接旧街',
+          [point(0,.05),point(0,.71),point(.08,1.45),endpoint],
+          12,t=>THREE.MathUtils.lerp(.79,.53,t),{routeName});
+      }
+      const entry=blocks(backGroup,'武昌灰瓦里分木门头与窗台');
+      // Recessed timber leaves and narrow divisions follow the openings of this specific front.
+      entry.box('Ink',point(0,.022,.81),.75,1.55,.046,yaw);
+      entry.box('BoatAccent',point(0,.064,1.60),.82,.073,.11,yaw);
+      entry.box('BoatAccent',point(0,.13,1.74),1.05,.102,.39,yaw,.12);
+      for (const side of [-1,1]) {
+        entry.beam('Ink',point(side*.49,.094,1.49),point(side*.49,.26,1.70),.067);
+        entry.box('BoatAccent',point(side*.38,.061,.80),.068,1.54,.098,yaw);
+        entry.box('BoatAccent',point(side*.175,.047,.79),.315,1.46,.031,yaw);
+        entry.box('Ink',point(side*.175,.067,.98),.221,.69,.021,yaw);
+        entry.box('BoatAccent',point(side*.175,.082,.97),.208,.035,.024,yaw);
+      }
+      entry.box('Masonry',point(.071,.077,.78),.032,.083,.033,yaw);
+      for (const [u,w] of [[1.13,.39],[1.64,.39],[-1.51,.37]]) {
+        entry.box('Ink',point(u,.017,.997),w,.87,.026,yaw);
+        for (const side of [-1,1]) {
+          entry.box('BoatAccent',point(u+side*(w*.5-.018),.045,.997),.036,.88,.059,yaw);
+        }
+        entry.box('BoatAccent',point(u,.046,.997),w,.042,.058,yaw);
+        entry.box('Slate',point(u,.036,1.446),w+.04,.049,.049,yaw);
+      }
+      entry.box('Masonry',point(0,.21,.067),.91,.13,.48,yaw);
+      entry.box('Masonry',point(.015,.53,.035),1.03,.066,.21,yaw);
+      for (const [u,w] of [[-1.82,.88],[1.37,.91],[4.36,.91]]) {
+        entry.box('Slate',point(u,.071,.517),w,.064,.21,yaw);
+      }
+      entry.show();
+    }
   }
 
   /* ═════════ 九、三镇市廛 ═════════ */
   // 以街坊为单位，里分顺巷成排、临江商埠与厂房成带，现代楼群在内街起伏。
   // 空间为画意概括，河湖、桥轴和地标仍使用实测位置。
+  function distanceToPath(x, z, {a, b}) {
+    const dx = b.x-a.x, dz = b.z-a.z;
+    const t = THREE.MathUtils.clamp(((x-a.x)*dx+(z-a.z)*dz)/(dx*dx+dz*dz || 1), 0, 1);
+    return Math.hypot(x-a.x-dx*t, z-a.z-dz*t);
+  }
   function buildCityBlocks() {
     const lots = { lane: [], arcade: [], wharf: [], apartment: [], highrise: [], terrace_tower: [], slab_tower: [] };
     const landmarks = pickables.filter(g => !['bridge', 'yingwuzhou', 'lake'].includes(g.userData.focus))
@@ -725,11 +929,6 @@
     const cityRandom = () => (citySeed = (citySeed * 16807) % 2147483647) / 2147483647;
     const halfWidth = 5.25, halfDepth = 3.95;
     const landmarkAt = (x, z) => landmarks.some(box => x > box.min.x && x < box.max.x && z > box.min.z && z < box.max.z);
-    const distanceToPath = (x, z, { a, b }) => {
-      const dx = b.x-a.x, dz = b.z-a.z;
-      const t = THREE.MathUtils.clamp(((x-a.x)*dx+(z-a.z)*dz)/(dx*dx+dz*dz), 0, 1);
-      return Math.hypot(x-a.x-dx*t, z-a.z-dz*t);
-    };
     function occupiedIn(lotsByCell, x, z, radius = 0) {
       const cx = Math.floor(x / cellSize), cz = Math.floor(z / cellSize);
       const cellsToCheck = Math.ceil((radius + 9) / cellSize);
@@ -1065,7 +1264,7 @@
       }
     }
     cityGround.occupied = (x, z, radius) => occupied(x, z, radius);
-    buildRiverfrontAlleys(lots.lane);
+    buildRiverfrontAlleys(lots);
     const streets = streetsMesh.mesh(inkMat(.42, false, ['#b3a895', '#dfd8c7']), false);
     streets.name = 'City streets';
     scene.add(streets);
