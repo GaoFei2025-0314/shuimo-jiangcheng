@@ -103,7 +103,7 @@
     void main(){
       float near = 1.0;
       if(uFade.y > .5){                                   // 镜头穿过时，屋舍化入宣纸
-        near = smoothstep(uFade.x, uFade.y, distance(vW.xz, uCam.xz));
+        near = smoothstep(uFade.x, uFade.y, distance(vW, uCam));
         if(near < hash(floor(vW.xz * 4.0) + floor(vW.y * 4.0) + .5)) discard;
       }
       vec3 n = normalize(vN); if(!gl_FrontFacing) n = -n;

@@ -276,6 +276,43 @@ test('the Wuhan University arrival looks uphill at the three arch entrances', as
   expect(minimumClearance).toBeGreaterThan(.5);
 });
 
+test('bridgehead roofs stay opaque from above and fade when the camera passes close', async ({ page }) => {
+  await ready(page);
+  const covered = await page.evaluate(() => {
+    const renderer = window.__testRenderer;
+    const roof = window.__testScene.children.find(n => n.name === 'City / lane');
+    const material = roof.material.clone();
+    const tile = new THREE.PlaneGeometry(8,8).rotateX(-Math.PI/2);
+    tile.setAttribute('skyVisibility', new THREE.Float32BufferAttribute([1,1,1,1],1));
+    const scene = new THREE.Scene();
+    scene.add(new THREE.Mesh(tile, material));
+    const camera = new THREE.OrthographicCamera(-3,3,3,-3,.1,100);
+    camera.up.set(0,0,-1);
+    const target = new THREE.WebGLRenderTarget(16,16);
+    const original = renderer.getRenderTarget();
+    const color = renderer.getClearColor(new THREE.Color()), alpha = renderer.getClearAlpha();
+    try {
+      renderer.setRenderTarget(target);
+      renderer.setClearColor(0,0);
+      return [55,4].map(height => {
+        camera.position.set(0,height,0);
+        camera.lookAt(0,0,0);
+        material.uniforms.uCam.value.copy(camera.position);
+        renderer.clear();
+        renderer.render(scene,camera);
+        const pixels = new Uint8Array(16*16*4);
+        renderer.readRenderTargetPixels(target,0,0,16,16,pixels);
+        return pixels.filter((v,i) => i%4 === 3 && v === 255).length;
+      });
+    } finally {
+      renderer.setRenderTarget(original);
+      renderer.setClearColor(color,alpha);
+      target.dispose(); tile.dispose(); material.dispose();
+    }
+  });
+  expect(covered).toEqual([256,0]);
+});
+
 test('both approach carriageways stay above the terrain through the bridgeheads to the city streets', async ({ page }) => {
   await page.emulateMedia({ reducedMotion: 'reduce' });
   await page.goto('/?debug');
