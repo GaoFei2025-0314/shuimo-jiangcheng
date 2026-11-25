@@ -17,8 +17,13 @@
       moreButton.setAttribute('aria-expanded', String(menu));
     }
     moreButton.addEventListener('click', () => setMenu(!menu));
-    document.getElementById('action-menu').addEventListener('click', event => {
-      if (event.target.closest('button')) setMenu(false);
+    const actionMenu = document.getElementById('action-menu');
+    actionMenu.addEventListener('click', event => {
+      if (!event.target.closest('button')) return;
+      const focused = document.activeElement;
+      setMenu(false);
+      // 收起后菜单项已隐藏，焦点交还「⋯」；观画模式下按钮仍在原处，焦点不动。
+      if (actionMenu.contains(focused) && !focused.getClientRects().length) moreButton.focus({ preventScroll: true });
     });
     function closeOutside(event) { if (menu && !actions.contains(event.target)) setMenu(false); }
     document.addEventListener('pointerdown', closeOutside);

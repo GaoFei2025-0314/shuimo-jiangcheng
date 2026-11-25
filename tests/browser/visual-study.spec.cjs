@@ -80,6 +80,17 @@ test('each atlas plate opens for its own model, with two architectural detail vi
   await page.keyboard.press('ArrowLeft');
   await expect(select).toHaveValue('tower');
   await expect(dialog.locator('#atlas-caption-text')).toContainText('蛇山西麓');
+  // Turning from a view button that the next site lacks keeps focus inside the album.
+  await select.selectOption('bridge');
+  await dialog.locator('#atlas-detail').focus();
+  await page.keyboard.press('ArrowRight');
+  await expect(select).toHaveValue('qc');
+  await expect(dialog.locator('#atlas-detail')).toBeHidden();
+  expect(await page.evaluate(() => {
+    const el = document.activeElement;
+    return !!el.closest('#atlas') && el.checkVisibility();
+  })).toBe(true);
+  await select.selectOption('tower');
   for (const key of keys) {
     await select.selectOption(key);
     await image.evaluate(image => image.decode());

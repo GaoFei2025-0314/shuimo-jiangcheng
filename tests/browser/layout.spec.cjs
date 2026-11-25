@@ -206,6 +206,14 @@ test('the compact action menu opens from the ellipsis, closes on Escape and outs
   await more.click();
   await page.mouse.click(195, 420);
   await expect(menu).toBeHidden();
+  // Choosing an item by keyboard closes the menu and hands focus back to the ellipsis.
+  await more.focus();
+  await page.keyboard.press('Enter');
+  await page.locator('#poem-toggle').focus();
+  await page.keyboard.press('Enter');
+  await expect(page.locator('#poem')).toBeVisible();
+  await expect(more).toBeFocused();
+  await page.keyboard.press('Escape');
   await more.click();
   await page.locator('#painting-toggle').click();
   await expect(page.getByRole('button', { name: '退出观画' })).toBeVisible();

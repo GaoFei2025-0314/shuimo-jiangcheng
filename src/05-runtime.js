@@ -387,9 +387,11 @@
   atlasSite.addEventListener('change', () => showPlate());
   // 册页翻页：按下拉中的景点顺序前后翻，首尾相接；方向键同样可用。
   function turnPage(step) {
-    const n = atlasSite.options.length;
+    const n = atlasSite.options.length, focused = document.activeElement;
     atlasSite.selectedIndex = (atlasSite.selectedIndex + step + n) % n;
     showPlate();
+    // 新景点若没有当前聚焦的视图按钮（细部、构件、桥名），焦点留在册页内。
+    if (atlas.contains(focused) && !focused.getClientRects().length) atlas.focus({ preventScroll: true });
   }
   document.getElementById('atlas-prev').addEventListener('click', () => turnPage(-1));
   document.getElementById('atlas-next').addEventListener('click', () => turnPage(1));
