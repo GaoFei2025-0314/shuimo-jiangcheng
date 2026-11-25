@@ -123,6 +123,35 @@ test('compact text panels are mutually exclusive, bounded and keyboard operable'
   await expect(page.locator('#details-toggle')).toBeFocused();
 });
 
+test('landscape controls leave the drawing room and restore keyboard navigation', async ({ page }) => {
+  await page.setViewportSize({ width: 844, height: 390 });
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await ready(page);
+  const dock = page.locator('#dock'), toggle = page.getByRole('button', { name: '观画', exact: true });
+  const overview = page.getByRole('button', { name: '回全城' });
+  const occupiedHeight = await dock.evaluate(el => innerHeight - el.getBoundingClientRect().top);
+  expect(occupiedHeight).toBeLessThanOrEqual(97);
+  await expect(page.locator('#hint')).toContainText('轻触景点');
+  await expect.poll(() => overview.evaluate(el => el.style.getPropertyValue('--north-angle'))).toMatch(/deg$/);
+  await page.getByRole('button', { name: '黄鹤楼', exact: true }).focus();
+  await page.keyboard.press('Enter');
+  await expect(page.locator('#b-tower')).toHaveAttribute('aria-pressed', 'true');
+  await toggle.focus();
+  await page.keyboard.press('Enter');
+  const restore = page.getByRole('button', { name: '退出观画' });
+  await expect(restore).toBeFocused();
+  for (const selector of ['#marks', '#labels', '#poem', '#nav']) await expect(page.locator(selector)).toBeHidden();
+  await expect(overview).toBeVisible();
+  await overview.click();
+  await page.keyboard.press('Escape');
+  await expect(toggle).toBeFocused();
+  await expect(page.locator('#nav')).toBeVisible();
+  await expect(page.locator('#b-home')).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.locator('#marks')).toBeVisible();
+  await page.getByRole('button', { name: '详情' }).click();
+  await expect(page.locator('#cardText')).toBeVisible();
+});
+
 test('resizing after a manual orbit preserves camera position and target', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.emulateMedia({ reducedMotion: 'reduce' });

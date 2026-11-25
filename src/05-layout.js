@@ -1,10 +1,13 @@
-  /* 紧凑布局只管理题跋与可用画幅；场景坐标和建筑模型保持不变。 */
+  /* 导览与观画共用画幅计算。 */
   function createMapLayout(invalidate) {
     const media = window.matchMedia('(max-width: 640px), (max-height: 500px)');
     const poem = document.getElementById('poem'), text = document.getElementById('cardText');
     const poemButton = document.getElementById('poem-toggle'), detailsButton = document.getElementById('details-toggle');
-    const elements = ['title', 'poem', 'sound', 'poem-toggle', 'dock'].map(id => document.getElementById(id));
-    let panel = null;
+    const elements = ['title', 'poem', 'sound', 'poem-toggle', 'map-actions', 'dock'].map(id => document.getElementById(id));
+    const paintingButton = document.getElementById('painting-toggle');
+    const paintingExtras = ['title', 'sound', 'poem-toggle', 'dock', 'marks', 'labels', 'tip']
+      .map(id => document.getElementById(id));
+    let panel = null, painting = false;
     const nav = document.getElementById('nav');
     function updateNavEdges() {
       nav.classList.toggle('more-left', nav.scrollLeft > 1);
@@ -13,12 +16,12 @@
     nav.addEventListener('scroll', updateNavEdges, { passive: true });
     app.cleanups.push(() => nav.removeEventListener('scroll', updateNavEdges));
     function updatePanels() {
-      poem.hidden = media.matches && panel !== 'poem';
+      poem.hidden = painting || media.matches && panel !== 'poem';
       text.hidden = media.matches && panel !== 'details';
       poemButton.setAttribute('aria-expanded', String(media.matches && panel === 'poem'));
       detailsButton.setAttribute('aria-expanded', String(media.matches && panel === 'details'));
       document.getElementById('hint').textContent = media.matches
-        ? '单指旋转　双指缩放　左右滑动选择景点'
+        ? '单指旋转 · 双指缩放 · 轻触景点 · 滑动导览'
         : '拖拽旋转　滚轮缩放　点击景点';
       invalidate();
     }
@@ -26,10 +29,22 @@
       panel = panel === name ? null : name;
       updatePanels();
     }
+    function setPainting(enabled) {
+      painting = enabled;
+      panel = null;
+      paintingButton.focus({ preventScroll: true });
+      paintingButton.textContent = enabled ? '退出观画' : '观画';
+      paintingExtras.forEach(el => { el.hidden = enabled; });
+      updatePanels();
+      if (!enabled) nav.querySelector('[aria-pressed="true"]')?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+    }
+    paintingButton.addEventListener('click', () => setPainting(!painting));
     poemButton.addEventListener('click', () => toggle('poem'));
     detailsButton.addEventListener('click', () => toggle('details'));
     document.addEventListener('keydown', event => {
-      if (event.key !== 'Escape' || document.getElementById('atlas').open || !media.matches || !panel) return;
+      if (event.key !== 'Escape' || document.getElementById('atlas').open) return;
+      if (painting) { setPainting(false); return; }
+      if (!media.matches || !panel) return;
       const button = panel === 'poem' ? poemButton : detailsButton;
       panel = null; updatePanels(); button.focus({ preventScroll: true });
     });
@@ -71,7 +86,7 @@
         if (media.matches) {
           blocks.forEach(({ id, rect }) => {
             if (id === 'dock') bottom = Math.min(bottom, rect.top - 8);
-            else top = Math.max(top, rect.bottom + 8);
+            else if (id !== 'map-actions') top = Math.max(top, rect.bottom + 8);
           });
         } else {
           blocks.forEach(({ id, rect }) => {

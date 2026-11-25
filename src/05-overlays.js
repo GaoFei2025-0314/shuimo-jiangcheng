@@ -130,15 +130,17 @@
 
     /* 罗盘与比例尺 */
     const dial = document.querySelector('#rose .dial'), sBar = document.getElementById('scaleBar'), sTxt = document.getElementById('scaleText');
-    const NICE = [100, 200, 500, 1000, 2000, 5000, 10000, 20000];
+    const resetView = document.getElementById('reset-view');
+    const NICE = [5, 10, 20, 50, 100, 200, 500, 1000, 2000, 5000, 10000, 20000];
     function drawTools(h) {
       const az = Math.atan2(camera.position.x - controls.target.x, camera.position.z - controls.target.z) * 180 / Math.PI;
       dial.setAttribute('transform', `rotate(${az.toFixed(1)} 26 26)`);
+      resetView.style.setProperty('--north-angle', `${az.toFixed(1)}deg`);
       const dist = camera.position.distanceTo(controls.target);
       const mPerPx = 2 * dist * Math.tan(camera.fov * Math.PI / 360) / h * MPU;
       let m = NICE[0];
-      for (const n of NICE) { m = n; if (n / mPerPx >= 64) break; }
-      sBar.style.width = Math.min(190, Math.round(m / mPerPx)) + 'px';
+      for (const n of NICE) { m = n; if (n / mPerPx >= 54) break; }
+      sBar.style.width = Math.round(m / mPerPx) + 'px';
       sTxt.textContent = m >= 1000 ? (m / 1000) + ' 公里' : m + ' 米';
     }
 

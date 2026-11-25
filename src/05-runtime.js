@@ -156,6 +156,7 @@
     if (layout.compact) buttons.find(b => b.dataset.view === navKey).scrollIntoView({ block: 'nearest', inline: 'nearest' });
   }
   buttons.forEach(b => b.addEventListener('click', () => flyTo(b.dataset.view)));
+  document.getElementById('reset-view').addEventListener('click', () => flyTo('home'));
   const atlas = document.getElementById('atlas'), atlasSite = document.getElementById('atlas-site');
   const atlasPlate = document.getElementById('atlas-plate'), detailButton = document.getElementById('atlas-detail');
   const atlasTrigger = document.getElementById('atlas-open');
