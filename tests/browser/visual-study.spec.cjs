@@ -294,7 +294,7 @@ test('bridgehead roofs stay opaque from above and fade when the camera passes cl
     try {
       renderer.setRenderTarget(target);
       renderer.setClearColor(0,0);
-      return [55,4].map(height => {
+      return [55,18,10,4].map(height => {
         camera.position.set(0,height,0);
         camera.lookAt(0,0,0);
         material.uniforms.uCam.value.copy(camera.position);
@@ -310,7 +310,10 @@ test('bridgehead roofs stay opaque from above and fade when the camera passes cl
       target.dispose(); tile.dispose(); material.dispose();
     }
   });
-  expect(covered).toEqual([256,0]);
+  expect(covered.slice(0,2)).toEqual([256,256]);
+  expect(covered[2]).toBeGreaterThan(90);
+  expect(covered[2]).toBeLessThan(185);
+  expect(covered[3]).toBe(0);
 });
 
 test('both approach carriageways stay above the terrain through the bridgeheads to the city streets', async ({ page }) => {

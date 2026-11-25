@@ -104,7 +104,8 @@
       float near = 1.0;
       if(uFade.y > .5){                                   // 镜头穿过时，屋舍化入宣纸
         near = smoothstep(uFade.x, uFade.y, distance(vW, uCam));
-        if(near < hash(floor(vW.xz * 4.0) + floor(vW.y * 4.0) + .5)) discard;
+        // A one-pixel screen door keeps close roof tiles from dissolving in large blocks.
+        if(near <= fract(52.9829189 * fract(dot(floor(gl_FragCoord.xy), vec2(.06711056, .00583715))))) discard;
       }
       vec3 n = normalize(vN); if(!gl_FrontFacing) n = -n;
       float d = dot(n, normalize(uLight)) * .5 + .5;

@@ -18,7 +18,7 @@
   const shelteredInk = { timber:.34, vermilion:.24, roofGold:.29, shadow:.18, steel:.33, glaze:.21 };
   const distantCityWash = { cityWall:.27, cityRoof:.68, cityBrick:.43, cityShade:.80 };
   const architectureMaterials = Object.fromEntries(Object.entries(architectureTints).map(([key, tint]) => {
-    const material = inkMat(.04, true, tint, key.startsWith('city') ? [16, 42] : null);
+    const material = inkMat(.04, true, tint, key.startsWith('city') ? [6, 14] : null);
     material.defines = { ARCHITECTURE_AO: 1 };
     if (shelteredInk[key]) {
       material.defines.ARCHITECTURE_SHADOW = 1;
