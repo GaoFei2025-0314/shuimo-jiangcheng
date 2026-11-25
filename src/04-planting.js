@@ -1106,16 +1106,35 @@
           soil.push(...a.toArray(),...b.toArray(),...c.toArray());
           alpha.push(x,y,z);
         }
-        const center=point(0,0);
+        const points=[point(0,0),...layers.flat()];
+        const opacity=points.map((_,i)=>i===0?.78:i<=sides?.66:i<=2*sides?.34:0);
+        const faces=[],edges=new Map();
+        const edgeId=(a,b)=>Math.min(a,b)*points.length+Math.max(a,b);
+        function face(a,b,c) {
+          if (!points[a]||!points[b]||!points[c]) return;
+          faces.push([a,b,c]);
+          for(const [start,end] of [[a,b],[b,c],[c,a]]) {
+            const edge=edgeId(start,end);
+            edges.set(edge,(edges.get(edge)??0)+1);
+          }
+        }
         for (let i=0;i<sides;i++) {
           const j=(i+1)%sides;
-          triangle(center,layers[0][j],layers[0][i],.78,.66,.66);
+          face(0,1+j,1+i);
           for (let k=0;k<2;k++) {
-            const [a,b]=[layers[k][i],layers[k][j]], [c,d]=[layers[k+1][i],layers[k+1][j]];
-            const inner=k===0?.66:.34, outer=k===0?.34:0;
-            triangle(a,b,c,inner,inner,outer);
-            triangle(b,d,c,inner,outer,outer);
+            const a=1+k*sides+i,b=1+k*sides+j,c=a+sides,d=b+sides;
+            face(a,b,c);
+            face(b,d,c);
           }
+        }
+        // Any edge exposed by a wall or path cut also fades into the ground.
+        for(const [edge,count] of edges) {
+          if(count!==1) continue;
+          opacity[Math.floor(edge/points.length)]=0;
+          opacity[edge%points.length]=0;
+        }
+        for(const [a,b,c] of faces) {
+          triangle(points[a],points[b],points[c],opacity[a],opacity[b],opacity[c]);
         }
         // Pigment and leaves gather in the same damp pockets. Open paper separates the pockets.
         const roots=[];
