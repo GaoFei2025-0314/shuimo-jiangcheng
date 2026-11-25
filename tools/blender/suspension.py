@@ -13,6 +13,8 @@ from mesh import Part
 # Portal, lettering and railing details use the Hanyang tourism photo gallery.
 # https://hanyang.hmltec.com/index.php?c=show&id=227
 # The centre tower has an A-shaped longitudinal elevation. The side towers are straight.
+# The contractor distinguishes the concrete lower frame from the steel upper tower.
+# https://www.crecg.com/web/xwzx61/zfgsdt39/2025021110084953628/index.html
 HALF_LENGTH = 100
 SIDE_TOWER = 71.5
 ANCHOR = 91
@@ -46,6 +48,7 @@ def towers():
                      ((-3.2, 23.5, depth+1, 1.4), (-.12, 23.5, depth+1, 1.4),
                       (.44, 22.6, depth, 1.3), (.69, 22.6, depth, 1.3))])
         landing = 7.05 if center_tower else 6.20
+        crown_floor = top-(2.62 if center_tower else 2.08)
         for side in (-1, 1):
             x = side*CABLE_X
             if center_tower:
@@ -58,25 +61,40 @@ def towers():
                                   for z, xx, spread, w, d, cut in
                                   ((6.64, 8.10, 5.84, 2.87, 3.42, .26),
                                    (8.23, 8.08, 5.47, 2.71, 3.30, .25),
-                                   (top-1.98, 7.36, .67, 2.45, 2.95, .23))])
+                                   (crown_floor+.03, 7.36, .67, 2.45, 2.95, .23))])
+                    # The narrow splice collar marks the material junction at the roadway frame.
+                    loft(metalwork, [chamfered_ring(side*8.10, y+direction*5.83, z,
+                                                    2.98, 3.66, .28)
+                                      for z in (6.64, 6.75)])
                 loft(orange, [chamfered_ring(x, y, z, w, d, cut) for z, w, d, cut in
-                              ((top-2.33, 2.55, 3.74, .24), (top+.58, 2.53, 3.55, .24))])
+                              ((crown_floor-.36, 2.55, 3.74, .24), (crown_floor, 2.53, 3.55, .24))])
             else:
                 loft(orange, [chamfered_ring(side*xx, y, z, w, d, cut) for z, xx, w, d, cut in
                               ((.61, 8.03, 2.84, 3.15, .26), (DECK, 7.88, 2.68, 2.83, .24),
-                               (top+.58, CABLE_X, 2.42, 2.41, .21))])
-            # Shallow metal covers and working platforms are visible at every cable crest.
-            saddles.box((x, y, top-.06), (.84, 2.88, .43))
-            orange.box((x, y, top+.47), (2.7, 2.78, .19))
-            metalwork.box((x, y, top+.61), (2.38, 2.51, .10))
+                               (crown_floor, CABLE_X, 2.42, 2.41, .21))])
+            # The continuous cable rises from an open saddle between two crown cheeks.
+            crown_depth = 3.42 if center_tower else 2.38
+            pedestal_height = top-.46-crown_floor
+            orange.box((x, y, crown_floor + pedestal_height/2), (.92, .37, pedestal_height))
+            saddles.box((x, y, top-.36), (.95, .89, .21))
+            for dx in (-.40, .40):
+                saddles.box((x+dx, y, top-.13), (.15, 1.27, .42))
+            for dx in (-.91, .91):
+                cheek_height = top+.33-crown_floor
+                orange.box((x+dx, y, crown_floor+cheek_height/2), (.55, crown_depth, cheek_height))
+                metalwork.box((x+dx, y, top+.36), (.62, crown_depth+.08, .11))
+                for dy in (-.43, .43):
+                    saddles.beam((x+dx*.48, y+dy, top-.33),
+                                 (x+dx*.48, y+dy, top+.074), .11, .18)
+            # The maintenance rails flank the saddle and leave the cable approaches open.
+            for dx in (-1.17, 1.17):
+                pale.box((x+dx, y, top+.68), (.05, crown_depth-.14, .06))
+                for dy in (-crown_depth*.42, 0, crown_depth*.42):
+                    pale.box((x+dx, y+dy, top+.51), (.057, .061, .35))
             for direction in (-1, 1):
-                orange.box((x, y+direction*1.44, top-.36), (1.11, .22, .84))
-            for dx in (-1.18, 1.18):
-                pale.box((x+dx, y, top+.69), (.05, 2.59, .07))
-                for dy in (-1.24, 0, 1.24):
-                    pale.box((x+dx, y+dy, top+.57), (.06, .06, .28))
-            for dy in (-1.24, 1.24):
-                pale.box((x, y+dy, top+.69), (2.39, .05, .07))
+                for dx in (-.90, .90):
+                    metalwork.beam((x+dx, y+direction*crown_depth*.48, top+.34),
+                                   (x+dx*.58, y+direction*(crown_depth*.48+.27), top-.24), .10)
             # Orange maintenance stages wrap the edge towers just beneath the road.
             if not center_tower:
                 foot = side*7.88
@@ -103,7 +121,14 @@ def towers():
         faces.extend((i, i+n, (i+1)%n+n, (i+1)%n) for i in range(n))
         orange.solid(vertices, faces)
         for direction in (-1, 1):
-            metalwork.box((0, y+direction*1.04, top-1.16), (12.33, .16, .15))
+            face = y+direction*1.04
+            metalwork.box((0, face, top-1.16), (12.33, .16, .15))
+            # A shallow inspection walk under the crown frames the haunched beam.
+            edge = face+direction*.30
+            pale.box((0, edge, top-.63), (11.75, .05, .058))
+            metalwork.box((0, face+direction*.18, top-1.12), (11.74, .36, .12))
+            for x in (-5.84, -2.93, 0, 2.93, 5.84):
+                pale.box((x, edge, top-.86), (.059, .055, .46))
     for sign in (-1, 1):
         for span, width in ((83, 12.8), (97.2, 13.1)):
             y = sign*span
@@ -123,7 +148,8 @@ def towers():
 def cables():
     cables = Part("Yingwuzhou / continuous twin main cables", "suspensionOrange")
     hangers = Part("Yingwuzhou / paired hangers and anchor sockets", "suspensionOrange")
-    clamps = Part("Yingwuzhou / main-cable bands", "timber")
+    clamps = Part("Yingwuzhou / main-cable bands", "vermilion")
+    sockets = Part("Yingwuzhou / hanger clevises and edge-girder anchorage", "vermilion")
     maintenance = Part("Yingwuzhou / main-cable access handlines", "suspensionOrange")
     for x in (-CABLE_X, CABLE_X):
         path, suspended, access_spans = [], [], []
@@ -139,18 +165,18 @@ def cables():
                 z = z0 + (z1-z0)*t - sag*4*t*(1-t)
                 path.append((y, z))
                 if main and 1 < k < samples-1 and k%2 == 0:
-                    suspended.append((y, z))
+                    suspended.append(len(path)-1)
         path.append(SADDLES[-1])
 
-        def ring(index, radius, sides=8):
+        def ring(index, radius, sides=8, along=0):
             prev_y, prev_z = path[max(0, index-1)]
             next_y, next_z = path[min(len(path)-1, index+1)]
             dy, dz = next_y-prev_y, next_z-prev_z
             length = hypot(dy, dz)
             y, z = path[index]
             return [(x+radius*cos(j*tau/sides),
-                     y+dz/length*radius*sin(j*tau/sides),
-                     z-dy/length*radius*sin(j*tau/sides)) for j in range(sides)]
+                     y+(dz*radius*sin(j*tau/sides)+dy*along)/length,
+                     z+(-dy*radius*sin(j*tau/sides)+dz*along)/length) for j in range(sides)]
 
         loft(cables, [ring(i, .248) for i in range(len(path))])
         # Inspection handlines follow both sides of the cable between tower platforms.
@@ -163,14 +189,22 @@ def cables():
                     y, z = path[index]
                     maintenance.beam((x + side * .18, y, z + .02),
                                      (x + side * .31, y, z + .44), .052)
-        for y, z in suspended:
-            # Two rods land in sockets on each roadway edge at each cable band.
-            clamps.beam((x, y-.16, z), (x, y+.16, z), .54)
-            for dy in (-.11, .11):
-                bottom = road_height(y) + .12
-                hangers.cylinder(x, y+dy, bottom-.28, z, .057, 6)
-                hangers.cylinder(x, y+dy, bottom-.36, bottom+.19, .102, 8)
-    for part in (cables, hangers, clamps, maintenance):
+        for index in suspended:
+            y, z = path[index]
+            # The split clamp sleeves follow the actual cable tangent in both main spans.
+            loft(clamps, [ring(index, radius, sides=6, along=along)
+                          for along, radius in ((-.24, .254), (-.18, .301), (.18, .301), (.24, .254))])
+            sockets.box((x, y, z-.30), (.33, .43, .24))
+            bottom = road_height(y)
+            # One common side plate carries both sockets down to the outside of the box girder.
+            edge = CABLE_X+.35
+            outboard = edge if x > 0 else -edge
+            sockets.box((outboard, y, bottom-.20), (.24, .64, .52))
+            hangers.box(((x+outboard)/2, y, bottom+.017), (.56, .63, .16))
+            for dy in (-.13, .13):
+                hangers.cylinder(x, y+dy, bottom+.08, z-.39, .057, 6)
+                sockets.cylinder(x, y+dy, bottom+.023, bottom+.44, .102, 6)
+    for part in (cables, hangers, clamps, sockets, maintenance):
         part.finish()
 
 

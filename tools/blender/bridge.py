@@ -55,7 +55,9 @@ def loft(part, rings):
 
 def build_piers():
     piers = Part("Eight cutwater piers and two abutments", "stone")
-    seats = Part("Pier caps and bearing shoes", "steel")
+    footings = Part("Dressed stone margins under truss bearings", "stone")
+    seats = Part("Truss bearing sole plates and raised caps", "steel")
+    saddles = Part("Bearing saddles and recessed side shoulders", "shadow")
     granite = Part("Cutwater piers / dressed granite springing course", "stone")
     # Long upstream and downstream noses face across the deck.
     plan = [(-6.3, 0), (-5.65, -1.12), (-3.8, -1.66), (3.8, -1.66),
@@ -73,10 +75,22 @@ def build_piers():
     for y in range(-MAIN_END, MAIN_END + 1, 16):
         for side in (-1, 1):
             x = side * 4.18
-            seats.box((x, y, 4.65), (1.20, 1.29, .24))
-            seats.box((x, y, 4.83), (.86, .95, .22))
+            # A sectional reading of the support: stone pad, lower sole plate,
+            # recessed saddle and wider upper cap. The saddle shape is illustrative.
+            loft(footings, [[(x+dx*w, y+dy*d, z) for dx,dy in
+                             ((-1,-1),(1,-1),(1,1),(-1,1))]
+                            for z,w,d in ((4.57,.99,.83),(4.64,.99,.83),(4.70,.83,.69))])
+            seats.box((x, y, 4.713), (1.52, 1.25, .075))
+            side_plate(saddles, x, [(y-.49,4.742),(y+.49,4.742),(y+.32,4.875),
+                                    (y+.21,4.903),(y-.21,4.903),(y-.32,4.875)], 1.03)
+            for shoulder in (-1, 1):
+                side_plate(seats, x+shoulder*.45,
+                           [(y-.44,4.74),(y+.44,4.74),(y+.29,4.85),(y-.29,4.85)], .19)
+            seats.box((x, y, 4.904), (1.21, 1.05, .10))
     piers.finish()
+    footings.finish()
     seats.finish()
+    saddles.finish()
     granite.finish()
 
 
@@ -113,9 +127,11 @@ def build_trusses_and_rail():
                 plates.box((x, start + 24, z - .23), (.72, 47.93, .13))
                 plates.box((x, start + 24, z + .24), (.66, 47.93, .09))
             for y in range(start, start + 48, 8):
+                # One diagonal laps behind the other, including its flanges at the chord.
+                inner_x = x - side * .023
                 low_a = (x, y, LOWER_CHORD)
-                high_a = (x, y, UPPER_CHORD)
-                low_b = (x, y + 8, LOWER_CHORD)
+                high_a = (inner_x, y, UPPER_CHORD)
+                low_b = (inner_x, y + 8, LOWER_CHORD)
                 high_b = (x, y + 8, UPPER_CHORD)
                 for a, b in ((low_a, high_b), (high_a, low_b)):
                     truss.beam(a, b, .42, .30)
@@ -123,7 +139,7 @@ def build_trusses_and_rail():
                     for edge in (-1, 1):
                         dy = edge * (b[2]-a[2]) / 52
                         dz = edge * (a[1]-b[1]) / 52
-                        truss.beam((x, a[1]+dy, a[2]+dz), (x, b[1]+dy, b[2]+dz), .62, .10)
+                        truss.beam((a[0], a[1]+dy, a[2]+dz), (b[0], b[1]+dy, b[2]+dz), .62, .10)
                 # Cover the lapped X joint with a raised gusset and four rivet heads.
                 middle = (LOWER_CHORD + UPPER_CHORD) / 2
                 side_plate(plates, x + side * .31,
@@ -172,22 +188,90 @@ def deck_ribbon(part, x, width, stations, offset, thickness, height=road_height)
     part.solid(vertices, faces)
 
 
-def cast_profile(part, x, path, depth):
+def cast_profile(part, x, path, depth, half_width=.034):
     """Join a rectangular casting through the bends in a railing motif."""
     rings = []
     for i, (y, z) in enumerate(path):
         earlier, later = path[max(0, i-1)], path[min(i+1, len(path)-1)]
         dy, dz = (b-a for a, b in zip(earlier, later))
-        section = .034 / hypot(dy, dz)
+        section = half_width / hypot(dy, dz)
         rings.append([(x+u*depth/2, y+v*dz*section, z-v*dy*section)
                       for u, v in ((-1, -1), (1, -1), (1, 1), (-1, 1))])
     loft(part, rings)
 
 
+
+def cast_flower_panel(part, x, y, motif):
+    """Simplify documented cast-iron designs as connected paper-cut silhouettes."""
+    z = road_height(y)
+    for edge in (-.71, .71):
+        part.box((x, y+edge, z+.675), (.092, .072, .80))
+    part.box((x, y, z+.325), (.083, 1.42, .069))
+    part.box((x, y, z+1.047), (.084, 1.42, .055))
+
+    def stem(path, width=.024, *, depth):
+        # Keep the cast branches connected without coplanar faces at junctions.
+        cast_profile(part, x, [(y+u, z+h) for u, h in path], depth, width)
+
+    def silhouette(outline):
+        area = sum(a[0]*b[1]-a[1]*b[0] for a, b in zip(outline, outline[1:]+outline[:1]))
+        points = outline if area > 0 else reversed(outline)
+        side_plate(part, x, [(y+u, z+h) for u, h in points], .074)
+
+    if motif == 0:  # Magpie on a flowering branch.
+        stem([(-.69,.39),(-.39,.46),(-.16,.61),(.12,.65),(.35,.76),(.69,.89)], .030, depth=.060)
+        stem([(-.42,.46),(-.31,.59),(-.28,.81),(-.32,1.025)], depth=.044)
+        stem([(.30,.75),(.47,.61),(.69,.57)], depth=.026)
+        silhouette([(-.22,.56),(-.03,.70),(.015,.77),(.105,.85),(.19,.84),(.24,.805),
+                    (.30,.80),(.225,.766),(.195,.699),(.102,.647),(-.016,.642)])
+        silhouette([(-.378,.782),(-.340,.785),(-.365,.834),(-.321,.862),(-.280,.815),
+                    (-.254,.842),(-.215,.817),(-.231,.773),(-.293,.749)])
+        silhouette([(.388,.620),(.461,.627),(.511,.602),(.505,.556),(.460,.553),(.420,.575)])
+    elif motif == 1:  # Carp and lotus.
+        stem([(-.60,.325),(-.53,.47),(-.47,.64),(-.39,.81),(-.37,1.023)], depth=.060)
+        stem([(-.20,.325),(-.22,.52),(-.18,.69),(-.39,.81)], depth=.044)
+        stem([(.08,.325),(.25,.39),(.48,.40),(.69,.47)], depth=.026)
+        stem([(.44,.398),(.48,.53),(.51,.64)], depth=.060)
+        silhouette([(-.534,.843),(-.478,.820),(-.471,.875),(-.409,.813),
+                    (-.441,.902),(-.394,.860),(-.354,.950),(-.327,.860),
+                    (-.284,.909),(-.309,.819),(-.257,.866),(-.263,.805),
+                    (-.350,.766),(-.442,.777)])
+        silhouette([(-.41,.623),(-.32,.718),(-.205,.739),(-.051,.690),(-.166,.637),(-.286,.609)])
+        silhouette([(.153,.551),(.159,.691),(.193,.728),(.215,.733),(.235,.697),
+                    (.256,.677),(.233,.739),(.323,.752),(.451,.729),
+                    (.525,.680),(.672,.766),(.636,.663),(.663,.568),(.512,.627),
+                    (.437,.560),(.301,.522),(.251,.463),(.223,.459),(.233,.528),(.192,.531)])
+        # Form both faces and the inner wall of the eye, leaving a true aperture.
+        head = [(.211,.633),(.188,.697),(.122,.707),(.071,.683),
+                (.044,.632),(.061,.585),(.122,.550),(.179,.562)]
+        eye = [(.120+.026*cos(i*tau/8), .632+.025*sin(i*tau/8)) for i in range(8)]
+        rings = [[(x+dx, y+u, z+h) for u,h in loop]
+                 for dx in (-.032,.032) for loop in (head,eye)]
+        faces = []
+        for i in range(8):
+            j = (i+1)%8
+            faces.extend(((j,i,i+8,j+8),(i+16,j+16,j+24,i+24),
+                          (i,j,j+16,i+16),(j+8,i+8,i+24,j+24)))
+        part.solid([v for ring in rings for v in ring], faces)
+    else:  # A deer framed by plum branches.
+        stem([(-.69,.414),(-.52,.550),(-.49,.756),(-.35,.895),(-.12,1.024)], .027, depth=.060)
+        stem([(-.49,.758),(-.621,.869),(-.69,.967)], depth=.044)
+        silhouette([(-.40,.827),(-.402,.879),(-.347,.887),(-.333,.947),(-.285,.936),
+                    (-.274,.886),(-.226,.890),(-.231,.838),(-.305,.792)])
+        silhouette([(-.38,.622),(-.318,.719),(-.213,.682),(.094,.676),(.189,.736),
+                    (.266,.857),(.236,.903),(.290,.897),(.331,.933),(.347,.886),
+                    (.443,.858),(.422,.815),(.334,.794),(.285,.650),(.194,.591),
+                    (.174,.326),(.115,.326),(.087,.557),(-.147,.547),(-.224,.408),
+                    (-.179,.326),(-.245,.326),(-.297,.433),(-.267,.590)])
+        stem([(.344,.886),(.400,.944),(.393,1.028)], depth=.060)
+        stem([(.389,.935),(.472,.964),(.493,1.021)], depth=.044)
+
+
 def build_road():
     paving = Part("Roadway and approach surfaces", "deck")
     walks = Part("Cantilevered walks, kerbs and markings", "plaster")
-    railings = Part("Cast-iron parapets with lotus panels", "steel")
+    railings = Part("Cast-iron parapets and plain pickets", "steel")
+    flowers = Part("Openwork cast iron: magpie, carp and lotus, deer and plum", "steel")
     standards = Part("Historic trident lamp standards", "shadow")
     lamps = Part("Paired porcelain globe lanterns", "plaster")
     deck_ribbon(paving, 0, 12.05, ROAD_STATIONS, 0, .51)
@@ -211,14 +295,9 @@ def build_road():
                 for t in (.14, .27, .73, .86):
                     picket = y + dy*t
                     railings.box((x, picket, road_height(picket)+.665), (.07, .068, .79))
-                # Flower panels on the main crossing give way to pickets on the approaches.
                 yc = y + dy*.5
-                if abs(yc) < MAIN_END:
-                    for sign in (-1, 1):
-                        points = [(yy, road_height(yy)+hh) for yy, hh in
-                                  ((yc, .24), (yc+sign*.55, .65), (yc+sign*.34, .81),
-                                   (yc, .64), (yc+sign*.19, .94), (yc, 1.03))]
-                        cast_profile(railings, x, points, .061+sign*.005)
+                if abs(yc) < MAIN_END and i % 2 == 0:
+                    cast_flower_panel(flowers, x, yc, (i//2) % 3)
                 else:
                     for t in (-.12, 0, .12):
                         yy = yc+dy*t
@@ -245,7 +324,7 @@ def build_road():
                           for i in range(8)] for z, r in
                          ((2.93, .075), (3.02, .186), (3.16, .216), (3.27, .165), (3.36, .09))]
                 loft(lamps, rings)
-    for part in (paving, walks, railings, standards, lamps):
+    for part in (paving, walks, railings, flowers, standards, lamps):
         part.finish()
 
 

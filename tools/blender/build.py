@@ -168,9 +168,13 @@ def bake_model(name, create):
             elif name == "bridge":
                 details.append(("bridge-detail", viewpoint(scene, "桥头堡与钢梁",
                                 (0, -57, 9), (1.65, -1.2, .56), 75)))
+                details.append(("bridge-craft", viewpoint(scene, "铸铁栏花 · 鱼戏莲荷",
+                                (5.90, -49.80435, 12.57), (1, -.14, .11), 3.6)))
                 details.append(("bridge-name", viewpoint(scene, "武昌桥头游览铭牌",
                                 (11.65, 82, 10.19), (1, -.10, .10), 10)))
             elif name == "yingwuzhou":
+                details.append(("yingwuzhou-craft", viewpoint(scene, "主缆、吊杆与边梁",
+                                (7.40, -34, 10.6), (.66, .70, .28), 11.8)))
                 details.append(("yingwuzhou-detail", viewpoint(scene, "中央主塔横梁桥名",
                                 (0, -1.09, 33.45), (.12, -1, .07), 24)))
             mesh.save_project(scene, OUTPUT / (name + ".blend"))
