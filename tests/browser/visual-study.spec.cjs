@@ -644,12 +644,13 @@ test('back lane paving reaches the occupied doorways, through lane and old stree
   await page.goto('/?debug');
   await page.waitForFunction(() => window.__ready && window.__dbg);
   const errors = await page.evaluate(() => {
-    const {scene,onLand,plantingSurface} = __dbg;
+    const {scene,cityGround,onLand,plantingSurface} = __dbg;
     const joins = [
       ['茶棚后院接汉阳滨水支巷',[-225.55,24.03],'汉阳滨水通街支巷'],
       ['汉阳沿巷小院过门石径',[-222.40,42.13],'汉阳滨水通街支巷'],
       ['汉阳后排里分入巷石径',[-234.95,45.88],'汉阳滨水通街支巷'],
       ['武昌后巷绕屋接旧街','武昌滨水通街支巷','City streets'],
+      ['武昌里分门前石径接支巷','武昌后巷绕屋接旧街','武昌滨水通街支巷'],
       ['武昌公寓门前转入后巷',[-42.11,74.60],'武昌后巷绕屋接旧街'],
       ['武昌灰瓦里分门前接旧街',[-36.16,55.87],'City streets'],
     ];
@@ -677,6 +678,9 @@ test('back lane paving reaches the occupied doorways, through lane and old stree
         }
       }
     }
+    const passage=cityGround.courtyardPaths.filter(segment=>segment.name==='武昌里分门后纵巷');
+    if (!passage.length || passage.some(({a,b})=>cityGround.occupied((a.x+b.x)/2,(a.z+b.z)/2)))
+      issues.push('the lane behind the Wuchang gate must remain open through the block');
     material.dispose();
     return issues;
   });
