@@ -16,10 +16,13 @@
     const sprayProfile = [[-.52,.40],[-.19,.68],[.17,.76],[.51,.53]];
 
     function prototype(crownSides = 7, crownRings = crownProfile, spray = false) {
-      const positions = [], indices = [], colors = [], centers = [];
-      let center=null;
+      const positions = [], indices = [], colors = [], centers = [], leafCenters = [];
+      let center=null, leafCenter=null;
       function add(x, y, z, tint, shade) {
-        if (spray) centers.push(...(center ?? [0,0,0]));
+        if (spray) {
+          centers.push(...(center ?? [0,0,0]));
+          leafCenters.push(...(leafCenter ?? [0,0,0]));
+        }
         positions.push(x, y, z);
         colors.push(tint.r * shade, tint.g * shade, tint.b * shade);
       }
@@ -79,6 +82,7 @@
         center=null;
       }
       function leaf(p,length,width,yaw,dip,tint,shade) {
+        leafCenter=p.toArray();
         const along=new THREE.Vector3(Math.cos(yaw),dip,Math.sin(yaw)).normalize();
         const across=new THREE.Vector3(-Math.sin(yaw),.32*Math.cos(yaw*1.7),Math.cos(yaw)).normalize();
         const offset=positions.length/3;
@@ -87,12 +91,16 @@
           add(q.x,q.y+width*lift,q.z,tint,shade*(v>.05 ? 1.035 : .97));
         }
         for (let i=0;i<4;i++) indices.push(offset+4,offset+(i+1)%4,offset+i);
+        leafCenter=null;
       }
       function geometry() {
         const mesh = new THREE.BufferGeometry();
         mesh.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
         mesh.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
-        if (spray) mesh.setAttribute('crownCenter',new THREE.Float32BufferAttribute(centers,3));
+        if (spray) {
+          mesh.setAttribute('crownCenter',new THREE.Float32BufferAttribute(centers,3));
+          mesh.setAttribute('leafCenter',new THREE.Float32BufferAttribute(leafCenters,3));
+        }
         mesh.setIndex(indices);
         mesh.computeVertexNormals();
         return mesh;
@@ -783,11 +791,13 @@
       const model=treeTypes.broadleaf;
       const sprays=[];
       const material=new THREE.ShaderMaterial({
-        side:THREE.DoubleSide,alphaToCoverage:true,vertexColors:true,
-        uniforms:{...fogU,...weatherU,atlas:{value:laneFoliage}},
+        side:THREE.DoubleSide,transparent:true,depthWrite:false,vertexColors:true,
+        uniforms:{...fogU,...weatherU,atlas:{value:laneFoliage},paperStrength:{value:1}},
         vertexShader:vegetationWind+`
           attribute vec2 stemWind;
+          attribute vec3 veil;
           varying vec2 vUV;
+          varying vec3 vVeil;
           varying vec3 vInk;
           varying float vDistance;
           void main() {
@@ -796,36 +806,43 @@
             w.xz+=wind*stemWind.y;
             vec4 view=viewMatrix*w;
             vDistance=-view.z;
-            vUV=uv; vInk=color;
+            vUV=uv; vVeil=veil; vInk=color;
             gl_Position=projectionMatrix*view;
           }`,
         fragmentShader:`
           uniform sampler2D atlas;
           uniform vec3 uFog;
-          uniform float uNear,uFar;
+          uniform float uNear,uFar,paperStrength;
           varying vec2 vUV;
-          varying vec3 vInk;
+          varying vec3 vVeil,vInk;
           varying float vDistance;
           void main(){
             vec4 wash=texture2D(atlas,vUV);
-            if (wash.a<.28) discard;
-            float leaf=smoothstep(.19,.49,dot(wash.rgb,vec3(.25,.6,.15)));
-            vec3 pigment=wash.rgb*mix(vec3(.89,.86,.81),vInk*1.47,leaf*.44);
-            gl_FragColor=vec4(mix(pigment,uFog,smoothstep(uNear,uFar,vDistance)),smoothstep(.28,.66,wash.a));
+            float edge=min(min(vVeil.x,1.-vVeil.x),min(vVeil.y,1.-vVeil.y));
+            float margin=mix(1.,smoothstep(0.,.11,edge),vVeil.z);
+            float pigmentAlpha=smoothstep(.065,.73,wash.a)*margin*paperStrength;
+            if (pigmentAlpha<.012) discard;
+            float inkLight=dot(wash.rgb,vec3(.25,.60,.15));
+            float leaf=smoothstep(.19,.53,inkLight);
+            vec3 painted=mix(wash.rgb,vec3(inkLight)*vec3(.90,1.04,.98),.23);
+            vec3 pigment=painted*mix(vec3(.87,.93,.91),vInk*1.47,leaf*.39);
+            gl_FragColor=vec4(mix(pigment,uFog,smoothstep(uNear,uFar,vDistance)),pigmentAlpha);
           }`,
       });
       for (const [tree,[x,z]] of paperTargets.entries()) {
         const matrix=model.instances.find(({elements:e})=>Math.hypot(x-e[12],z-e[14])<.12);
         if (!matrix) continue;
-        const base=V().setFromMatrixPosition(matrix), positions=[],uv=[],pigments=[],wind=[],indices=[];
+        const base=V().setFromMatrixPosition(matrix), positions=[],uv=[],veil=[],pigments=[],wind=[],indices=[];
         const scale=V().setFromMatrixScale(matrix);
-        for (let i=0;i<8;i++) {
+        for (let i=0;i<10;i++) {
           const {root,direction,tint}=model.paperSprigs[(i*5+tree)%model.paperSprigs.length];
-          const theta=Math.atan2(direction.z,direction.x)+(i%2 ? .69 : -.62);
-          const span=1.08+.27*Math.sin(i*2.41+tree), height=.99+.25*Math.cos(i*1.43);
-          const u=V(Math.cos(theta)*span,.10*Math.cos(i*2.7),Math.sin(theta)*span);
-          const v=V(direction.x*.19,height,direction.z*.19);
-          const color=new THREE.Color(tint);
+          const theta=Math.atan2(direction.z,direction.x)+Math.sin(i*2.17+tree*.91)*1.14;
+          const cut=i%3===2;
+          const span=(cut?.72:1.21)+.21*Math.sin(i*2.41+tree);
+          const height=(cut?.62:1.08)+.24*Math.cos(i*1.43+tree*.7);
+          const u=V(Math.cos(theta)*span,.26*Math.cos(i*2.7),Math.sin(theta)*span);
+          const v=V(direction.x*.25,height,direction.z*.25);
+          const color=new THREE.Color(tint).lerp(new THREE.Color(i%3===1?'#89957e':'#708278'),.31);
           const start=positions.length/3;
           for (let row=0;row<3;row++) for (let col=0;col<3;col++) {
             const s=col/2,t=row/2;
@@ -835,7 +852,9 @@
             const shear=Math.max(local.y-.28,0)*.255;
             wind.push(model.wind,shear*shear*scale.y);
             positions.push(...local.applyMatrix4(matrix).sub(base).toArray());
-            uv.push(s,t); pigments.push(color.r,color.g,color.b);
+            uv.push(cut?.53+s*.45:s,cut?.54+t*.44:t);
+            veil.push(s,t,cut?1:0);
+            pigments.push(color.r,color.g,color.b);
           }
           for (let row=0;row<2;row++) for (let col=0;col<2;col++) {
             const a=start+row*3+col;
@@ -847,14 +866,20 @@
         geo.setAttribute('uv',new THREE.Float32BufferAttribute(uv,2));
         geo.setAttribute('color',new THREE.Float32BufferAttribute(pigments,3));
         geo.setAttribute('stemWind',new THREE.Float32BufferAttribute(wind,2));
+        geo.setAttribute('veil',new THREE.Float32BufferAttribute(veil,3));
         geo.setIndex(indices);
         geo.computeBoundingSphere();
         const mesh=new THREE.Mesh(geo,material);
         mesh.name='两岸近树纸本枝叶 · '+(tree+1);
         mesh.position.copy(base);
         mesh.visible=false;
+        const center=activePaperTrees[tree];
+        mesh.onBeforeRender=()=>{
+          material.uniforms.paperStrength.value=center.z;
+          material.uniformsNeedUpdate=true;
+        };
         scene.add(mesh);
-        sprays.push({mesh,center:activePaperTrees[tree]});
+        sprays.push({mesh,center});
       }
       // A nonzero projected canopy must justify the alpha coverage work. Perspective stays entirely in the geometry.
       const point=new THREE.Vector3();
@@ -865,8 +890,8 @@
           const sphere=mesh.geometry.boundingSphere;
           const depth=-point.copy(sphere.center).add(mesh.position).applyMatrix4(view.matrixWorldInverse).z;
           const diameter=sphere.radius*pixelScale/Math.max(depth,.01);
-          mesh.visible=depth>0 && diameter>56;
-          center.z=mesh.visible ? THREE.MathUtils.smoothstep(diameter,56,64) : 0;
+          mesh.visible=depth>0 && diameter>52;
+          center.z=mesh.visible ? THREE.MathUtils.smoothstep(diameter,52,78) : 0;
         }
       };
       app.cleanups.push(()=>{
@@ -882,19 +907,24 @@
       uniforms: { ...fogU, ...weatherU, uLight: sharedInk.uLight, uCanopy: { value: 1 }, uPaperTrees:{value:activePaperTrees} },
       vertexShader: vegetationWind + `
         attribute float windResponse;
-        attribute vec3 crownCenter;
+        attribute vec3 crownCenter, leafCenter;
         uniform vec3 uPaperTrees[${paperTargets.length}];
         varying vec3 vTint, vNormal, vWorld, vSprig;
         varying float vDistance;
         void main() {
           vec2 root = (modelMatrix * instanceMatrix[3]).xz;
           vec3 sprig=position;
-          if(crownCenter.y>0.){
+          bool onSprigBank=(root.x>-227. && root.x<-210. && root.y>30. && root.y<44.) ||
+            (root.x>-80. && root.x<-50. && root.y>78. && root.y<82.);
+          if(onSprigBank && (crownCenter.y>0. || leafCenter.y>0.)){
             for(int i=0;i<${paperTargets.length};i++){
               vec3 tree=uPaperTrees[i];
               vec2 offset=root-tree.xy;
-              if(tree.z>.0 && dot(offset,offset)<.025)
-                sprig=mix(sprig,crownCenter,tree.z*.60);
+              if(tree.z>.0 && dot(offset,offset)<.025){
+                bool cluster=crownCenter.y>0.;
+                vec3 bud=cluster ? crownCenter : leafCenter;
+                sprig=mix(sprig,bud,tree.z*(cluster ? .75 : .56));
+              }
             }
           }
           vec4 w = modelMatrix * instanceMatrix * vec4(sprig, 1.0);

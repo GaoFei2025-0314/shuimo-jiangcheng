@@ -168,7 +168,7 @@
     'hy-out':['汉阳 · 回望武汉长江大桥',[-205.3,3.1,35.1],[-81,2.5,-20]],
     'wc-in':['武昌 · 从江岸入里分',[-68.2,3,85],[-57.8,3.55,76.6]],
     'wc-door':['武昌 · 转角公寓',[-47.0,3,77.2],[-40.95,1.88,75.4]],
-    'wc-court':['武昌 · 灰瓦人家',[-32.65,3.05,52.4],[-36.5,1.3,55.65]],
+    'wc-court':['武昌 · 灰瓦人家',[-29,4.23,53],[-37,1.72,58.9]],
     'wc-out':['武昌 · 回望鹦鹉洲长江大桥',[-66,3.18,84.4],[-159,17.1,121]],
     'hy-above':['汉阳 · 茶棚与江岸',[-249,53,70],[-200,1,-1]],
     'wc-above':['武昌 · 里分与红桥',[-28,61,44],[-99,6,124]],
@@ -376,7 +376,9 @@
     const visible=skyPoint.z<1 && skyPoint.z>-1 ? 1.-THREE.MathUtils.smoothstep(Math.abs(skyPoint.x),.88,1.15) : 0;
     const position=THREE.MathUtils.clamp(50+50*skyPoint.x,-15,115);
     sun.style.left=THREE.MathUtils.lerp(64,position,streetView).toFixed(2)+'%';
-    sun.style.setProperty('--sun-presence',(1.-streetView*(1.-visible)).toFixed(3));
+    // A distant cinnabar dab sits behind the street, clear of the silhouettes over the water.
+    sun.style.setProperty('--sun-disc',(1.-.46*streetView).toFixed(3));
+    sun.style.setProperty('--sun-presence',((1.-streetView*(1.-visible))*(1.-.54*streetView)).toFixed(3));
     sun.style.setProperty('--sky-fit', fit.toFixed(4));
     // A continuous angle keeps the cloud banks in place through a complete camera orbit.
     const azimuth=controls.getAzimuthalAngle();

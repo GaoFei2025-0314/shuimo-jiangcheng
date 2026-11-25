@@ -432,16 +432,20 @@
           vec2 local = vec2(dot(waterAt + ray*further-axis.xy,axis.zw),uCam.y*further);
           vec2 uv = (local-bounds.zw)/bounds.xy;
           if(min(uv.x,uv.y)<0. || max(uv.x,uv.y)>1.) return 0.;
-          float drift = uTime*.10;
-          vec2 band=vec2(waterAt.x*.18,waterAt.y*.64);
-          float ribbon=vnoise(band+vec2(drift*.12,0.))-.5;
-          float ripple = sin(waterAt.y*2.8+waterAt.x*.37+drift+5.4*ribbon);
-          uv += vec2(ripple*(.12+.35*uv.y),ripple*.22)/bounds.xy;
-          float body = texture2D(silhouette,clamp(uv,.001,.999)).r;
-          float broken = smoothstep(-.70,.69,ripple+.69*ribbon)*smoothstep(.17,.62,vnoise(band*.57));
-          // A short, denser base makes the reflection meet the real pier at low viewing angles.
-          float grounded=1.-smoothstep(.015,.32,uv.y);
-          return body*(.085+.64*broken+grounded*.20)*(.70+.30*vnoise(waterAt*vec2(.23,.69)))*(1.-.46*uv.y);
+          // Filter along the projected elevation so narrow rails soften into the same wash.
+          // A low-frequency lateral drift leaves the reflected tower body continuous.
+          vec2 band=waterAt*vec2(.047,.082);
+          float drift=uTime*.016;
+          float wash=vnoise(band+vec2(drift*.16,0.));
+          float ripple=sin(waterAt.y*.61+waterAt.x*.14+drift+2.1*wash);
+          uv+=vec2(ripple*(.10+.24*uv.y),.09*ripple)/bounds.xy;
+          vec2 spread=vec2(.40,.62+.80*uv.y)/bounds.xy;
+          float body=.44*texture2D(silhouette,uv).r;
+          body+=.18*(texture2D(silhouette,uv+vec2(0.,spread.y)).r+
+                     texture2D(silhouette,uv-vec2(0.,spread.y)).r);
+          body+=.10*(texture2D(silhouette,uv+spread).r+texture2D(silhouette,uv-spread).r);
+          float grounded=1.-smoothstep(.02,.35,uv.y);
+          return body*(.29+.15*wash+.045*ripple+.15*grounded)*(1.-.47*uv.y);
         }
         void main(){
           vec2 p = vW.xz;
@@ -572,8 +576,12 @@
   /* 岸脚接原水线，岸顶接回三镇陆块。分带退入陆侧，桥下江宽不变。 */
   function riverBanks() {
     const cap = new Map();
+    // Let the existing lowest stone step pick up the same tide mark as the exposed quay rocks.
+    const dampStone = M.bankStone.clone();
+    dampStone.uniforms = M.bankStone.uniforms;
+    dampStone.defines = {...dampStone.defines, TIDAL_STONE: 1};
     const batches = [
-      { name: '两江近水石驳岸', material: 'BankStone', ink: M.bankStone, vertices: [], indices: [] },
+      { name: '两江近水石驳岸', material: 'BankStone', ink: dampStone, vertices: [], indices: [] },
       { name: '两江岸坡', material: 'BankGrass', ink: M.bankGrass, vertices: [], indices: [] },
       { name: '两江分阶近水步道', material: 'Path', ink: M.bankPath, vertices: [], indices: [] }
     ];

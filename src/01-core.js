@@ -470,6 +470,13 @@
           col *= 1.+foreground*(1.-shadow)*max(0.,dot(n,normalize(uLight)))*vec3(.055,.028,-.019);
         }
       #endif
+      #ifdef CITY_BRICK
+        // Reflected daylight keeps the grey brick readable beneath the eaves.
+        float wall=1.-smoothstep(.20,.70,abs(normalize(vCityNormal).y));
+        float closeWall=wall*(1.-smoothstep(52.,145.,vD));
+        float daylight=.105+.105*smoothstep(-.3,.72,dot(n,normalize(uLight)));
+        col=mix(col,mix(uFog,vec3(.76,.80,.78),.44),closeWall*daylight*(.78+.22*vSky));
+      #endif
       float mist=smoothstep(uNear,uFar,vD);
       #if defined(ARCHITECTURE_AO) && !defined(CITY_DETAIL)
         // At eye height retain the lightest ink outline of the inhabited far shore.
