@@ -36,6 +36,10 @@ function capture() {
       const attribute = node.geometry.getAttribute(key);
       if (attribute) item[key] = pack(attribute.array);
     }
+    if (material === 'PaperFoliage') {
+      item.uv = pack(node.geometry.getAttribute('uv').array);
+      item.colors = pack(node.geometry.getAttribute('color').array);
+    }
     meshes.push(item);
   }
   function placements(node) {
@@ -57,6 +61,10 @@ function capture() {
       const trees = vegetation[species] ||= { matrices: placements(node), parts: {} };
       if (trees.matrices.length * 16 !== node.userData.authoredMatrices.length || trees.parts[part]) throw new Error('Inconsistent planting batch: '+species);
       trees.parts[part] = { ...geometryOf(node), material, colors: pack(node.geometry.getAttribute('color').array) };
+      if (species === 'broadleaf' && part === 'foliage' && node.geometry.hasAttribute('crownCenter'))
+        trees.parts[part].crownCenter = pack(node.geometry.getAttribute('crownCenter').array);
+    } else if (node.name.startsWith('两岸近树纸本枝叶 · ')) {
+      copy(node, '两岸近树纸本枝叶', node.name, 'PaperFoliage');
     } else if (node.userData.lakeGreenway) {
       const positions = node.geometry.getAttribute('position'), point = new THREE.Vector3();
       for (let i = 0; i < positions.count; i++) {
@@ -122,6 +130,19 @@ function capture() {
     await page.goto(pathToFileURL(path.join(root, 'dist/index.html')).href + '?debug');
     await page.waitForFunction(() => window.__ready && window.__dbg);
     const city = await page.evaluate(capture);
+    city.walkViews = await page.evaluate(async () => {
+      const select = document.getElementById('walk-view');
+      const {camera, controls} = window.__dbg;
+      const views = {};
+      for (const key of ['hy-door', 'hy-court', 'wc-door', 'wc-court']) {
+        select.value = key;
+        select.dispatchEvent(new Event('change'));
+        if (location.hash !== '#walk='+key) throw new Error('Missing public walking view: '+key);
+        await new Promise(done => requestAnimationFrame(() => requestAnimationFrame(done)));
+        views[key] = {eye:camera.position.toArray(), target:controls.target.toArray(), fov:camera.fov};
+      }
+      return views;
+    });
     if (Object.keys(city.lots).length !== 7 || Object.keys(city.vegetation).length !== 4 || Object.keys(city.landmarks).length !== 15 || !city.landmarks.lake ||
         city.meshes.filter(m => m.material === 'Land').length !== 3)
       throw new Error('Missing landmarks, districts or banks. Rebuild dist/index.html before capture.');

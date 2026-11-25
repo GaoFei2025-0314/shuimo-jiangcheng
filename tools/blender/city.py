@@ -45,6 +45,47 @@ def relocate(obj, dest):
     dest.objects.link(obj)
 
 
+def courtyard_soil(mat):
+    """Keep the painted gravel and moss around the actual Hanyang and Wuchang alleys."""
+    tree = mat.node_tree
+    base = tree.nodes.get("Principled BSDF").inputs["Base Color"]
+    original = base.links[0].from_socket
+    position = tree.nodes.new("ShaderNodeNewGeometry").outputs["Position"]
+    nearest = tree.nodes.new("ShaderNodeMath")
+    nearest.operation = 'MINIMUM'
+    for index, centre in enumerate(((-215,-39,0), (-65,-81,0))):
+        distance = tree.nodes.new("ShaderNodeVectorMath")
+        distance.operation = 'DISTANCE'
+        distance.inputs[1].default_value = centre
+        tree.links.new(position, distance.inputs[0])
+        tree.links.new(distance.outputs["Value"], nearest.inputs[index])
+    influence = tree.nodes.new("ShaderNodeMath")
+    influence.operation = 'MULTIPLY'
+    view_distance = tree.nodes.new("ShaderNodeCameraData").outputs["View Distance"]
+    for index,(distance, near, far, strength) in enumerate(((nearest.outputs[0],39,68,.52),
+                                                          (view_distance,100,170,1))):
+        fade = tree.nodes.new("ShaderNodeMapRange")
+        fade.interpolation_type = 'SMOOTHERSTEP'
+        fade.inputs["From Min"].default_value = near
+        fade.inputs["From Max"].default_value = far
+        fade.inputs["To Min"].default_value = strength
+        fade.inputs["To Max"].default_value = 0
+        tree.links.new(distance, fade.inputs[0])
+        tree.links.new(fade.outputs[0], influence.inputs[index])
+    coords = tree.nodes.new("ShaderNodeVectorMath")
+    coords.operation = 'MULTIPLY'
+    coords.inputs[1].default_value = (.15,-.15,0)
+    tree.links.new(position, coords.inputs[0])
+    soil = mesh.lane_image(tree, "lane-earth.webp")
+    soil.extension = 'MIRROR'
+    tree.links.new(coords.outputs[0], soil.inputs["Vector"])
+    mix = tree.nodes.new("ShaderNodeMixRGB")
+    tree.links.new(influence.outputs[0], mix.inputs[0])
+    tree.links.new(original, mix.inputs[1])
+    tree.links.new(soil.outputs["Color"], mix.inputs[2])
+    tree.links.new(mix.outputs[0], base)
+
+
 def paint(name, hexcolor):
     rgb = bytes.fromhex(hexcolor)
     values = [((v / 255 + .055) / 1.055) ** 2.4 for v in rgb]
@@ -87,6 +128,12 @@ def paint(name, hexcolor):
             links.new(surface, slopes.inputs[2])
             surface = slopes.outputs["Color"]
         links.new(surface, shader.inputs["Base Color"])
+    if name in ("Path", "BankStone", "Streets", "Land"):
+        mesh.pigment_grain(mat, (1.5,4,2.2), .28 if name == "Land" else .52)
+    elif name in ("Masonry", "Paper", "Hills"):
+        mesh.pigment_grain(mat, (.75,1.25,3.5), .44)
+    if name == "Land":
+        courtyard_soil(mat)
     return mat
 
 
@@ -115,6 +162,30 @@ def worn_walk(material):
     return worn
 
 
+def paper_foliage():
+    mat = bpy.data.materials.new("纸本枝叶 · 四株近树")
+    mat.use_nodes = True
+    tree = mat.node_tree
+    surface = tree.nodes.get("Principled BSDF")
+    surface.inputs["Roughness"].default_value = .96
+    texture = mesh.lane_image(tree, "lane-foliage.webp")
+    tint = tree.nodes.new("ShaderNodeVertexColor")
+    tint.layer_name = "Leaf pigment"
+    pigment = tree.nodes.new("ShaderNodeMixRGB")
+    pigment.blend_type = 'MULTIPLY'
+    pigment.inputs[0].default_value = .22
+    tree.links.new(texture.outputs["Color"], pigment.inputs[1])
+    tree.links.new(tint.outputs["Color"], pigment.inputs[2])
+    tree.links.new(pigment.outputs[0], surface.inputs["Base Color"])
+    coverage = tree.nodes.new("ShaderNodeMapRange")
+    coverage.interpolation_type = 'SMOOTHSTEP'
+    coverage.inputs["From Min"].default_value = .28
+    coverage.inputs["From Max"].default_value = .66
+    tree.links.new(texture.outputs["Alpha"], coverage.inputs["Value"])
+    tree.links.new(coverage.outputs[0], surface.inputs["Alpha"])
+    return mat
+
+
 def geometry_arrays(item):
     points = np.frombuffer(base64.b64decode(item["positions"]), dtype="<f4").reshape(-1, 3)
     points = points[:, [0, 2, 1]].copy()
@@ -130,6 +201,13 @@ def imported_mesh(item, mat, dest, parent=None):
     data.from_pydata(points.tolist(), [], indices.tolist())
     for material in mat if isinstance(mat, tuple) else (mat,):
         data.materials.append(material)
+    if "uv" in item:
+        coords = np.frombuffer(base64.b64decode(item["uv"]), dtype="<f4").reshape(-1, 2)
+        uv = data.uv_layers.new(name="UVMap")
+        uv.data.foreach_set("uv", coords[indices.flatten()].ravel())
+        rgb = np.frombuffer(base64.b64decode(item["colors"]), dtype="<f4").reshape(-1, 3)
+        tint = data.color_attributes.new(name="Leaf pigment", type="FLOAT_COLOR", domain="POINT")
+        tint.data.foreach_set("color", np.column_stack((rgb, np.ones(len(rgb)))).astype("float32").ravel())
     if "faceGroups" in item:
         slots = np.zeros(len(indices), dtype=np.int32)
         for start, count, slot in item["faceGroups"]:
@@ -142,6 +220,8 @@ def imported_mesh(item, mat, dest, parent=None):
     if item["material"] in ("Hills", "BankGrass", "WetBank", "DistantRidge"):
         data.polygons.foreach_set("use_smooth", np.ones(len(indices), dtype=bool))
     data.update()
+    if not isinstance(mat, tuple) and mat.get("courtyard_timber"):
+        mesh.neighborhood_uv(data, "courtyardWood")
     obj = bpy.data.objects.new(item["name"], data)
     dest.objects.link(obj)
     if parent is None:
@@ -152,7 +232,8 @@ def imported_mesh(item, mat, dest, parent=None):
     waterfront_paving = item["name"].endswith(("两桥滨水步道", "桥头接岸步道", "滨水通街支巷"))
     courtyard_paving = (item["group"] in ("汉阳滨水街巷生活", "汉阳茶棚后街坊", "武昌滨水街巷生活")
                        and item["material"] in ("Path", "BankStone"))
-    if courtyard_paving or waterfront_paving or item["material"] in ("Streets", "ApproachPaving", "RoadPaint") or item["group"] in (
+    paving_detail = item["name"].endswith((" · 石缝", " · 镶边", " · 错缝铺石"))
+    if paving_detail or courtyard_paving or waterfront_paving or item["material"] in ("Streets", "ApproachPaving", "RoadPaint") or item["group"] in (
             "汉阳桥头街坊", "武昌桥头街坊", "汉阳两桥街道", "武昌两桥街道"):
         # Thin paving ribbons meet at intersections; their pigment casts no extra shadow.
         obj.visible_shadow = False
@@ -201,15 +282,22 @@ def city_blocks(scene, captured, streets):
             obj.matrix_world = placement(matrix)
 
 
-def city_trees(captured, parent):
+def city_trees(captured, parent, paper_roots):
     """Link editable trees to one colored mesh per species, using the web placements."""
     names = {"pine": "松林", "broadleaf": "阔叶树", "willow": "岸柳", "cherry": "樱树"}
     for species, batch in captured.items():
         name = names[species]
         data = bpy.data.meshes.new(name + " · 共享树型")
-        coords, tris, colors, slots = [], [], [], []
-        for part in batch["parts"].values():
+        coords, tris, colors, slots, smooth = [], [], [], [], []
+        paper_points = None
+        for part_name, part in batch["parts"].items():
             points, indices = geometry_arrays(part)
+            if "crownCenter" in part:
+                centers = np.frombuffer(base64.b64decode(part["crownCenter"]), dtype="<f4").reshape(-1, 3)
+                mask = centers[:, 1] > 0
+                centers = centers[:, [0, 2, 1]].copy()
+                centers[:, 1] *= -1
+                paper_points = (len(coords) + np.flatnonzero(mask), .4 * points[mask] + .6 * centers[mask])
             rgb = np.frombuffer(base64.b64decode(part["colors"]), dtype="<f4").reshape(-1, 3)
             # The material swatch is also visible in Blender's default solid viewport.
             base = np.rint(np.clip(rgb.mean(axis=0), 0, 1) * 255).astype("uint8").tobytes().hex()
@@ -219,20 +307,31 @@ def city_trees(captured, parent):
             shader = pigment.node_tree.nodes.get("Principled BSDF")
             pigment.node_tree.links.new(color.outputs["Color"], shader.inputs["Base Color"])
             slots.extend([len(data.materials)] * len(indices))
+            smooth.extend([part_name == "foliage"] * len(indices))
             data.materials.append(pigment)
             tris.extend((indices + len(coords)).tolist())
             coords.extend(points.tolist())
             colors.extend(rgb)
         data.from_pydata(coords, [], tris)
         data.polygons.foreach_set("material_index", np.asarray(slots, dtype="int32"))
+        data.polygons.foreach_set("use_smooth", np.asarray(smooth, dtype=bool))
         rgb = np.asarray(colors, dtype=np.float32)
         rgba = np.ones((len(rgb), 4), dtype=np.float32)
         rgba[:, :3] = np.where(rgb <= .04045, rgb / 12.92, ((rgb + .055) / 1.055) ** 2.4)
         data.color_attributes.new("Plant pigment", 'FLOAT_COLOR', 'POINT').data.foreach_set("color", rgba.ravel())
         data.update()
+        paper_data = None
+        if paper_points is not None and paper_roots:
+            paper_data = data.copy()
+            paper_data.name = name + " · 纸枝间隙"
+            near_coords = np.asarray(coords, dtype=np.float32)
+            near_coords[paper_points[0]] = paper_points[1]
+            paper_data.vertices.foreach_set("co", near_coords.ravel())
+            paper_data.update()
         dest = collection(parent, name)
         for i, matrix in enumerate(batch["matrices"], 1):
-            obj = bpy.data.objects.new(f"{name} {i:04}", data)
+            root = (round(matrix[12], 3), round(matrix[14], 3))
+            obj = bpy.data.objects.new(f"{name} {i:04}", paper_data if paper_data and root in paper_roots else data)
             dest.objects.link(obj)
             obj.matrix_world = placement(matrix)
 
@@ -291,8 +390,30 @@ def water(rivers, materials, dest, lakes=()):
     for first, second in zip(yangtze, yangtze[1:]):
         station.append(station[-1] + math.dist(first[:2], second[:2]))
 
+    def river_reflections(material):
+        tree = material.node_tree
+        shader = tree.nodes.get("Principled BSDF")
+        shader.inputs["IOR"].default_value = 1.333
+        shader.inputs["Roughness"].default_value = .135
+        flow = tree.nodes.new("ShaderNodeVectorMath")
+        flow.operation = 'MULTIPLY'
+        flow.inputs[1].default_value = (1.9,.32,1)
+        tree.links.new(tree.nodes.new("ShaderNodeNewGeometry").outputs["Position"], flow.inputs[0])
+        ripples = tree.nodes.new("ShaderNodeTexNoise")
+        ripples.inputs["Scale"].default_value = .85
+        ripples.inputs["Detail"].default_value = 2
+        ripples.inputs["Distortion"].default_value = .55
+        tree.links.new(flow.outputs[0], ripples.inputs["Vector"])
+        bump = tree.nodes.new("ShaderNodeBump")
+        bump.inputs["Strength"].default_value = .43
+        bump.inputs["Distance"].default_value = .13
+        tree.links.new(ripples.outputs["Fac"], bump.inputs["Height"])
+        tree.links.new(bump.outputs[0], shader.inputs["Normal"])
+
     main_mat = paint("Water", "bab8a5")
     han_mat = paint("Water", "9fbcb0")
+    for material in (main_mat, han_mat):
+        river_reflections(material)
     nodes, links, tint = shade_attribute(main_mat)
     paint_mix = nodes.new("ShaderNodeMixRGB")
     paint_mix.inputs[2].default_value = han_mat.diffuse_color
@@ -524,6 +645,34 @@ def mist_layers(layers, dest):
         obj.visible_shadow = obj.visible_diffuse = obj.visible_glossy = False
 
 
+def ink_contours(scene):
+    """Use a restrained luminance gradient to pick out eaves, window recesses and rigging."""
+    tree = bpy.data.node_groups.new("江城 · 边缘淡墨", 'CompositorNodeTree')
+    scene.compositing_node_group = tree
+    tree.interface.new_socket(name='Image', in_out='OUTPUT', socket_type='NodeSocketColor')
+    output = tree.nodes.new('NodeGroupOutput')
+    render = tree.nodes.new('CompositorNodeRLayers')
+    luminance = tree.nodes.new('CompositorNodeRGBToBW')
+    tree.links.new(render.outputs['Image'], luminance.inputs[0])
+    edge = tree.nodes.new('CompositorNodeFilter')
+    edge.inputs['Type'].default_value = 'Sobel'
+    tree.links.new(luminance.outputs[0], edge.inputs['Image'])
+    strength = tree.nodes.new('ShaderNodeMath')
+    strength.operation = 'MULTIPLY'
+    strength.inputs[1].default_value = .55
+    tree.links.new(edge.outputs[0], strength.inputs[0])
+    limit = tree.nodes.new('ShaderNodeMath')
+    limit.operation = 'MINIMUM'
+    limit.inputs[1].default_value = .30
+    tree.links.new(strength.outputs[0], limit.inputs[0])
+    ink = tree.nodes.new('ShaderNodeMixRGB')
+    ink.blend_type = 'MULTIPLY'
+    tree.links.new(limit.outputs[0], ink.inputs[0])
+    tree.links.new(render.outputs['Image'], ink.inputs[1])
+    ink.inputs[2].default_value = (.13,.16,.135,1)
+    tree.links.new(ink.outputs[0], output.inputs[0])
+
+
 def lighting(scene, camera_group):
     target = Vector((-86, 85, 8))
     direction = Vector((.15, -1, .77)).normalized()
@@ -547,6 +696,19 @@ def lighting(scene, camera_group):
     sky = scene.world.node_tree.nodes.get("Background")
     sky.inputs["Color"].default_value = (.85,.88,.90,1)
     sky.inputs["Strength"].default_value = .48
+    # The camera sees warm paper while the original diffuse skylight still models the buildings.
+    world = scene.world.node_tree
+    paper = world.nodes.new('ShaderNodeBackground')
+    paper.inputs['Color'].default_value = (.83,.80,.71,1)
+    mix = world.nodes.new('ShaderNodeMixShader')
+    path = world.nodes.new('ShaderNodeLightPath')
+    world.links.new(path.outputs['Is Camera Ray'], mix.inputs[0])
+    world.links.new(sky.outputs[0], mix.inputs[1])
+    world.links.new(paper.outputs[0], mix.inputs[2])
+    world.links.new(mix.outputs[0], world.nodes.get('World Output').inputs['Surface'])
+    scene.view_settings.view_transform = 'Standard'
+    scene.view_settings.exposure = .10
+    ink_contours(scene)
     scene.render.engine = 'CYCLES'
     scene.cycles.samples = 12
     scene.cycles.use_denoising = True
@@ -657,6 +819,28 @@ def waterfront_views(scene, camera_group):
     return views
 
 
+def render_walk_views(scene, views):
+    if not views:
+        return
+    previous = scene.camera
+    camera = previous.copy()
+    camera.data = previous.data.copy()
+    scene.collection.objects.link(camera)
+    scene.camera = camera
+    scene.render.resolution_x, scene.render.resolution_y, scene.render.resolution_percentage = 1440, 900, 80
+    camera.data.type = 'PERSP'
+    camera.data.sensor_fit = 'HORIZONTAL'
+    for key, view in views.items():
+        camera.location = AXES @ Vector(view["eye"])
+        target = AXES @ Vector(view["target"])
+        camera.rotation_euler = (target - camera.location).to_track_quat('-Z', 'Y').to_euler()
+        camera.data.lens = camera.data.sensor_width / (3.2 * math.tan(math.radians(view["fov"]) / 2))
+        scene.render.filepath = str(OUT / f"lane-{key}.png")
+        bpy.ops.render.render(write_still=True, scene=scene.name)
+    scene.camera = previous
+    bpy.data.objects.remove(camera, do_unlink=True)
+
+
 def park_view(scene, park_roots, tower_root, camera_group):
     parts = [part for root in [tower_root, *park_roots] for part in root.children if part.type == 'MESH']
     corners = [part.matrix_world @ Vector(point) for part in parts for point in part.bound_box]
@@ -679,6 +863,9 @@ def export_park(scene, camera, corners):
     """A local editable working set with the actual city relief, street edges and planting."""
     region = bpy.data.scenes.new("黄鹤楼公园 · 蛇山西区")
     region.world = scene.world
+    region.view_settings.view_transform = scene.view_settings.view_transform
+    region.view_settings.exposure = scene.view_settings.exposure
+    region.compositing_node_group = scene.compositing_node_group
     region.render.engine = 'CYCLES'
     region.cycles.samples = scene.cycles.samples
     region.cycles.use_denoising = True
@@ -781,10 +968,20 @@ def build():
             if name not in groups:
                 groups[name] = collection(scene.collection, name)
             return groups[name]
+        mats["PaperFoliage"] = paper_foliage()
         verge_materials = {}
         walk_materials = {}
+        timber_materials = {}
         for item in capture["meshes"]:
             material = mats[item["material"]]
+            if item["group"] in ("汉阳滨水街巷生活", "汉阳茶棚后街坊", "武昌滨水街巷生活") and item["material"] in ("BoatAccent", "Ink"):
+                if material not in timber_materials:
+                    timber = material.copy()
+                    timber.name = material.name + " · 街巷木作"
+                    timber["courtyard_timber"] = True
+                    mesh.neighborhood_surface(timber, "courtyardWood")
+                    timber_materials[material] = timber
+                material = timber_materials[material]
             if "vergeCover" in item:
                 if material not in verge_materials:
                     wash = material.copy()
@@ -813,7 +1010,9 @@ def build():
         if capture.get("atmosphere"):
             mist_layers(capture["atmosphere"], group("远岸烟波"))
         city_blocks(scene, capture["lots"], group("武汉街坊"))
-        city_trees(capture["vegetation"], group("武汉草木"))
+        paper_roots = {(round(it["matrix"][12], 3), round(it["matrix"][14], 3))
+                       for it in capture["meshes"] if it["material"] == "PaperFoliage"}
+        city_trees(capture["vegetation"], group("武汉草木"), paper_roots)
         landmark_roots = {}
         for key, record in capture["landmarks"].items():
             landmark_roots[key] = place_building(scene, landmarks.BUILDERS[key], record, group(record["name"]))
@@ -831,6 +1030,7 @@ def build():
         if capture.get("wakes"):
             camera = freight_view(scene, capture["wakes"][0], group("镜头与光"))
             detail_views.append((camera, "river-freighter.png"))
+        scene["walkViews"] = json.dumps(capture.get("walkViews", {}), separators=(",", ":"))
         mesh.save_project(scene, OUT / "city.blend")
         scene.render.filepath = str(OUT / "city.png")
         bpy.ops.render.render(write_still=True, scene=scene.name)
@@ -843,6 +1043,7 @@ def build():
             scene.camera = camera
             scene.render.filepath = str(OUT / filename)
             bpy.ops.render.render(write_still=True, scene=scene.name)
+        render_walk_views(scene, capture.get("walkViews"))
         print(f"Rendered city with {len(scene.objects)} objects and {sum(map(len, capture['lots'].values()))} buildings.")
     finally:
         window.scene = previous
