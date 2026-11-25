@@ -60,11 +60,18 @@
   const sharedInk = { uInk: { value: new THREE.Color('#29332f') }, uPaper: { value: PAPER }, uLight: { value: new THREE.Vector3(-.45, .85, .5) } };
 
   const inkVert = `
+    #ifdef WALK_WEAR
+      attribute float walkEdge;
+      varying float vWalkEdge;
+    #endif
     #ifdef ARCHITECTURE_AO
       attribute float skyVisibility; varying float vSky;
     #endif
     varying vec3 vN; varying vec3 vW; varying float vD; varying vec3 vC;
     void main(){
+      #ifdef WALK_WEAR
+        vWalkEdge = walkEdge;
+      #endif
       #ifdef ARCHITECTURE_AO
         vSky = skyVisibility;
       #endif
@@ -84,6 +91,9 @@
       gl_Position = projectionMatrix * mv;
     }`;
   const inkFrag = NOISE + `
+    #ifdef WALK_WEAR
+      varying float vWalkEdge;
+    #endif
     #ifdef ARCHITECTURE_AO
       varying float vSky;
       #ifdef ARCHITECTURE_SHADOW
@@ -161,6 +171,14 @@
       }
 
       vec3 col = mix(uInk, uPaper, tone);
+      #ifdef WALK_WEAR
+        // Footfall polishes the middle of the path. Patchy darker edges merge into the verge.
+        float grain = vnoise(vW.xz * 1.7);
+        float margin = smoothstep(.32,.95,abs(vWalkEdge) + .18*(grain-.5));
+        float wearMask = smoothstep(.27,.76,vnoise(vW.xz*.39));
+        float weathering = 1. + wearMask * mix(.016,-.034,margin) + .032*(grain-.5);
+        col *= mix(1.,weathering,1.-smoothstep(62.,165.,vD));
+      #endif
       #ifdef GROUND_CONTACT
         vec2 uv = (vW.xz-uContactRect.xy)/uContactRect.zw;
         float field = texture2D(uContact,uv).r;

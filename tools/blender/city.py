@@ -90,6 +90,31 @@ def paint(name, hexcolor):
     return mat
 
 
+def worn_walk(material):
+    """Tint the existing stone wash by the interpolated distance from the walk centre."""
+    worn = material.copy()
+    worn.name = material.name + " · 滨水步道磨痕"
+    tree = worn.node_tree
+    color = tree.nodes.get("Principled BSDF").inputs["Base Color"]
+    stone = color.links[0].from_socket
+    edge = tree.nodes.new("ShaderNodeAttribute")
+    edge.attribute_name = "Walk edge"
+    distance = tree.nodes.new("ShaderNodeMath")
+    distance.operation = 'ABSOLUTE'
+    tree.links.new(edge.outputs["Fac"], distance.inputs[0])
+    tones = tree.nodes.new("ShaderNodeMixRGB")
+    tones.inputs[1].default_value = (1.02, 1.015, 1.01, 1)
+    tones.inputs[2].default_value = (.97, .97, .97, 1)
+    tree.links.new(distance.outputs[0], tones.inputs[0])
+    multiply = tree.nodes.new("ShaderNodeMixRGB")
+    multiply.blend_type = 'MULTIPLY'
+    multiply.inputs[0].default_value = 1
+    tree.links.new(stone, multiply.inputs[1])
+    tree.links.new(tones.outputs[0], multiply.inputs[2])
+    tree.links.new(multiply.outputs[0], color)
+    return worn
+
+
 def geometry_arrays(item):
     points = np.frombuffer(base64.b64decode(item["positions"]), dtype="<f4").reshape(-1, 3)
     points = points[:, [0, 2, 1]].copy()
@@ -110,15 +135,12 @@ def imported_mesh(item, mat, dest, parent=None):
         for start, count, slot in item["faceGroups"]:
             slots[start:start + count] = slot
         data.polygons.foreach_set("material_index", slots)
-    if "deckPigment" in item:
-        pigment = np.frombuffer(base64.b64decode(item["deckPigment"]), dtype="<f4")
-        layer = data.attributes.new(name="Deck pigment", type='FLOAT', domain='POINT')
-        layer.data.foreach_set("value", pigment)
+    for key, name in (("deckPigment", "Deck pigment"), ("vergeCover", "Verge cover"), ("walkEdge", "Walk edge")):
+        if key in item:
+            field = data.attributes.new(name=name, type='FLOAT', domain='POINT')
+            field.data.foreach_set("value", np.frombuffer(base64.b64decode(item[key]), dtype="<f4"))
     if item["material"] in ("Hills", "BankGrass", "WetBank", "DistantRidge"):
         data.polygons.foreach_set("use_smooth", np.ones(len(indices), dtype=bool))
-    if "vergeCover" in item:
-        cover = data.attributes.new("Verge cover", 'FLOAT', 'POINT')
-        cover.data.foreach_set("value", np.frombuffer(base64.b64decode(item["vergeCover"]), dtype="<f4"))
     data.update()
     obj = bpy.data.objects.new(item["name"], data)
     dest.objects.link(obj)
@@ -609,13 +631,15 @@ def bridgehead_views(scene, camera_group, landmark_roots):
 
 
 def waterfront_views(scene, camera_group):
-    """From either bank, follow the waterfront towards each bridge."""
+    """Follow both banks to the bridges and look inland from the central landings."""
     views = []
     for name, filename, eye, target, lens in (
             ("汉阳江岸 · 望武汉长江大桥", "hanyang-wuhan", (-184,-23,6.1), (-137,59,1.5), 26),
             ("汉阳江岸 · 望鹦鹉洲长江大桥", "hanyang-yingwuzhou", (-183,-32,5.6), (-191,-109,3), 23),
             ("武昌江岸 · 望武汉长江大桥", "wuchang-wuhan", (-85,-45,5.9), (-81,23,2), 25),
-            ("武昌江岸 · 望鹦鹉洲长江大桥", "wuchang-yingwuzhou", (-88,-65,6.4), (-120,-139,4), 24)):
+            ("武昌江岸 · 望鹦鹉洲长江大桥", "wuchang-yingwuzhou", (-88,-65,6.4), (-120,-139,4), 24),
+            ("汉阳水阶 · 系船石与街巷", "hanyang-mooring", (-187.8,-47.8,2.7), (-197.8,-39.5,1.2), 27),
+            ("武昌江岸 · 石凳与街巷", "wuchang-bench", (-96,-97.8,3), (-80,-89.5,1.3), 29)):
         data = bpy.data.cameras.new(name)
         data.lens = lens
         data.clip_end = scene.camera.data.clip_end
@@ -752,6 +776,7 @@ def build():
                 groups[name] = collection(scene.collection, name)
             return groups[name]
         verge_materials = {}
+        walk_materials = {}
         for item in capture["meshes"]:
             material = mats[item["material"]]
             if "vergeCover" in item:
@@ -764,6 +789,10 @@ def build():
                     wash.node_tree.links.new(cover.outputs["Fac"], nodes.get("Principled BSDF").inputs["Alpha"])
                     verge_materials[material] = wash
                 material = verge_materials[material]
+            if "walkEdge" in item:
+                if material not in walk_materials:
+                    walk_materials[material] = worn_walk(material)
+                material = walk_materials[material]
             imported_mesh(item, material, group(item["group"]))
         for vessel in capture.get("vessels", ()):
             place_vessel(vessel, mats, group(vessel["group"]))

@@ -32,10 +32,10 @@ function capture() {
   }
   function copy(node, group, name, material) {
     const item = { group, name, material, ...geometryOf(node), matrix: node.matrixWorld.toArray() };
-    const pigment = node.geometry.getAttribute('deckPigment');
-    if (pigment) item.deckPigment = pack(pigment.array);
-    const cover = node.geometry.getAttribute('vergeCover');
-    if (cover) item.vergeCover = pack(cover.array);
+    for (const key of ['deckPigment', 'vergeCover', 'walkEdge']) {
+      const attribute = node.geometry.getAttribute(key);
+      if (attribute) item[key] = pack(attribute.array);
+    }
     meshes.push(item);
   }
   function placements(node) {

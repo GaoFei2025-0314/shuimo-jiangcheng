@@ -504,6 +504,7 @@
   buildLakeGreenway();
 
   // The planting pass queries the completed street grid and building footprints.
+  const riverfrontLookouts = [];
   const cityGround = { occupied: () => false, streets: [], verges: [], bridgeGardens: [], riverfrontPaths: [] };
 
   // Loose groups behind the river walks keep the low shore open between both bridges.
@@ -535,6 +536,178 @@
   function riverfrontOpening(x,z,margin = 0) {
     return riverfrontBlocks.some(({openings}) => openings.some(([cx,cz,hx,hz]) =>
       ((x-cx)/(hx+margin))**2 + ((z-cz)/(hz+margin))**2 < 1));
+  }
+
+  function buildRiverfrontAlleys(lanes) {
+    const colors = {
+      Masonry:inkMat(.38,false,['#8d7d6e','#d6c6ac']),
+      Ink:inkMat(.21,false,['#463b33','#756558']),
+      Paper:inkMat(.53,false,['#9a896c','#e3d4af']),
+      BoatAccent:inkMat(.22,false,['#774d3c','#ac7856']),
+      Slate:inkMat(.24,false,['#53605c','#8f9d90']),
+    };
+    const head = new THREE.SphereGeometry(1,8,6);
+    const coat = new THREE.CylinderGeometry(.78,1,1,8);
+    const floor = p => plantingSurface(p.x,p.z) ?? LAND_Y;
+    function laneFront(x,z,endWall) {
+      const lane=lanes.find(({elements:e})=>Math.hypot(x-e[12],z-e[14])<.28);
+      if (!lane) return null;
+      const e=lane.elements, origin=V(e[12],0,e[14]);
+      const u=V(e[0],0,e[2]), v=V(e[8],0,e[10]);
+      const forward=(endWall ? u : v).clone().normalize().negate();
+      const tangent=(endWall ? v : u).clone().normalize();
+      if (endWall) origin.addScaledVector(u,-4.79);
+      else origin.addScaledVector(v,-2.73).addScaledVector(u,-.03);
+      const point=(across,along,height=0)=>{
+        const p=origin.clone().addScaledVector(tangent,across).addScaledVector(forward,along);
+        return p.setY(floor(p)+height);
+      };
+      return {origin,forward,tangent,point,yaw:Math.atan2(-tangent.z,tangent.x)};
+    }
+    function add(group,name,material,mesh) {
+      mesh.name=name;
+      mesh.userData.landscapeSurface={group,name,material};
+      scene.add(mesh);
+    }
+    function blocks(group,label) {
+      const batches=new Map();
+      const batch=key=>{
+        if (!batches.has(key)) batches.set(key,new Acc());
+        return batches.get(key);
+      };
+      return {
+        box(key,p,w,h,d,yaw,pitch=0){
+          const rotation=new THREE.Quaternion().setFromEuler(new THREE.Euler(pitch,yaw,0,'YXZ'));
+          batch(key).push(UBOX,new THREE.Matrix4().compose(p,rotation,V(w,h,d)));
+        },
+        round(key,shape,p,w,h,d,yaw){ batch(key).place(shape,p.x,p.y,p.z,w,h,d,yaw); },
+        beam(key,a,b,width){ batch(key).beam(a,b,width); },
+        show(){
+          for (const [key,built] of batches) add(group,label+' · '+key,key,built.mesh(colors[key],false));
+        },
+      };
+    }
+    function laneApron(group,name,front,reach,half) {
+      const {point,forward}=front;
+      const start=point(0,0), lip=point(0,reach), path=cityGround.riverfrontPaths
+        .filter(({name})=>name===group.slice(0,2)+'滨水通街支巷');
+      let nearest=Infinity, target;
+      for (const {a,b,width} of path) {
+        const d=V(b.x-a.x,0,b.z-a.z), s=V(a.x-lip.x,0,a.z-lip.z);
+        const t=THREE.MathUtils.clamp(-s.dot(d)/d.lengthSq(),0,1);
+        const toward=s.addScaledVector(d,t), gap=toward.length();
+        if (gap>=nearest || toward.dot(forward)<=0) continue;
+        nearest=gap;
+        target=lip.clone().addScaledVector(toward,Math.max(0,gap-width*.5+.09)/gap).setY(0);
+      }
+      if (!target || nearest>8) return;
+      const curve=new THREE.CatmullRomCurve3([start.clone().setY(0),lip.clone().setY(0),target]);
+      const points=curve.getSpacedPoints(12), vertices=[], indices=[];
+      for (let i=0;i<points.length;i++) {
+        const p=points[i], a=points[Math.max(i-1,0)], b=points[Math.min(i+1,points.length-1)];
+        const axis=V(b.z-a.z,0,a.x-b.x).normalize();
+        const width=THREE.MathUtils.lerp(half,.47,THREE.MathUtils.smoothstep(i,3,12));
+        for (const sign of [-1,1]) {
+          const q=p.clone().addScaledVector(axis,width*sign);
+          vertices.push(q.x,floor(q)+THREE.MathUtils.lerp(.092,.071,i/12),q.z);
+        }
+        if (!i) continue;
+        const j=2*(i-1);
+        indices.push(j,j+2,j+1,j+1,j+2,j+3);
+      }
+      const geometry=new THREE.BufferGeometry();
+      geometry.setAttribute('position',new THREE.Float32BufferAttribute(vertices,3));
+      geometry.setIndex(indices); geometry.computeVertexNormals();
+      add(group,name,'Path',new THREE.Mesh(geometry,M.bankPath));
+    }
+    function doorway(detail,front,across,width,height) {
+      const {point,yaw}=front;
+      detail.box('Ink',point(across,.023,height*.5+.035),width,height,.035,yaw);
+      for (const side of [-1,1]) {
+        detail.box('BoatAccent',point(across+side*(width*.5+.025),.031,height*.5+.034),.035,height+.029,.058,yaw);
+      }
+      detail.box('Masonry',point(across,.05,height+.056),width+.12,.071,.105,yaw);
+      detail.box('Masonry',point(across,.13,.059),width+.11,.094,.31,yaw);
+    }
+    function latticeWindow(detail,front,across,width,height) {
+      const {point,yaw}=front;
+      const center=1.12;
+      detail.box('Ink',point(across,.014,center),width,height,.027,yaw);
+      for (const r of [-1,-.33,.33,1]) {
+        detail.box('BoatAccent',point(across+r*width*.48,.035,center),.027,height,.026,yaw);
+      }
+      for (const r of [-1,0,1]) {
+        detail.box('BoatAccent',point(across,.035,center+r*height*.49),width,.029,.026,yaw);
+      }
+    }
+    function person(detail,front,u,d,turn,size,outfit,stride) {
+      const root=front.point(u,d), yaw=front.yaw+turn;
+      const at=(x,y,z)=>root.clone().add(V((x*Math.cos(yaw)+z*Math.sin(yaw))*size,y*size,
+        (-x*Math.sin(yaw)+z*Math.cos(yaw))*size));
+      const step=stride*.20;
+      for (const side of [-1,1]) {
+        const heel=at(side*.091,.060,side*step), knee=at(side*.087,.365,side*step*.59);
+        detail.box('Ink',heel,.10*size,.09*size,.21*size,yaw);
+        detail.beam('Ink',heel,knee,.105*size);
+        detail.beam('Ink',knee,at(side*.084,.635,0),.119*size);
+        const elbow=at(side*.206,.732,-side*step*.50), hand=at(side*.189,.579,-side*step*.87);
+        detail.beam(outfit,at(side*.156,.956,0),elbow,.094*size);
+        detail.beam(outfit,elbow,hand,.083*size);
+        detail.round('Masonry',head,hand,.044*size,.055*size,.045*size,yaw);
+      }
+      detail.round(outfit,coat,at(0,.824,0),.193*size,.385*size,.135*size,yaw);
+      detail.round('Masonry',head,at(0,1.112,.012),.106*size,.128*size,.105*size,yaw);
+      detail.round('Ink',head,at(0,1.184,.003),.108*size,.066*size,.108*size,yaw);
+    }
+
+    // A tea counter sits against a real end wall, with a clear apron running into the side lane.
+    const west=laneFront(-218,29,true);
+    if (west) {
+      const group='汉阳滨水街巷生活', {point,yaw}=west;
+      laneApron(group,'汉阳茶案前埕接支巷',west,1.8,1.56);
+      const counter=blocks(group,'汉阳山墙下的布棚茶案');
+      for (const u of [-.91,.91]) {
+        counter.beam('Ink',point(u,.17,.02),point(u,.17,1.84),.076);
+        counter.beam('Ink',point(u,1.50,.02),point(u,1.50,1.67),.076);
+        for (const d of [.66,1.25]) counter.box('Ink',point(u*.72,d,.31),.095,.60,.10,yaw);
+      }
+      counter.box('BoatAccent',point(0,.94,.65),1.65,.13,.76,yaw);
+      counter.box('Paper',point(0,.85,1.758),2.20,.043,1.56,yaw,.126);
+      counter.box('BoatAccent',point(0,1.62,1.590),2.20,.17,.052,yaw);
+      for (const [u,d,size] of [[-.52,.95,.096],[-.30,1.01,.073],[.36,.84,.112],[.61,.86,.071]]) {
+        counter.round(u>0?'Slate':'Paper',coat,point(u,d,.725+size*.45),size,size*.9,size,yaw);
+      }
+      counter.box('Masonry',point(1.33,.38,.21),.42,.39,.42,yaw);
+      doorway(counter,west,-1.25,.55,1.25);
+      latticeWindow(counter,west,.84,.51,.47);
+      counter.show();
+      const life=blocks(group,'汉阳茶案旁的店主');
+      person(life,west,1.16,.99,1.42,1.04,'Slate',.20);
+      life.show();
+    }
+
+    // The other bank has a quieter house gate, with short caps and an open way into the courtyard.
+    const east=laneFront(-59.58,75.26,false);
+    if (east) {
+      const group='武昌滨水街巷生活', {point,yaw}=east;
+      laneApron(group,'武昌里分门前石径接支巷',east,3.3,1.43);
+      const gate=blocks(group,'武昌里分矮墙与开敞院门');
+      for (const side of [-1,1]) {
+        gate.box('Masonry',point(side*1.24,2.25,.39),1.02,.76,.24,yaw);
+        gate.box('Slate',point(side*1.24,2.25,.80),1.09,.095,.34,yaw);
+        gate.box('Masonry',point(side*.74,2.25,.50),.24,.99,.31,yaw);
+        gate.box('Slate',point(side*.74,2.25,1.01),.32,.085,.38,yaw);
+        gate.box('Ink',point(side*.86,2.64,.51),.12,.87,.79,yaw+.16*side);
+      }
+      gate.box('Masonry',point(0,2.36,.088),1.20,.105,.32,yaw);
+      doorway(gate,east,0,.48,1.26);
+      latticeWindow(gate,east,2.80,.45,.49);
+      gate.show();
+      const life=blocks(group,'武昌入巷同行');
+      person(life,east,-.52,3.64,Math.PI*.12,1.07,'Slate',.83);
+      person(life,east,.36,4.33,Math.PI*.04,.91,'BoatAccent',-.53);
+      life.show();
+    }
   }
 
   /* ═════════ 九、三镇市廛 ═════════ */
@@ -802,8 +975,16 @@
       const geometry = new THREE.BufferGeometry();
       geometry.setAttribute('position', new THREE.Float32BufferAttribute(vertices,3));
       geometry.setIndex(indices); geometry.computeVertexNormals();
+      if (riverfront) {
+        const edge = new Float32Array(vertices.length/3);
+        for (let i=0; i<worldPoints.length; i++) {
+          edge[i*3] = -1;
+          edge[i*3+2] = 1;
+        }
+        geometry.setAttribute('walkEdge',new THREE.Float32BufferAttribute(edge,1));
+      }
       const key = group+' / '+material+(earthy ? ' / soil' : '');
-      if (!districtPaving.has(key)) districtPaving.set(key, { name, group, material, earthy, tiles: new Acc() });
+      if (!districtPaving.has(key)) districtPaving.set(key, { name, group, material, earthy, riverfront, tiles: new Acc() });
       districtPaving.get(key).tiles.push(geometry);
       return worldPoints;
     }
@@ -884,12 +1065,24 @@
       }
     }
     cityGround.occupied = (x, z, radius) => occupied(x, z, radius);
+    buildRiverfrontAlleys(lots.lane);
     const streets = streetsMesh.mesh(inkMat(.42, false, ['#b3a895', '#dfd8c7']), false);
     streets.name = 'City streets';
     scene.add(streets);
     const earthPath = inkMat(.23, false, ['#788074', '#a9ad99']);
-    for (const { name, group, material, earthy, tiles } of districtPaving.values()) {
-      const mesh = tiles.mesh(earthy ? earthPath : material === 'BankStone' ? M.bankStone : M.bankPath, false);
+    const worn = new Map();
+    for (const { name, group, material, earthy, riverfront, tiles } of districtPaving.values()) {
+      let ink = earthy ? earthPath : material === 'BankStone' ? M.bankStone : M.bankPath;
+      if (riverfront) {
+        if (!worn.has(ink)) {
+          const surface = ink.clone();
+          surface.uniforms = ink.uniforms;
+          surface.defines = {...ink.defines, WALK_WEAR: 1};
+          worn.set(ink,surface);
+        }
+        ink = worn.get(ink);
+      }
+      const mesh = tiles.mesh(ink,false);
       mesh.name = name;
       mesh.userData.landscapeSurface = { group, name, material };
       mesh.raycast = function () {};

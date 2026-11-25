@@ -355,6 +355,43 @@ test('both approach carriageways stay above the terrain through the bridgeheads 
   expect(failures).toEqual([]);
 });
 
+test('manual close views can descend at the six waterfront landings and rise back to the city view', async ({ page }) => {
+  await page.emulateMedia({reducedMotion:'reduce'});
+  await page.goto('/?debug');
+  await page.waitForFunction(() => window.__dbg && window.__ready);
+  const result = await page.evaluate(async () => {
+    const {camera, controls, plantingSurface} = __dbg;
+    const frame = () => new Promise(done => requestAnimationFrame(() => requestAnimationFrame(done)));
+    async function clearance(x,z) {
+      const ground = plantingSurface(x,z) ?? 0;
+      controls.dispatchEvent({type:'start'});
+      controls.target.set(x,ground-2,z-24);
+      camera.position.set(x,ground+.7,z);
+      controls.update();
+      controls.dispatchEvent({type:'end'});
+      await frame();
+      return camera.position.y-ground;
+    }
+    const levels = [];
+    for (const [x,z] of [[-203.6,54.5],[-197.6,40.1],[-189.1,23.6],[-89.1,112.8],[-87,92.3],[-81.7,61.2]]) {
+      levels.push(await clearance(x,z));
+    }
+    const transition = await clearance(-209.6,40.1);
+    const inland = await clearance(-223,40.1);
+    __dbg.flyTo('core');
+    await frame();
+    return {levels, transition, inland, overview:camera.position.y};
+  });
+  for (const height of result.levels) {
+    expect(height).toBeGreaterThan(1.8);
+    expect(height).toBeLessThan(3);
+  }
+  expect(result.transition).toBeGreaterThan(3);
+  expect(result.transition).toBeLessThan(7);
+  expect(result.inland).toBeCloseTo(7,1);
+  expect(result.overview).toBeGreaterThan(60);
+});
+
 test('street trees and houses leave the bridgehead and waterfront views open', async ({ page }) => {
   await page.goto('/?debug');
   await page.waitForFunction(() => window.__ready && window.__dbg);
@@ -559,6 +596,45 @@ test('each riverfront walk joins both bridgeheads and a neighborhood street on d
     return issues.slice(0,16);
   });
   expect(problems).toEqual([]);
+});
+
+test('the tea stall and courtyard entrances meet the riverside lanes at walking grade', async ({ page }) => {
+  const shaderErrors = [];
+  page.on('console', message => {
+    if (message.type()==='error' && /shader|WebGLProgram/i.test(message.text())) shaderErrors.push(message.text());
+  });
+  await page.goto('/?debug');
+  await page.waitForFunction(() => window.__ready && window.__dbg);
+  const error = await page.evaluate(() => {
+    const {scene,cityGround} = __dbg;
+    const issues = [], ray = new THREE.Raycaster();
+    const material = new THREE.MeshBasicMaterial({side:THREE.DoubleSide});
+    const walks = scene.children.filter(mesh => mesh.geometry?.getAttribute('walkEdge'));
+    if (walks.length !== 8) issues.push('expected two promenades, four bridge links and two cross lanes');
+    for (const walk of walks) {
+      const side = walk.geometry.getAttribute('walkEdge');
+      const samples = new Set(side.array);
+      if (side.count !== walk.geometry.getAttribute('position').count ||
+          ![-1,0,1].every(value => samples.has(value))) issues.push(walk.name);
+    }
+    const down = new THREE.Vector3(0,-1,0);
+    for (const [bank,frontage] of [['汉阳','汉阳茶案前埕接支巷'],['武昌','武昌里分门前石径接支巷']]) {
+      const pathName = bank+'滨水通街支巷';
+      const road = new THREE.Mesh(scene.getObjectByName(pathName).geometry,material);
+      const porch = scene.getObjectByName(frontage);
+      const p = porch.geometry.getAttribute('position');
+      const lip = new THREE.Vector3().fromBufferAttribute(p,p.count-2)
+        .lerp(new THREE.Vector3().fromBufferAttribute(p,p.count-1),.5);
+      ray.set(lip.clone().addScaledVector(down,-2),down);
+      const hit = ray.intersectObject(road)[0];
+      if (!hit || Math.abs(lip.y-hit.point.y)>.025 || cityGround.occupied(lip.x,lip.z))
+        issues.push(frontage);
+    }
+    material.dispose();
+    return issues;
+  });
+  expect(error).toEqual([]);
+  expect(shaderErrors).toEqual([]);
 });
 
 test('the bridge sidewalks clear the hillside and the painted crossings at their landings', async ({ page }) => {

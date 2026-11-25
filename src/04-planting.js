@@ -536,6 +536,29 @@
       }
     }
 
+    // Shift the few canopies that cross the lowest views from the riverwalk.
+    const pocketTrees = seeded(0xa9b602);
+    for (const {species,from,targets} of [
+      {species:'willow',from:[-86.54,75.07],targets:[[-77.5,75],[-78.5,75],[-79.5,75]]},
+      {species:'broadleaf',from:[-87.27,80.13],targets:[[-78.8,80.9],[-76.5,80.4],[-75,79.7]]},
+      {species:'willow',from:[-92.15,105.14],targets:[[-83.1,105.6],[-81.5,102.3],[-79,104.1]]},
+    ]) {
+      const model=treeTypes[species];
+      const index=model.instances.findIndex(({elements:e})=>Math.hypot(e[12]-from[0],e[14]-from[1])<.10);
+      if (index<0) continue;
+      const e=model.instances[index].elements, x=e[12], z=e[14];
+      if (targets.some(([u,v])=>!riverfrontOpening(u,v,1.5) &&
+        plant(species,u,v,.66,Math.min(e[5],.78),pocketTrees))) {
+        model.instances.splice(index,1);
+        const last=groundContacts.findIndex(p=>p.tree && p.x===x && p.z===z);
+        if (last>=0) groundContacts.splice(last,1);
+        const key=keyAt(...cell(x,z));
+        trunks.set(key,trunks.get(key).filter(p=>p.x!==x||p.z!==z));
+      } else {
+        e[5]*=.52;
+      }
+    }
+
     // Color stores sRGB floats for the standalone map and the Blender capture.
     const plantMaterial = new THREE.ShaderMaterial({
       vertexColors: true,

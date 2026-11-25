@@ -433,9 +433,18 @@
       b.g.userData.w1.rotation.z = f; b.g.userData.w0.rotation.z = -f;
     });
 
-    camU.uCam.value.copy(camera.position);
-    const floorY = (plantingSurface(camera.position.x, camera.position.z) ?? 0) + 7;   // 不钻山、不入地
+    const ground = plantingSurface(camera.position.x, camera.position.z) ?? 0;
+    let clearance = 7;
+    if (cameraMode === 'manual' && camera.position.y < ground + clearance) {
+      // Lower the camera floor gradually near a lookout so the steps and street can share the foreground.
+      for (const lookout of riverfrontLookouts) {
+        const radius = Math.hypot(camera.position.x - lookout.x, camera.position.z - lookout.z);
+        clearance = Math.min(clearance, 2.2 + 4.8 * THREE.MathUtils.smoothstep(radius, 5, 18));
+      }
+    }
+    const floorY = ground + clearance;
     if (camera.position.y < floorY) camera.position.y = floorY;
+    camU.uCam.value.copy(camera.position);
 
     const dist = camera.position.distanceTo(controls.target);
     // A high aerial view needs enough depth precision to separate the water and low banks.

@@ -281,12 +281,13 @@
     };
     const treadInk=inkMat(.25,false,['#74796c','#aca58c']);
     const shoreGrass=vergeWash(.18,['#687769','#bec0a3']);
+    const shoreHeight=p=>plantingSurface(p.x,p.z) ?? LAND_Y;
     function landingSteps(group,name,frame,walkEdge,width,stone) {
       const foot=frame.shore.clone().lerp(frame.cap,.61);
       const run=walkEdge.distanceTo(foot), steps=Math.max(5,Math.ceil(run/1.0));
       const positions=[], faces=[], joints=[], seams=[];
       const section=(center,half)=>[-1,1].map(sign=>center.clone().addScaledVector(frame.tangent,sign*half));
-      const grade=(p)=>(plantingSurface(p.x,p.z) ?? LAND_Y);
+      const grade=shoreHeight;
       function surface(a,b,vertices=positions,indices=faces) {
         const first=vertices.length/3;
         vertices.push(...a[0].toArray(),...a[1].toArray(),...b[0].toArray(),...b[1].toArray());
@@ -299,7 +300,7 @@
         const start=i/steps, stop=(i+1)/steps;
         const a=walkEdge.clone().lerp(foot,start), b=walkEdge.clone().lerp(foot,stop);
         const half=width*.5*(1-.18*start), near=section(a,half), far=section(b,half);
-        const top=Math.max(...near.map(grade),...far.map(grade),grade(a),grade(b))+.039;
+        const top=Math.max(...near.map(grade),...far.map(grade),grade(a),grade(b))+(i===0?.068:.039);
         near.forEach(p=>p.y=top); far.forEach(p=>p.y=top);
         if (![...near,...far].every(p=>onLand(p.x,p.z))) continue;
         if (previous) {
@@ -320,6 +321,15 @@
         previous=far;
         reservePath({a,b,width:2*half,group,name,planted:true,riverfront:true});
       }
+      if (previous) {
+        const shelf=frame.shore.clone().lerp(frame.cap,.54);
+        const half=previous[0].distanceTo(previous[1])*.5+.04;
+        const landing=section(shelf,half).map(p=>p.setY(grade(p)+.016));
+        if (landing.every(p=>onLand(p.x,p.z))) {
+          surface(previous,landing);
+          reservePath({a:foot,b:shelf,width:half*2,group,name,planted:true,riverfront:true});
+        }
+      }
       for (const [label,kind,ink,vertices,indices] of [
         [name,stone ? 'BankStone' : 'Path',stone ? M.bankStone : M.bankPath,positions,faces],
         [name+' · 踏步石缝','ShoreStone',treadInk,joints,seams],
@@ -334,44 +344,120 @@
         scene.add(mesh);
       }
     }
-    const riversideStone=inkMat(.26,false,['#817b68','#c4b8a1']);
-    function shorelineFurniture(side,group,frame,center,walkWidth) {
-      const blocks=new Acc(), yaw=Math.atan2(-frame.tangent.z,frame.tangent.x);
-      const floor=(p)=>(plantingSurface(p.x,p.z) ?? LAND_Y);
-      let name;
-      if (side<0) {
-        name='汉阳下台系船石';
-        const rim=frame.shore.clone().lerp(frame.cap,.75);
-        for (const offset of [-1.72,1.84]) {
-          const p=rim.clone().addScaledVector(frame.tangent,offset), y=floor(p);
-          blocks.cyl(.26,.23,p.x,y+.02,p.z);
-          blocks.cyl(.18,.30,p.x,y+.21,p.z);
-          blocks.cyl(.235,.09,p.x,y+.365,p.z);
-        }
-      } else {
-        name='武昌滨水分节石凳';
-        const rim=center.clone().addScaledVector(frame.inland,walkWidth*.5+.52);
-        for (const offset of [-.84,.77]) {
-          const p=rim.clone().addScaledVector(frame.tangent,offset), y=floor(p);
-          for (const foot of [-.43,.43]) {
-            const leg=p.clone().addScaledVector(frame.tangent,foot);
-            blocks.box(.28,.33,.45,leg.x,floor(leg)+.13,leg.z,yaw);
-          }
-          blocks.box(1.44,.14,.59,p.x,y+.36,p.z,yaw);
+    const riversideStone=inkMat(.19,false,['#716d5b','#b8ac92']);
+    riversideStone.fragmentShader=riversideStone.fragmentShader.replace('vec3 col = mix(uInk, uPaper, tone);',
+      'vec3 col = mix(uInk, uPaper, tone) * (1. - .23 * smoothstep(.05,.85,-n.y));');
+    const furnitureContact={positions:[],coverage:[],indices:[]};
+    function contactWash(frame,center,along,across,strength) {
+      const {positions,coverage,indices}=furnitureContact, first=positions.length/3, sides=12;
+      const place=(point,alpha)=>{
+        positions.push(point.x,shoreHeight(point)+.008,point.z);
+        coverage.push(alpha);
+      };
+      place(center,strength);
+      for (const [radius,fade] of [[.44,.91],[.72,.50],[1,0]]) for (let i=0;i<sides;i++) {
+        const angle=Math.PI*2*i/sides;
+        const p=center.clone().addScaledVector(frame.tangent,Math.cos(angle)*along*radius)
+          .addScaledVector(frame.inland,Math.sin(angle)*across*radius);
+        place(p,strength*fade);
+      }
+      const upward=frame.tangent.z*frame.inland.x-frame.tangent.x*frame.inland.z>0;
+      const triangle=(a,b,c)=>indices.push(...(upward?[a,b,c]:[a,c,b]));
+      for (let i=0;i<sides;i++) {
+        const j=(i+1)%sides;
+        triangle(first,first+1+i,first+1+j);
+        for (const ring of [first+1,first+1+sides]) {
+          const a=ring+i,b=ring+j,c=a+sides,d=b+sides;
+          triangle(a,c,b);
+          triangle(b,c,d);
         }
       }
-      const mesh=blocks.mesh(riversideStone,false);
+    }
+    const inlaidStone=inkMat(.47,false,['#a19a83','#ddd0b5']);
+    const mooringRope=inkMat(.12,false,['#655044','#a08565']);
+    function shoreMesh(parts,group,name,key,ink) {
+      const mesh=parts.mesh(ink,false);
       mesh.name=name;
-      mesh.userData.landscapeSurface={group,name,material:'Masonry'};
+      mesh.userData.landscapeSurface={group,name,material:key};
       scene.add(mesh);
+    }
+    function cutStone(profile,depth) {
+      return new THREE.ExtrudeGeometry(new THREE.Shape(profile.map(([x,y])=>new THREE.Vector2(x,y))),
+        {depth,bevelEnabled:false,curveSegments:8}).translate(0,0,-depth*.5);
+    }
+    function oldWharf(group,frame) {
+      const blocks=new Acc(), curb=new Acc(), rope=new Acc();
+      const yaw=Math.atan2(-frame.tangent.z,frame.tangent.x);
+      const post=new THREE.Shape([[-.23,0],[.23,0],[.21,.36],[.13,.46],
+        [-.12,.47],[-.21,.38]].map(([x,y])=>new THREE.Vector2(x,y)));
+      const hole=new THREE.Path();
+      hole.absellipse(0,.275,.085,.093,0,Math.PI*2,true);
+      post.holes.push(hole);
+      const block=new THREE.ExtrudeGeometry(post,{depth:.32,bevelEnabled:true,
+        bevelThickness:.028,bevelSize:.024,bevelSegments:1,curveSegments:8}).translate(0,0,-.16);
+      const rim=frame.shore.clone().lerp(frame.cap,.76);
+      for (const offset of [-1.78,1.90]) {
+        const p=rim.clone().addScaledVector(frame.tangent,offset), y=shoreHeight(p);
+        blocks.box(.55,.17,.45,p.x,y-.022,p.z,yaw);
+        contactWash(frame,p,.46,.39,.35);
+        blocks.place(block,p.x,y-.04,p.z,1,1,1,yaw);
+      }
+      const lowerEdge=frame.shore.clone().lerp(frame.cap,.68);
+      for (const [t,len,depth] of [[-2.75,.72,.26],[-3.51,.67,.31],[2.75,.74,.25],[3.47,.62,.26]]) {
+        const p=lowerEdge.clone().addScaledVector(frame.tangent,t), y=shoreHeight(p);
+        curb.box(len,.105,depth,p.x,y-.019,p.z,yaw);
+      }
+      const coil=rim.clone().addScaledVector(frame.tangent,2.63);
+      const points=Array.from({length:40},(_,i)=>{
+        const t=i/39, a=t*Math.PI*4.85, r=.075+.23*t;
+        const p=coil.clone().addScaledVector(frame.tangent,Math.cos(a)*r).addScaledVector(frame.inland,Math.sin(a)*r*.69);
+        return p.setY(shoreHeight(p)+.027+.015*(1-t));
+      });
+      rope.push(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(points),48,.026,6,false));
+      shoreMesh(blocks,group,'汉阳下台系船石','Masonry',riversideStone);
+      shoreMesh(curb,group,'汉阳旧码头泊岸压顶','ShoreStone',treadInk);
+      shoreMesh(rope,group,'汉阳旧码头盘缆','BoatLoad',mooringRope);
+    }
+    function riverSeats(group,frame,center,walkWidth) {
+      const blocks=new Acc(), yaw=Math.atan2(-frame.tangent.z,frame.tangent.x);
+      const seat=cutStone([[-.67,-.085],[.67,-.085],[.74,-.018],[.74,.07],[.69,.10],
+        [-.69,.10],[-.74,.07],[-.74,-.018]],.64);
+      const rim=center.clone().addScaledVector(frame.inland,walkWidth*.5+.53);
+      contactWash(frame,rim,1.79,.57,.27);
+      for (const offset of [-.83,.78]) {
+        const p=rim.clone().addScaledVector(frame.tangent,offset), y=shoreHeight(p);
+        for (const foot of [-.46,.46]) {
+          const leg=p.clone().addScaledVector(frame.tangent,foot), base=shoreHeight(leg);
+          blocks.box(.30,.10,.52,leg.x,base+.005,leg.z,yaw);
+          contactWash(frame,leg,.31,.37,.28);
+          blocks.box(.235,.32,.46,leg.x,base+.157,leg.z,yaw);
+        }
+        blocks.place(seat,p.x,y+.385,p.z,1,1,1,yaw);
+      }
+      shoreMesh(blocks,group,'武昌滨水分节石凳','Masonry',riversideStone);
+    }
+    function landingPaving(group,frame,center,{name,slabs},key) {
+      const pavers=new Acc(), yaw=Math.atan2(-frame.tangent.z,frame.tangent.x);
+      for (const [along,across,length,depth] of slabs) {
+        const p=center.clone().addScaledVector(frame.tangent,along).addScaledVector(frame.inland,across);
+        if (!onLand(p.x,p.z)) continue;
+        // Slab tops sit just above the walk, with the stone thickness buried in its bedding.
+        pavers.box(length,.052,depth,p.x,shoreHeight(p)+.049,p.z,yaw);
+      }
+      if (pavers.l.length) shoreMesh(pavers,group,name,key,inlaidStone);
     }
     const riverfronts=[
       {
         side:-1, bank:'汉阳', edge:yangtzeUpperWest, first:152.75, last:159, setback:3.7, walkWidth:1.65,
         openings:[
-          {station:154.5, spread:1.95, before:4.2, after:6.3, steps:true},
-          {station:155.75, spread:2.45, before:6.6, after:4.7, steps:true},
-          {station:157.25, spread:1.75, before:4.1, after:5.3, steps:true},
+          {station:154.5, spread:1.95, before:4.2, after:6.3, steps:true, paving:{
+            name:'汉阳码头便阶 · 短条铺石', slabs:[[-.81,-.77,.69,.25],[0,-.77,.84,.25],[.83,-.77,.70,.25],
+              [-.52,-.45,.86,.25],[.41,-.45,.91,.25]]}},
+          {station:155.75, spread:2.45, before:6.6, after:4.7, steps:true, paving:{
+            name:'汉阳旧码头上台 · 条石铺面', slabs:[[-.87,-1.35,.66,.36],[-.12,-1.35,.78,.36],[.71,-1.35,.77,.36],
+              [-.65,-.94,.83,.37],[.26,-.94,.91,.37],[1,-.94,.47,.37],[-.75,-.45,.92,.44],[.26,-.45,1.03,.44]]}},
+          {station:157.25, spread:1.75, before:4.1, after:5.3, steps:true, paving:{
+            name:'汉阳北段踏步 · 旧石修补', slabs:[[-.58,-.79,.66,.48],[.25,-.79,.88,.48],[-.22,-.27,.71,.48]]}},
         ],
         branch:{station:156.25, streetZ:34, bends:[[-212,35],[-228,36],[-244,34]]},
         wuhanLink:[[-223,-34],[-216,-25],[-208,-13],[-196,0],[-186,5]],
@@ -380,9 +466,16 @@
       {
         side:1, bank:'武昌', edge:yzE, first:151.25, last:161.25, setback:4.5, walkWidth:2.15,
         openings:[
-          {station:152.5, spread:2.45, before:5.8, after:4.4, steps:true},
-          {station:154.25, spread:3.25, before:6.8, after:7.7, steps:false},
-          {station:157, spread:2.85, before:4.6, after:6.7, steps:true},
+          {station:152.5, spread:2.45, before:5.8, after:4.4, steps:true, paving:{
+            name:'武昌南段便阶 · 踏步收边石', slabs:[[-.74,-1.43,.64,.33],[-.04,-1.43,.69,.33],[.65,-1.43,.63,.33],
+              [-.33,-1.05,.64,.33],[.36,-1.05,.66,.33]]}},
+          {station:154.25, spread:3.25, before:6.8, after:7.7, steps:false, paving:{
+            name:'武昌观江石凳前 · 错缝铺地', slabs:[[-1.39,2.15,.81,.43],[-.48,2.15,.92,.43],[.51,2.15,.99,.43],
+              [1.46,2.15,.82,.43],[-1.14,1.66,.87,.45],[-.21,1.66,.9,.45],[.79,1.66,1.03,.45],
+              [-.73,1.16,.92,.47],[.27,1.16,1.02,.47],[1.19,1.16,.73,.47]]}},
+          {station:157, spread:2.85, before:4.6, after:6.7, steps:true, paving:{
+            name:'武昌北段阶口 · 平台方石', slabs:[[-.59,-1.25,.75,.64],[.23,-1.25,.80,.64],[1.02,-1.25,.70,.64],
+              [-.22,-.55,.76,.66],[.58,-.55,.75,.66]]}},
         ],
         branch:{station:155.25, streetZ:81, bends:[[-77,84],[-59,85],[-44,83],[-30,81]]},
         wuhanLink:[[-32,20],[-41,22],[-52,21],[-63,19],[-69,17]],
@@ -399,6 +492,7 @@
         return frame.cap.clone().addScaledVector(frame.inland,setback+.56*Math.sin(1.34*s)-.7*open);
       });
       const at=s=>Math.round((s-first)*4);
+      riverfrontLookouts.push(...openings.map(({station})=>stations[at(station)]));
       let distance=0;
       const distances=stations.map((p,i)=>{
         if (i) distance+=p.distanceTo(stations[i-1]);
@@ -437,14 +531,17 @@
         points:rounded([stations[at(branch.station)],...branch.bends.map(([x,z])=>V(x,0,z)),join])});
 
       // Selected pockets continue to the lower bank shelf.
-      for (const [i,{station,steps}] of openings.entries()) {
+      for (const [i,{station,steps,paving}] of openings.entries()) {
+        const k=at(station), frame=frames[k];
+        landingPaving(group,frame,stations[k],paving,side<0?'BankStone':'Path');
         if (!steps) continue;
-        const k=at(station), frame=frames[k], width=widthAt(distances[k]);
+        const width=widthAt(distances[k]);
         const start=stations[k].clone().addScaledVector(frame.inland,-width*.5+.14);
         landingSteps(group,bank+'滨水亲水石阶 '+(i+1),frame,start,side<0?1.92:2.44,side>0);
       }
       const viewStation=at(openings[1].station);
-      shorelineFurniture(side,group,frames[viewStation],stations[viewStation],widthAt(distances[viewStation]));
+      if (side<0) oldWharf(group,frames[viewStation]);
+      else riverSeats(group,frames[viewStation],stations[viewStation],widthAt(distances[viewStation]));
 
       const shorePaths=cityGround.riverfrontPaths.slice(firstPath);
       const clearVerge=([x,,z])=>shorePaths.every(({a,b,width})=>{
@@ -459,7 +556,16 @@
         slopeVerge(group,bank+'滨水草土岸肩 '+(i+1),'BankGrass',shoreGrass,p.x,p.z,
           Math.atan2(-frame.tangent.z,frame.tangent.x),length,width,.061,clearVerge);
       }
-
-
     }
+
+    // Fine contact ink stays local to the two stone assemblies; Blender lights the actual stones.
+    const {positions,coverage,indices}=furnitureContact;
+    const contactGeometry=new THREE.BufferGeometry();
+    contactGeometry.setAttribute('position',new THREE.Float32BufferAttribute(positions,3));
+    contactGeometry.setAttribute('vergeCover',new THREE.Float32BufferAttribute(coverage,1));
+    contactGeometry.setIndex(indices);
+    contactGeometry.computeVertexNormals();
+    const contact=new THREE.Mesh(contactGeometry,vergeWash(.16,['#504c3f','#796f5e']));
+    contact.name='滨水家具接地墨';
+    scene.add(contact);
   }
