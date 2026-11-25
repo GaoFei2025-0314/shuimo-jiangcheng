@@ -17,6 +17,7 @@
     nav.addEventListener('scroll', updateNavEdges, { passive: true });
     app.cleanups.push(() => nav.removeEventListener('scroll', updateNavEdges));
     function updatePanels() {
+      document.body.toggleAttribute('data-bridge-detail', bridgeDetail && !painting);
       poem.hidden = painting || (media.matches ? panel !== 'poem' : bridgeDetail);
       sceneryOverlays.forEach(el => { el.hidden = painting || bridgeDetail; });
       text.hidden = media.matches && panel !== 'details';

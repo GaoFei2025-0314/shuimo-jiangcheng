@@ -171,6 +171,10 @@
   #sound:focus-visible { outline: 2px solid var(--ink); outline-offset: 3px; }
 
   #map-actions { display: flex; gap: 6px; top: max(16px, 3vh); right: calc(max(16px, 3.2vw) + 46px); }
+  @media (min-width: 641px) and (min-height: 501px) {
+    body[data-bridge-detail] #sound { left: max(16px, 3vw); right: auto; }
+    body[data-bridge-detail] #map-actions { left: calc(max(16px, 3vw) + 46px); right: auto; }
+  }
   #map-actions button, #walk-view {
     appearance: none; min-height: 36px; padding: 0 10px; white-space: nowrap; cursor: pointer;
     font: 500 13px/1 var(--song); color: var(--ink); background: var(--paper);
