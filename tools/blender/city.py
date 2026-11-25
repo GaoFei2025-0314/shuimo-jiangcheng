@@ -700,7 +700,7 @@ def lighting(scene, camera_group):
     # The camera sees warm paper while the original diffuse skylight still models the buildings.
     world = scene.world.node_tree
     paper = world.nodes.new('ShaderNodeBackground')
-    paper.inputs['Color'].default_value = (.83,.80,.71,1)
+    paper.inputs['Color'].default_value = (.755,.701,.637,1)
     mix = world.nodes.new('ShaderNodeMixShader')
     path = world.nodes.new('ShaderNodeLightPath')
     world.links.new(path.outputs['Is Camera Ray'], mix.inputs[0])

@@ -381,7 +381,7 @@
     // A continuous angle keeps the cloud banks in place through a complete camera orbit.
     const azimuth=controls.getAzimuthalAngle();
     riverSky.style.setProperty('--sky-x',(50+43*Math.sin(azimuth)).toFixed(2)+'%');
-    riverSky.style.setProperty('--sky-wash',(fit*(.15+.68*streetView)).toFixed(3));
+    riverSky.style.setProperty('--sky-wash',(fit*(.15+.55*streetView)).toFixed(3));
   }
   function refreshLayout(refit = true) {
     const measured = layout.measure(W, H);
@@ -532,13 +532,14 @@
     if (target.isWebGLMultisampleRenderTarget) target.samples=Math.min(2,renderer.capabilities.maxSamples);
     const drawingSize = new THREE.Vector2();
     const material = new THREE.ShaderMaterial({
-      uniforms:{drawing:{value:target.texture},pixel:{value:new THREE.Vector2()},strength:{value:1}},
+      uniforms:{drawing:{value:target.texture},pixel:{value:new THREE.Vector2()},strength:{value:1},
+        paper:sharedInk.uPaper,ink:sharedInk.uInk},
       vertexShader:`varying vec2 where;void main(){where=uv;gl_Position=vec4(position.xy,0.,1.);}`,
-      fragmentShader:`uniform sampler2D drawing;uniform vec2 pixel;uniform float strength;varying vec2 where;
+      fragmentShader:`uniform sampler2D drawing;uniform vec2 pixel;uniform float strength;uniform vec3 paper,ink;varying vec2 where;
         float lightness(vec3 color){return dot(color,vec3(.26,.59,.15));}
         float paperValue(vec2 uv){
           vec4 sampleColor=texture2D(drawing,uv);
-          return lightness(sampleColor.rgb)+.931*(1.-sampleColor.a);
+          return lightness(sampleColor.rgb)+lightness(paper)*(1.-sampleColor.a);
         }
         float grain(vec2 p){
           vec2 cell=floor(p),f=fract(p);f=f*f*(3.-2.*f);
@@ -558,9 +559,9 @@
           float nib=smoothstep(.035,.23,edge)*(.29+.32*grain1);
           float lift=smoothstep(.26,.82,l);
           float tone=clamp(l*.95 + .16*lift-.088*(1.-lift),0.,1.);
-          vec3 ink=vec3(.10,.146,.155), warm=vec3(.958,.943,.905);
-          vec3 shade=mix(ink,vec3(.42,.466,.421),smoothstep(.02,.53,tone));
-          vec3 pigment=mix(shade,warm,smoothstep(.37,.94,tone));
+          vec3 halfInk=mix(ink,paper,.36);
+          vec3 shade=mix(ink,halfInk,smoothstep(.02,.53,tone));
+          vec3 pigment=mix(shade,paper,smoothstep(.37,.94,tone));
           float chroma=max(color.r,max(color.g,color.b))-min(color.r,min(color.g,color.b));
           pigment+=(color-vec3(l))*(.71+.33*smoothstep(.08,.32,chroma));
           pigment+=vec3(.022,.025,.023)*(grain1-.5)*smoothstep(.06,.29,l)*(1.-smoothstep(.77,.96,l));

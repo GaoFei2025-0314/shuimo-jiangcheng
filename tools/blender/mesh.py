@@ -15,7 +15,7 @@ PALETTE = {
     "glaze": "57736c", "ink": "363c37", "bronze": "c19a56", "shadow": "4b4840",
     "vermilion": "a4513e", "steel": "526e6c", "deck": "88877e",
     "plaqueBlue": "193440", "plaqueGold": "e8c774", "suspensionOrange": "c86542",
-    "cityWall": "c3b9a2", "cityRoof": "85918a", "cityBrick": "aa9381", "cityShade": "81847b",
+    "cityWall": "c3b9a2", "cityRoof": "687168", "cityBrick": "8f8c80", "cityShade": "81847b",
 }
 
 

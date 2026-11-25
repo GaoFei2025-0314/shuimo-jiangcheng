@@ -143,6 +143,7 @@
     #endif
     #ifdef CITY_JOINERY
       uniform sampler2D uWindowAtlas;
+      uniform float uApartmentWindow;
     #endif
     #ifdef COURT_EARTH
       uniform sampler2D uLaneEarth;
@@ -263,7 +264,10 @@
           float pooled=fbm(vW.xz*.13);
           float damp=smoothstep(.40,.71,pooled+.22*(vnoise(vW.xz*.78)-.5));
           soil=mix(soil,soil*vec3(.79,.82,.86),damp);
-          vec3 clay=mix(vec3(.73,.69,.59),vec3(.85,.85,.76),pooled);
+          // Bare courtyard soil takes the same paper wash as the riverbank.
+          float value=dot(soil,vec3(.26,.59,.15));
+          soil=mix(value*uPaper,soil,.60);
+          vec3 clay=uPaper*mix(vec3(.78,.77,.73),vec3(.91,.91,.88),pooled);
           col=mix(col,soil*.68+clay*.32,earthMix*(.49+.21*pooled));
         }
       #endif
@@ -284,6 +288,35 @@
         #endif
         #ifdef CITY_DETAIL
           float cityNear = 1. - smoothstep(34., 105., distance(vW, uCam));
+          #ifdef CITY_JOINERY
+            // Broad apartment panes catch a shallow daylight reflection before the deeper room.
+            bool paleApartment=uApartmentWindow>.5 && vD<175. && vCityPane.z>.01 && vCityPane.z<1.6 &&
+              distance(vW.xz,vec2(-40.09,71.99))>=8.;
+            if (paleApartment) {
+              float facing=abs(dot(n,normalize(uCam-vW)));
+              vec2 pane=vCityPane.xy;
+              vec2 edge=min(pane,1.-pane);
+              vec2 aa=clamp(fwidth(pane),.004,.16);
+              float tone=hash(vec2(vCityPane.w,22.));
+              float upper=smoothstep(.16,.92,pane.y);
+              float light=.41+.17*upper+.06*tone+.07*(1.-facing);
+              vec3 glass=mix(vec3(.31,.39,.38),vec3(.62,.66,.60),light);
+              float hem=.61+.24*tone+.018*cos(pane.x*12.);
+              float drawn=smoothstep(hem-.10,hem+.03,pane.y);
+              float sideFold=smoothstep(.46,.84,abs(2.*pane.x-1.));
+              float paper=.11+.45*drawn*step(.52,tone)+.24*sideFold*(1.-step(.40,tone));
+              glass=mix(glass,mix(vec3(.57,.59,.54),vec3(.68,.66,.56),tone),paper);
+              glass*=.90+.10*smoothstep(.025,.14,min(edge.x,edge.y));
+              float sash=1.-smoothstep(.031,.042+aa.x,abs(pane.x-mix(.43,.55,tone)));
+              float lintel=1.-smoothstep(.025,.044+aa.y,abs(pane.y-.67));
+              float frame=max(1.-smoothstep(.024,.061+aa.x,edge.x),1.-smoothstep(.034,.064+aa.y,edge.y));
+              float bars=max(frame*.66,max(sash*.63,lintel*.37));
+              glass=mix(glass,vec3(.405,.445,.417)*(.91+.09*upper),bars);
+              glass*=mix(.86,1.,vSky);
+              float roomDetail=1.-smoothstep(96.,175.,vD);
+              col=mix(col,glass,roomDetail*.94);
+            } else
+          #endif
           if (cityNear > .001) {
             vec3 localNormal = normalize(vCityNormal);
             float face = abs(localNormal.x) > abs(localNormal.z) ? vCityPosition.z : vCityPosition.x;

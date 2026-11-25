@@ -34,12 +34,15 @@
       material.uniforms.uMaterialAtlas={value:fabricAtlas};
       if (key==='cityShade') {
         material.uniforms.uWindowAtlas={value:windowAtlas};
+        material.uniforms.uApartmentWindow={value:0};
       }
       material.extensions.derivatives = true;
       material.uniforms.uCityWash = { value: distantCityWash[key] };
     }
     return [key, material];
   }));
+  const apartmentWindow=architectureMaterials.cityShade.clone();
+  apartmentWindow.uniforms={...architectureMaterials.cityShade.uniforms,uApartmentWindow:{value:1}};
   function decodeWords(data, Type) {
     const bytes = Uint8Array.from(atob(data), char => char.charCodeAt(0));
     return new Type(bytes.buffer);
@@ -82,7 +85,7 @@
       if (key==='cityShade') geometry.setAttribute('cityPane',
         new THREE.Float32BufferAttribute(cityPaneCoordinates(coordinates,triangles),4));
       geometry.computeVertexNormals();
-      return { geometry, material: architectureMaterials[key] };
+      return { geometry, material: name==='apartment'&&key==='cityShade' ? apartmentWindow : architectureMaterials[key] };
     });
   }
   function builtLandmark(name) {
