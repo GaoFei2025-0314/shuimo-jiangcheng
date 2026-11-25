@@ -34,6 +34,7 @@
       panel = null;
       paintingButton.focus({ preventScroll: true });
       paintingButton.textContent = enabled ? '退出观画' : '观画';
+      paintingButton.toggleAttribute('data-painting', enabled);
       paintingExtras.forEach(el => { el.hidden = enabled; });
       updatePanels();
       if (!enabled) nav.querySelector('[aria-pressed="true"]')?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
