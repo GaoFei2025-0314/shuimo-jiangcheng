@@ -95,6 +95,80 @@ test('each atlas plate opens for its own model, with two architectural detail vi
   await expect(page.locator('#atlas-open')).toBeFocused();
 });
 
+test('both inscribed bridge names are legible in the atlas and on the physical models', async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await ready(page);
+  for (const [width, height] of [[1440,900], [390,844]]) {
+    await page.setViewportSize({ width, height });
+    for (const [key, name] of [['bridge','武汉长江大桥'], ['yingwuzhou','鹦鹉洲长江大桥']]) {
+      await page.locator('#b-'+key).click();
+      await page.locator('#atlas-open').click();
+      await page.getByRole('button', { name: '看桥名', exact: true }).click();
+      const plate = page.locator('#atlas-plate');
+      await expect(plate).toHaveAttribute('alt', name+' · 桥名题字');
+      expect(await plate.evaluate(async img => { await img.decode(); return img.naturalWidth; })).toBeGreaterThanOrEqual(1000);
+      await page.getByRole('button', { name: '在地图中看桥名' }).click();
+      const glyphPixels = await page.evaluate(async ({ key, count }) => {
+        await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+        const scene = window.__testScene, camera = window.__testCamera, renderer = window.__testRenderer;
+        const model = scene.children.find(o => o.userData.modelKey === key);
+        const steel = key === 'bridge', center = steel ? new THREE.Vector3(11.98,10.19,-82) : new THREE.Vector3(0,34.25,1.09);
+        // Find the raised lettering by its actual face plane, independently of material batches.
+        const facePoints = mesh => {
+          const vertices = mesh.geometry.attributes.position, letters = new THREE.Box3();
+          const p = new THREE.Vector3(); let hits = 0;
+          for (let i=0; i<vertices.count; i++) {
+            p.fromBufferAttribute(vertices,i);
+            const normalOffset = steel ? p.x-center.x : p.z-center.z;
+            const lateral = steel ? p.z-center.z : p.x-center.x;
+            if (Math.abs(normalOffset)>.045 || Math.abs(lateral)>(steel ? 2.1 : 5.4) || Math.abs(p.y-center.y)>(steel ? .32 : .61)) continue;
+            letters.expandByPoint(p); hits++;
+          }
+          return { mesh, letters, hits };
+        };
+        const {mesh, letters, hits} = model.children.map(facePoints).sort((a,b) => b.hits-a.hits)[0];
+        if (hits < 100) throw Error('Missing raised lettering on '+key);
+        const w = Math.round(innerWidth*.65), h = Math.round(innerHeight*.65);
+        const target = new THREE.WebGLRenderTarget(w,h), previous = renderer.getRenderTarget();
+        function frame() {
+          renderer.render(scene,camera);
+          const pixels = new Uint8Array(w*h*4);
+          renderer.readRenderTargetPixels(target,0,0,w,h,pixels);
+          return pixels;
+        }
+        try {
+          renderer.setRenderTarget(target);
+          const actual = frame();
+          mesh.visible = false;
+          const plain = frame();
+          const min = new THREE.Vector2(Infinity,Infinity), max = new THREE.Vector2(-Infinity,-Infinity);
+          for (const x of [letters.min.x,letters.max.x]) for (const y of [letters.min.y,letters.max.y]) for (const z of [letters.min.z,letters.max.z]) {
+            const p = model.localToWorld(new THREE.Vector3(x,y,z)).project(camera);
+            const px = new THREE.Vector2((p.x+1)*w/2,(p.y+1)*h/2); min.min(px); max.max(px);
+          }
+          if (min.x<0 || min.y<0 || max.x>w || max.y>h) throw Error('Inscription outside the viewport');
+          const columns = Array(count).fill(0);
+          for (let y=Math.ceil(min.y); y<max.y; y++) for (let x=Math.ceil(min.x); x<max.x; x++) {
+            const offset = (y*w+x)*4;
+            if (Math.abs(actual[offset+1]-plain[offset+1])>20)
+              columns[Math.floor((x-min.x)*count/(max.x-min.x))]++;
+          }
+          return columns;
+        } finally {
+          mesh.visible = true;
+          renderer.setRenderTarget(previous);
+          target.dispose();
+        }
+      }, { key, count: name.length });
+      expect(Math.min(...glyphPixels)).toBeGreaterThan(8);
+      await page.locator('#b-'+key).click();
+      await page.locator('#atlas-open').click();
+      await expect(page.locator('#atlas-name')).toHaveAttribute('aria-pressed','false');
+      await page.keyboard.press('Escape');
+    }
+  }
+});
+
 test('the sun stays above the map horizon while orbiting and fades in overhead views', async ({ page }) => {
   await page.emulateMedia({ reducedMotion: 'reduce' });
   await ready(page);

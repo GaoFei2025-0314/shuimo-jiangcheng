@@ -63,6 +63,12 @@
   const cardTitle = document.getElementById('cardTitle'), cardText = document.getElementById('cardText'), card = document.getElementById('card');
   const buttons = Array.from(document.querySelectorAll('#nav button'));
   let activeView = 'core', cameraMode = 'preset', flight = null;
+  // Nameplate centers are in the same local axes as the baked Blender meshes.
+  const bridgeInscriptions = {
+    bridge: { model: bridge, at: V(11.98,10.19,-82), front: V(1,.20,.10), width: 7.4, distance: 13, plate: 'bridge-name' },
+    yingwuzhou: { model: yingwuzhou, at: V(0,34.25,1.09), front: V(.12,.07,1), width: 17, distance: 23, plate: 'yingwuzhou-detail' }
+  };
+  let readingBridgeName = false;
   let layoutDirty = true, safeRect = null, uiBlocks = [], layoutSignature = '', markFarScale = 1;
   const layout = createMapLayout(() => { layoutDirty = true; });
   scene.updateMatrixWorld(true);
@@ -86,6 +92,14 @@
   viewBounds.core = [viewBounds.tower, viewBounds.qc, viewBounds.tv, ...bridgeBounds];
   const isFramed = key => layout.compact || (key !== 'home' && key !== 'lake');
   function viewFor(key) {
+    const inscription = readingBridgeName && activeView === key && bridgeInscriptions[key];
+    if (inscription) {
+      const target = inscription.model.localToWorld(inscription.at.clone());
+      const front = inscription.front.clone().applyQuaternion(inscription.model.quaternion).normalize();
+      const halfFov = THREE.MathUtils.degToRad(camera.fov / 2);
+      const distance = Math.max(inscription.distance, inscription.width * H / (2 * W * Math.tan(halfFov)));
+      return { target, pos: target.clone().addScaledVector(front, distance) };
+    }
     // 竖屏沿龟蛇两山的轴线取景，让地标前后展开。
     let base = VIEWS[key];
     if (W < H && key === 'core') base = orbit(geo(114.2855, 30.5528), 32, 440, 55, 30);
@@ -144,11 +158,13 @@
       .to(controls.target, { ...view.target, duration: 2.6, ease: 'power3.inOut' }, 0)
       .fromTo(card, { opacity: 0, y: 8 }, { opacity: 1, y: 0, duration: .45 }, 0);
   }
-  function flyTo(key) {
+  function flyTo(key, readName = false) {
     if (app.state !== 'ready' || !VIEWS[key]) return;
     stopFlight();
     // 消除上一次手势的惯性，防止它与新镜头竞争。
     controls.enableDamping = false; controls.update(); controls.enableDamping = !reduce;
+    readingBridgeName = readName && Boolean(bridgeInscriptions[key]);
+    controls.minDistance = readingBridgeName ? 6 : 22;
     activeView = key; cameraMode = 'preset';
     const navKey = ['chutian','xingyin'].includes(key) ? 'lake' : key;
     buttons.forEach(b => b.setAttribute('aria-pressed', String(b.dataset.view === navKey)));
@@ -167,24 +183,33 @@
   for (const key of Object.keys(LANDMARK_PLATES)) {
     if (COPY[atlasView(key)]) atlasSite.add(new Option(COPY[atlasView(key)][0], key));
   }
-  function showPlate(detail = false) {
-    const key = atlasSite.value, entry = details[key];
-    const selected = detail && entry;
-    atlasPlate.alt = COPY[atlasView(key)][0] + (selected ? ' · ' + entry[1].slice(1) : ' · 建筑全貌');
-    atlasPlate.src = 'data:image/jpeg;base64,' + LANDMARK_PLATES[selected ? entry[0] : key];
-    detailButton.hidden = !entry;
-    detailButton.textContent = selected ? '看全貌' : entry ? entry[1] : '';
-    detailButton.setAttribute('aria-pressed', String(Boolean(selected)));
+  const nameButton = document.getElementById('atlas-name'), locateButton = document.getElementById('atlas-locate');
+  let plateMode = 'whole';
+  function showPlate(mode = 'whole') {
+    const key = atlasSite.value, detail = details[key], inscription = bridgeInscriptions[key];
+    plateMode = mode;
+    const detailView = mode === 'detail', nameView = mode === 'name';
+    const plateKey = nameView ? inscription.plate : detailView ? detail[0] : key;
+    atlasPlate.alt = COPY[atlasView(key)][0] + ' · ' + (nameView ? '桥名题字' : detailView ? detail[1].slice(1) : '建筑全貌');
+    atlasPlate.src = 'data:image/jpeg;base64,' + LANDMARK_PLATES[plateKey];
+    detailButton.hidden = !detail;
+    detailButton.textContent = detailView ? '看全貌' : detail ? detail[1] : '';
+    detailButton.setAttribute('aria-pressed', String(detailView));
+    nameButton.hidden = !inscription;
+    nameButton.textContent = nameView ? '看全貌' : '看桥名';
+    nameButton.setAttribute('aria-pressed', String(nameView));
+    locateButton.textContent = nameView ? '在地图中看桥名' : '在地图中查看';
   }
   atlasTrigger.addEventListener('click', () => {
     atlasSite.value = activeView === 'xingyin' ? 'lake' : LANDMARK_PLATES[activeView] ? activeView : 'tower';
-    showPlate();
+    showPlate(readingBridgeName ? 'name' : 'whole');
     atlas.showModal();
   });
   atlasSite.addEventListener('change', () => showPlate());
-  detailButton.addEventListener('click', () => showPlate(detailButton.getAttribute('aria-pressed') !== 'true'));
+  detailButton.addEventListener('click', () => showPlate(plateMode === 'detail' ? 'whole' : 'detail'));
+  nameButton.addEventListener('click', () => showPlate(plateMode === 'name' ? 'whole' : 'name'));
   document.getElementById('atlas-close').addEventListener('click', () => atlas.close());
-  document.getElementById('atlas-locate').addEventListener('click', () => { atlas.close(); flyTo(atlasView(atlasSite.value)); });
+  locateButton.addEventListener('click', () => { atlas.close(); flyTo(atlasView(atlasSite.value), plateMode === 'name'); });
   atlas.addEventListener('close', () => {
     if (!atlas.open && app.state === 'ready') atlasTrigger.focus({ preventScroll: true });
   });
@@ -193,7 +218,7 @@
     if (event.clientX < rect.left || event.clientX > rect.right || event.clientY < rect.top || event.clientY > rect.bottom) atlas.close();
   } });
   app.cleanups.push(() => { if (atlas.open) atlas.close(); });
-  controls.addEventListener('start', () => { stopFlight(); cameraMode = 'manual'; });
+  controls.addEventListener('start', () => { stopFlight(); cameraMode = 'manual'; readingBridgeName = false; });
   motionPreference.addEventListener('change', event => {
     reduce = event.matches;
     sceneDirty = true;

@@ -202,7 +202,7 @@
   #atlas footer { flex-wrap: wrap; }
   #atlas select { max-width: 100%; }
   #atlas-locate { margin-left: auto; }
-  #atlas-detail[aria-pressed="true"] { color: var(--paper); background: #824931; }
+  #atlas button[aria-pressed="true"] { color: var(--paper); background: #824931; }
   @media(max-width: 550px) {
     .card-heading { column-gap: 6px; }
     #atlas-open, #atlas button, #atlas select { min-height: 44px; }
@@ -384,6 +384,7 @@
   <footer>
     <select id="atlas-site" aria-label="选择景点"></select>
     <button id="atlas-detail" type="button" aria-pressed="false" hidden>细部</button>
+    <button id="atlas-name" type="button" aria-pressed="false" hidden>看桥名</button>
     <button id="atlas-locate" type="button">在地图中查看</button>
   </footer>
 </dialog>
@@ -397,8 +398,8 @@
     <div class="grp">
       <button type="button" id="b-home" disabled data-view="home" aria-pressed="false">全城</button>
       <button type="button" id="b-core" disabled data-view="core" aria-pressed="true">两江</button>
-      <button type="button" id="b-bridge" disabled data-view="bridge" aria-pressed="false">大桥</button>
-      <button type="button" id="b-yingwuzhou" disabled data-view="yingwuzhou" aria-pressed="false">鹦鹉洲</button>
+      <button type="button" id="b-bridge" disabled data-view="bridge" aria-pressed="false">长江大桥</button>
+      <button type="button" id="b-yingwuzhou" disabled data-view="yingwuzhou" aria-pressed="false">鹦鹉洲大桥</button>
     </div>
     <div class="grp" role="group" aria-label="武昌">
       <span class="gl" aria-hidden="true">武昌</span>
