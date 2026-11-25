@@ -478,7 +478,8 @@
     // 龟山、蛇山脚的短树列到路口前收住，保留从江面看桥头堡的视线。
     const bridgeTrees = seeded(0x3be621);
     for (const {side,stations} of wuhanApproachFeatures) {
-      const verge = side === 0 ? [[.34,-1],[.44,-1],[.65,1],[.77,1]]
+      // Move the last Snake Hill canopy to the outer bend so the inner curb overlooks the pavilion eaves.
+      const verge = side === 0 ? [[.34,-1],[.44,-1],[.65,1],[.77,-1]]
                                : [[.32,1],[.42,1],[.62,-1],[.72,-1],[.80,-1]];
       for (const [fraction,bank] of verge) {
         const row = stations[Math.round(fraction*(stations.length-1))];

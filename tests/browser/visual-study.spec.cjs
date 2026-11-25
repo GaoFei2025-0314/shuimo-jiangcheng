@@ -352,6 +352,50 @@ test('both approach carriageways stay above the terrain through the bridgeheads 
   expect(failures).toEqual([]);
 });
 
+test('street trees and houses leave both curb views of each bridge tower open', async ({ page }) => {
+  await page.goto('/?debug');
+  await page.waitForFunction(() => window.__ready && window.__dbg);
+  const blocked = await page.evaluate(() => {
+    const {scene} = __dbg;
+    // Surveyed points on the near pavilion eaves and the orange tower crowns.
+    const landmarks = [
+      ['武昌引道 · 接地铺装',[-60.561,12.635,-19.678]],
+      ['汉阳引道 · 接地铺装',[-147.981,12.635,-67.468]],
+      ['鹦鹉洲武昌引道 · 车行面',[-97.819,32.275,131.607]],
+      ['鹦鹉洲汉阳引道 · 车行面',[-208.224,32.275,102.028]]
+    ];
+    const rays = landmarks.flatMap(([name,target]) => {
+      const road = scene.getObjectByName(name);
+      const p = road.geometry.attributes.position;
+      return [p.count-2,p.count-1].map(i => {
+        const eye = road.localToWorld(new THREE.Vector3().fromBufferAttribute(p,i));
+        eye.y += .16;
+        const direction = new THREE.Vector3(...target).sub(eye);
+        return {name, caster:new THREE.Raycaster(eye,direction.clone().normalize(),0,direction.length())};
+      });
+    });
+    const face = new THREE.MeshBasicMaterial({side:THREE.DoubleSide});
+    const sphere = new THREE.Sphere(), hits = [];
+    for (const batch of scene.children) {
+      const matrices = batch.userData.authoredMatrices;
+      if (!matrices || !(batch.userData.vegetation || batch.name.startsWith('City / '))) continue;
+      const proxy = new THREE.Mesh(batch.geometry,face);
+      batch.geometry.computeBoundingSphere();
+      for (let i=0; i<matrices.length; i+=16) {
+        proxy.matrixWorld.fromArray(matrices,i).premultiply(batch.matrixWorld);
+        sphere.copy(batch.geometry.boundingSphere).applyMatrix4(proxy.matrixWorld);
+        for (const {name,caster} of rays) {
+          if (caster.ray.intersectsSphere(sphere) && caster.intersectObject(proxy).length)
+            hits.push({name,object:batch.name});
+        }
+      }
+    }
+    face.dispose();
+    return hits;
+  });
+  expect(blocked).toEqual([]);
+});
+
 test('all four bridge approaches meet the receiving street at full width and level grade', async ({ page }) => {
   await page.goto('/?debug');
   await page.waitForFunction(() => window.__ready && window.__dbg);
