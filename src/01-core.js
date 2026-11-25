@@ -281,6 +281,18 @@
       if(uCun > .5) col = mix(uFog * .948, col, smoothstep(.74, 4.3, vW.y));
       #ifdef ARCHITECTURE_AO
         col *= mix(.62, 1., vSky);
+        #ifdef BRIDGE_PAINT
+          // Near the observer the bridge picks up the broken colour of the surrounding print.
+          float bridgeNear = 1.-smoothstep(24.,68.,vD);
+          if (bridgeNear>.001) {
+            vec2 surfaceUV = vW.xz + vW.y*vec2(.63,1.19);
+            float fleck = vnoise(surfaceUV*7.8)-.5;
+            float exposure = smoothstep(.42,.91,vSky);
+            float wash = exposure*(.25+.75*smoothstep(.35,.72,vnoise(surfaceUV*.86)));
+            col = mix(col, vec3(.82,.79,.68), bridgeNear*.058*wash);
+            col *= 1.+bridgeNear*.075*fleck;
+          }
+        #endif
         #ifdef ARCHITECTURE_SHADOW
           float sheltered = 1. - smoothstep(.40, .83, vSky);
           float underside = smoothstep(.10, .85, -n.y);

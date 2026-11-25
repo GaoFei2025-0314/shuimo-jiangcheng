@@ -7,7 +7,7 @@
     const paintingButton = document.getElementById('painting-toggle');
     const paintingExtras = ['title', 'sound', 'poem-toggle', 'dock', 'marks', 'labels', 'tip']
       .map(id => document.getElementById(id));
-    const sceneryLabels = ['labels', 'marks'].map(id => document.getElementById(id));
+    const sceneryOverlays = ['title', 'labels', 'marks'].map(id => document.getElementById(id));
     let panel = null, painting = false, bridgeDetail = false;
     const nav = document.getElementById('nav');
     function updateNavEdges() {
@@ -18,7 +18,7 @@
     app.cleanups.push(() => nav.removeEventListener('scroll', updateNavEdges));
     function updatePanels() {
       poem.hidden = painting || (media.matches ? panel !== 'poem' : bridgeDetail);
-      sceneryLabels.forEach(el => { el.hidden = painting || bridgeDetail; });
+      sceneryOverlays.forEach(el => { el.hidden = painting || bridgeDetail; });
       text.hidden = media.matches && panel !== 'details';
       poemButton.setAttribute('aria-expanded', String(media.matches && panel === 'poem'));
       detailsButton.setAttribute('aria-expanded', String(media.matches && panel === 'details'));

@@ -41,6 +41,13 @@
     }
     return [key, material];
   }));
+  const bridgeFinishes = {};
+  for (const key of ['steel', 'suspensionOrange', 'vermilion']) {
+    const base = architectureMaterials[key], finish = base.clone();
+    finish.uniforms = base.uniforms;
+    finish.defines = { ...base.defines, BRIDGE_PAINT: 1 };
+    bridgeFinishes[key] = finish;
+  }
   const apartmentWindow=architectureMaterials.cityShade.clone();
   apartmentWindow.uniforms={...architectureMaterials.cityShade.uniforms,uApartmentWindow:{value:1}};
   function decodeWords(data, Type) {
@@ -85,7 +92,10 @@
       if (key==='cityShade') geometry.setAttribute('cityPane',
         new THREE.Float32BufferAttribute(cityPaneCoordinates(coordinates,triangles),4));
       geometry.computeVertexNormals();
-      return { geometry, material: name==='apartment'&&key==='cityShade' ? apartmentWindow : architectureMaterials[key] };
+      let material = architectureMaterials[key];
+      if (name==='apartment' && key==='cityShade') material = apartmentWindow;
+      if ((name==='bridge' || name==='yingwuzhou') && bridgeFinishes[key]) material = bridgeFinishes[key];
+      return { geometry, material };
     });
   }
   function builtLandmark(name) {

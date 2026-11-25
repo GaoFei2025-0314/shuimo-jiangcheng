@@ -118,6 +118,7 @@ test('both bridge craft plates locate their modelled joints in desktop and portr
     await dialog.getByRole('button', { name: '看'+label }).click();
     await dialog.getByRole('button', { name: '在地图中看构件' }).click();
     await expect(page.locator('#labels')).toBeHidden();
+    await expect(page.locator('#title')).toBeHidden();
     await expect(page.locator('#poem')).toBeHidden();
     for (const viewport of [{ width: 1440, height: 900 }, { width: 390, height: 844 }]) {
       await page.setViewportSize(viewport);
@@ -138,7 +139,7 @@ test('both bridge craft plates locate their modelled joints in desktop and portr
             blocks.every(rect => x<rect.left || x>rect.right || y<rect.top || y>rect.bottom);
         });
         return { distance, visible: Math.abs(ndc.z)<1 && clear };
-      }, { key, at: key === 'yingwuzhou' && viewport.width > viewport.height ? [7.40, 9.9, 34] : at });
+      }, { key, at: key === 'yingwuzhou' && viewport.width > viewport.height ? [7.40, 10.3, 34] : at });
       expect(pose.distance).toBeLessThan(.01);
       expect(pose.visible).toBe(true);
     }
@@ -149,6 +150,7 @@ test('both bridge craft plates locate their modelled joints in desktop and portr
     await page.locator('#atlas-open').click();
     await expect(dialog.getByRole('img')).toHaveAttribute('alt', /建筑全貌$/);
     await expect(page.locator('#labels')).toBeVisible();
+    await expect(page.locator('#title')).toBeVisible();
     await page.keyboard.press('Escape');
   }
 });

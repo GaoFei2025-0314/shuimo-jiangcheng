@@ -77,7 +77,7 @@
     yingwuzhou: {
       model: yingwuzhou, at: V(7.40,10.6,34), front: V(.66,.28,-.70), width: 11.8, distance: 11,
       // Leave the full drop from cable clamp to girder above the desktop navigation.
-      landscape: { at: V(7.40,9.9,34), front: V(1,.54,-.35), distance: 16.5 },
+      landscape: { at: V(7.40,10.3,34), front: V(1,.22,.37), distance: 20 },
       plate: 'yingwuzhou-craft', label: '主缆与吊杆',
       caption: '沿着橙红色主缆找到索夹，顺成对的吊杆向下看，杆脚的锚套和耳板扣在桥面外侧的边梁上。'
     }
