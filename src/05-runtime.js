@@ -566,18 +566,27 @@
       }
     }
   }
-  // Print the interactive street scene onto warm paper. The edge wash comes from the
-  // actual image, so moving leaves, steps and trusses each receive the same ink treatment.
-  function streetPrint() {
+  // Print every view onto one sheet of paper. The street wash keeps its broken folds;
+  // the aerial pass adds a contour line wherever the depth jumps, quiets saturated paint
+  // to a mineral wash, and lets the same paper fibre show through models and terrain.
+  function inkPrint() {
+    const depthReady=renderer.capabilities.isWebGL2 || renderer.extensions.has('WEBGL_depth_texture');
     const Target=renderer.capabilities.isWebGL2 ? THREE.WebGLMultisampleRenderTarget : THREE.WebGLRenderTarget;
     const target=new Target(1,1,{minFilter:THREE.LinearFilter,magFilter:THREE.LinearFilter});
-    if (target.isWebGLMultisampleRenderTarget) target.samples=Math.min(2,renderer.capabilities.maxSamples);
+    if (target.isWebGLMultisampleRenderTarget) target.samples=Math.min(4,renderer.capabilities.maxSamples);
+    if (depthReady) {
+      target.depthTexture=new THREE.DepthTexture(1,1);
+      target.depthTexture.type=THREE.UnsignedIntType;
+    }
     const drawingSize = new THREE.Vector2();
     const material = new THREE.ShaderMaterial({
-      uniforms:{drawing:{value:target.texture},pixel:{value:new THREE.Vector2()},strength:{value:1},
-        paper:sharedInk.uPaper,ink:sharedInk.uInk},
+      defines:depthReady ? {CONTOUR:1} : {},
+      uniforms:{drawing:{value:target.texture},depthMap:{value:target.depthTexture},pixel:{value:new THREE.Vector2()},
+        strength:{value:1},aerial:{value:1},lineWidth:{value:1},clip:{value:new THREE.Vector2(1,9000)},
+        mist:{value:new THREE.Vector2(300,1800)},paper:sharedInk.uPaper,ink:sharedInk.uInk},
       vertexShader:`varying vec2 where;void main(){where=uv;gl_Position=vec4(position.xy,0.,1.);}`,
-      fragmentShader:`uniform sampler2D drawing;uniform vec2 pixel;uniform float strength;uniform vec3 paper,ink;varying vec2 where;
+      fragmentShader:`uniform sampler2D drawing,depthMap;uniform vec2 pixel,clip,mist;uniform float strength,aerial,lineWidth;
+        uniform vec3 paper,ink;varying vec2 where;
         float lightness(vec3 color){return dot(color,vec3(.26,.59,.15));}
         float paperValue(vec2 uv){
           vec4 sampleColor=texture2D(drawing,uv);
@@ -587,6 +596,13 @@
           vec2 cell=floor(p),f=fract(p);f=f*f*(3.-2.*f);
           vec4 v=fract(sin(dot(cell,vec2(127.1,311.7))+vec4(0.,127.1,311.7,438.8))*43758.5453);
           return mix(mix(v.x,v.y,f.x),mix(v.z,v.w,f.x),f.y);
+        }
+        // Reciprocal depth is linear across any flat face, so its second difference only
+        // answers at silhouettes and folds, never along a long receding street or river.
+        float nearness(vec2 uv){
+          float z=texture2D(depthMap,uv).r;
+          if(z>=.99999) return 0.;
+          return (clip.y-z*(clip.y-clip.x))/(clip.x*clip.y);
         }
         void main(){
           vec4 original=texture2D(drawing,where);
@@ -614,27 +630,66 @@
           float wash=smoothstep(.08,.39,l)*(1.-smoothstep(.72,.94,l));
           color=mix(color,paper,wash*strength*(.095+.035*grain2));
           color=mix(color,ink,nib*strength*.93*(1.-smoothstep(.68,.97,l)));
+
+          if(aerial>.001){
+            // Mineral wash: gilt, brick and steel keep their hue at the strength of a light
+            // colour laid over ink, and every value sinks a little into the warm paper.
+            l=lightness(color);
+            float vivid=smoothstep(.10,.42,chroma);
+            vec3 settled=vec3(l)+(color-vec3(l))*mix(.80,.52,vivid);
+            settled=mix(settled,settled*paper/max(lightness(paper),.01),.20);
+            settled=mix(settled,paper,.07*smoothstep(.45,.9,l));
+            float fibre=grain(gl_FragCoord.xy*.62)*.6+grain(gl_FragCoord.xy*.11)*.4;
+            settled*=1.+.045*(fibre-.5);
+            color=mix(color,settled,aerial);
+          }
+          #ifdef CONTOUR
+            float here=nearness(where);
+            if(here>0.){
+              float depth=1./here;
+              // Past a few hundred units a house is only a few pixels wide; outlining it there
+              // turns the far shore to grit, so the contour gives way to the wash.
+              float fade=(1.-smoothstep(mist.x,mist.y*.86,depth))*(1.-smoothstep(300.,720.,depth));
+              float w=lineWidth*(.85+.85*grain(gl_FragCoord.xy*.035+7.));
+              vec2 dx=x*w, dy=y*w;
+              float bendX=here*2.-nearness(where+dx)-nearness(where-dx);
+              float bendY=here*2.-nearness(where+dy)-nearness(where-dy);
+              float jump=max(bendX,bendY)/here;
+              float contour=smoothstep(.004,.024,jump);
+              // A dry brush lifts off the paper now and then; the stroke breaks rather than fades.
+              float dry=smoothstep(.18,.52,grain(gl_FragCoord.xy*vec2(.045,.06)+vec2(depth*.01)));
+              contour*=fade*(.55+.45*dry);
+              float load=mix(.80,.94,1.-smoothstep(.35,.85,l));
+              color=mix(color,ink*.82,contour*load);
+            }
+          #endif
           gl_FragColor=vec4(color*original.a,original.a);
         }`,
       depthTest:false,depthWrite:false,blending:THREE.NoBlending
     });
     const sheet=new THREE.PlaneGeometry(2,2), page=new THREE.Scene(), lens=new THREE.Camera();
     const print=new THREE.Mesh(sheet,material);print.frustumCulled=false;page.add(print);
-    app.cleanups.push(()=>{sheet.dispose();material.dispose();target.dispose();});
-    return strength=>{
+    app.cleanups.push(()=>{sheet.dispose();material.dispose();target.dispose();target.depthTexture?.dispose();});
+    return (street,aerial)=>{
       renderer.getDrawingBufferSize(drawingSize);
-      // Keep the four-sample edge wash within a phone-sized GPU memory budget.
-      const ratio=Math.min(1,Math.sqrt(2400000/(drawingSize.x*drawingSize.y)));
+      // Keep the multisampled print within a GPU memory budget a phone can still afford.
+      const ratio=Math.min(1,Math.sqrt(4200000/(drawingSize.x*drawingSize.y)));
       target.setSize(Math.max(1,Math.round(drawingSize.x*ratio)),Math.max(1,Math.round(drawingSize.y*ratio)));
-      material.uniforms.pixel.value.set(1/target.width,1/target.height);
-      material.uniforms.strength.value=strength;
+      const u=material.uniforms;
+      u.pixel.value.set(1/target.width,1/target.height);
+      u.strength.value=street;
+      u.aerial.value=aerial;
+      // About 1.35 CSS pixels of line regardless of device pixel ratio or render scale.
+      u.lineWidth.value=Math.max(1,1.35*target.width/Math.max(1,W));
+      u.clip.value.set(camera.near,camera.far);
+      u.mist.value.set(fogU.uNear.value,fogU.uFar.value);
       renderer.setRenderTarget(target);
       try { renderer.render(scene,camera); }
       finally { renderer.setRenderTarget(null); }
       renderer.render(page,lens);
     };
   }
-  let renderStreetPrint;
+  let renderInkPrint;
   let renderScale=1, slowFrames=0, fastFrames=0;
   let lastPaintAt=-Infinity, lastMoveAt=-Infinity, nextPaintAt=-Infinity;
   let samplePaint=false, lastPaintMoving=false, openingPaintUntil=-Infinity;
@@ -771,10 +826,8 @@
       if (resolutionDirty) renderer.setDrawingBufferSize(W,H,ratio);
       prepareBridgeReflections();
       updateLandscapeVisibility();
-      if (streetView>.01 && renderer.getPixelRatio()>=.7) {
-        renderStreetPrint ||= streetPrint();
-        renderStreetPrint(streetView*.68);
-      } else renderer.render(scene, camera);
+      renderInkPrint ||= inkPrint();
+      renderInkPrint(streetView*.68, 1-streetView);
       lastPaintAt=now;
       lastPaintMoving=moving;
       samplePaint=!firstPaint;
