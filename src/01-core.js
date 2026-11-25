@@ -139,6 +139,18 @@
         }
         tone = clamp(tone+(fbm(p*.027)-.5)*.15,0.,1.);
       }
+      #ifdef TIDAL_STONE
+        // Wicking breaks the damp edge just above the actual water plane (world y = 0).
+        float tideMark = .20+.29*vnoise(vW.xz*1.85);
+        float damp = 1.-smoothstep(tideMark-.17,tideMark+.20,vW.y);
+        float closeStone = 1.-smoothstep(90.,185.,vD);
+        // Exposed bedding follows the same slant across adjacent slabs and breaks at dry patches.
+        vec2 bedding = vec2(dot(vW.xz,vec2(.43,-.90)),dot(vW.xz,vec2(.90,.43)));
+        float broken = vnoise(bedding*vec2(.54,1.1));
+        float seam = abs(fract(bedding.y*.80+vW.y*.95+.34*broken)-.5);
+        float grain = (1.-smoothstep(.022,.125,seam))*smoothstep(.39,.74,broken);
+        tone *= 1.-closeStone*(.37*damp+.35*grain);
+      #endif
       if(uRim > .5){                                      // 廓：侧影处落墨，代替硬描边
         float rim = pow(1.0 - abs(dot(n, normalize(uCam - vW))), 1.9);
         tone = mix(tone, .05, clamp(rim, 0., 1.) * .40);

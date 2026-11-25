@@ -471,3 +471,67 @@ test('all eight Yangtze Bridge piers split the water locally and fade in the ove
   expect(result.piers).toEqual(Array(8).fill(true));
   expect(result.distant).toBe(false);
 });
+
+test('Qingchuan rock tips touch the river and catch a quiet broken waterline', async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await ready(page);
+  const result = await page.evaluate(() => {
+    const renderer = window.__testRenderer, scene = window.__testScene;
+    const water = scene.children.find(o => o.material?.uniforms?.uDrift);
+    const { uQuaySpurs, uQuayOut, uTime } = water.material.uniforms;
+    const rocks = uQuaySpurs.value, middle = rocks[1], center = middle.clone();
+    const width = 56, size = 336, half = width / 2;
+    const camera = new THREE.OrthographicCamera(-half, half, half, -half, .1, 500);
+    camera.up.set(0, 0, -1);
+    const target = new THREE.WebGLRenderTarget(size, size);
+    const previous = renderer.getRenderTarget(), originalTime = uTime.value;
+    // Render the full scene so a stroke hidden by dry ground or rock does not count.
+    function exposedStrokes(height, seconds) {
+      camera.position.set(center.x, height, center.y);
+      camera.lookAt(center.x, 0, center.y);
+      uTime.value = seconds;
+      function frame() {
+        const rgba = new Uint8Array(size * size * 4);
+        renderer.render(scene, camera);
+        renderer.readRenderTargetPixels(target, 0, 0, size, size, rgba);
+        return rgba;
+      }
+      const painted = frame();
+      middle.x += 1000;
+      const plain = frame();
+      middle.x = center.x;
+      return Int16Array.from({ length: size * size }, (_, i) => painted[4*i] - plain[4*i]);
+    }
+    try {
+      renderer.setRenderTarget(target);
+      const start = exposedStrokes(70, 0), glance = exposedStrokes(70, 1.6);
+      const settled = exposedStrokes(70, 12), distant = exposedStrokes(240, 0);
+      const counts = rocks.map(rock => {
+        let dark = 0, light = 0;
+        for (let i = 0; i < start.length; i++) {
+          const dx = ((i % size + .5) / size - .5) * width + center.x - rock.x;
+          const dz = (.5 - (Math.floor(i / size) + .5) / size) * width + center.y - rock.y;
+          const outward = dx * uQuayOut.value.x + dz * uQuayOut.value.y;
+          const along = -dx * uQuayOut.value.y + dz * uQuayOut.value.x;
+          if (outward < 0 || outward > rock.w + 2 || Math.abs(along) > rock.z * 1.4) continue;
+          if (start[i] <= -2) dark++;
+          if (start[i] >= 2) light++;
+        }
+        return { dark, light };
+      });
+      const change = next => next.reduce((sum, value, i) => sum + Math.abs(value - start[i]), 0);
+      return { counts, glance: change(glance), settled: change(settled), distant: distant.some(Boolean) };
+    } finally {
+      middle.x = center.x;
+      uTime.value = originalTime;
+      renderer.setRenderTarget(previous);
+      target.dispose();
+    }
+  });
+  for (const patch of result.counts) {
+    expect(patch.dark).toBeGreaterThan(2);
+    expect(patch.light).toBeGreaterThan(2);
+  }
+  expect(result.glance).toBeLessThan(result.settled);
+  expect(result.distant).toBe(false);
+});

@@ -284,6 +284,8 @@
   const waterU = Object.assign({
     ...weatherU, uBoats: { value: boatU }, uBoatWake: { value: boatWakeU },
     uFlow: { value: flowTex }, uDrift: { value: driftTex },
+    uQuaySpurs: { value: Array.from({length: 3}, () => new THREE.Vector4()) },
+    uQuayOut: { value: new THREE.Vector2() },
     uCutwaterRow: { value: new THREE.Vector4() }, uCutwaterFlow: { value: new THREE.Vector4() },
     uRect: { value: new THREE.Vector4(WR.x, WR.z, WR.w, WR.h) }
   }, fogU, camU, sharedInk);
@@ -296,7 +298,8 @@
       fragmentShader: NOISE + `
         uniform vec3 uFog, uInk, uPaper; uniform float uNear, uFar, uTime;
         uniform vec2 uWindDirection, uBoats[6]; uniform vec4 uBoatWake[6], uRect;
-        uniform vec4 uCutwaterRow, uCutwaterFlow;
+        uniform vec4 uCutwaterRow, uCutwaterFlow, uQuaySpurs[3];
+        uniform vec2 uQuayOut;
         uniform sampler2D uFlow, uDrift;
         varying vec3 vW; varying float vD;
         // Short tapered crests interrupt the long washes when the camera approaches the water.
@@ -350,6 +353,27 @@
           trace *= mix(.12,1.,smoothstep(-.55,.42,sin(.88*aft+1.7*pier-.68*time+tail.y)));
           return vec2(bow,trace);
         }
+        // Only the exposed, river-facing shoulders catch a stroke; leave quiet water in the inlets.
+        vec2 quayBrush(vec2 p, float time){
+          vec2 tangent = vec2(-uQuayOut.y,uQuayOut.x);
+          vec2 brush = vec2(0.);
+          for(int i=0;i<3;i++){
+            vec4 rock = uQuaySpurs[i];
+            vec2 delta = p-rock.xy;
+            float along = dot(delta,tangent)/max(.1,rock.z);
+            float outwards = dot(delta,uQuayOut);
+            if(abs(along)>1.4 || outwards<0. || outwards>rock.w+2.1) continue;
+            float rim = rock.w*sqrt(max(0.,1.-along*along));
+            float phase = float(i)*2.1 + along*2.3;
+            float gap = outwards-rim-.12*sin(phase+time*.30);
+            float span = (1.-smoothstep(.65,1.16,abs(along)))*smoothstep(-.23,.48,along*sin(float(i)+1.4)+.35);
+            float wash = (1.-smoothstep(.12,.95,abs(gap-.18)))*span;
+            float glint = (1.-smoothstep(.055,.30,abs(gap-.85)))*span;
+            glint *= smoothstep(-.45,.65,sin(phase*1.9+.20*time));
+            brush = max(brush,vec2(wash,glint));
+          }
+          return brush;
+        }
         void main(){
           vec2 p = vW.xz;
           vec2 uv = (p - uRect.xy) / uRect.zw;
@@ -371,7 +395,7 @@
           }
           vec3 base = uPaper;
           float ink = 0.;
-          float pierLight = 0.;
+          float paperLight = 0.;
           float ambientDriftTime = uTime / 6.;
           float fineDetail = 1.-smoothstep(300.,1050.,vD);
           if(lake<.999){
@@ -409,8 +433,14 @@
             if(vD<290. && lake<.001 && shore>.012){
               float pierDetail = (1.-smoothstep(145.,290.,vD))*smoothstep(.012,.075,shore);
               vec2 brush = cutwaterBrush(p,ambientDriftTime)*pierDetail;
-              pierLight = .30*brush.x;
+              paperLight = .30*brush.x;
               ink += .125*brush.y;
+            }
+            vec2 quayDelta = abs(p-uQuaySpurs[1].xy);
+            if(vD<185. && max(quayDelta.x,quayDelta.y)<38. && lake<.001){
+              vec2 brush = quayBrush(p,ambientDriftTime)*(1.-smoothstep(90.,185.,vD));
+              ink += .09*brush.x;
+              paperLight += .19*brush.y;
             }
           }
           if(lake>.001){
@@ -436,7 +466,7 @@
             ink += lakeInk*lake;
           }
           vec3 col = mix(base,uInk,wet*ink);
-          col = mix(col,uPaper,wet*pierLight);
+          col = mix(col,uPaper,wet*paperLight);
           float foam = 0.;
           for(int i=0;i<6;i++){
             vec4 wake=uBoatWake[i];

@@ -171,16 +171,164 @@
   const qc      = place(builtLandmark('qc'), qcSite, 1, qcSite.yaw, '晴川阁', 'qc', qcSite.y+.3);
   qc.scale.set(qcSite.scaleX,qcSite.scaleY,qcSite.scaleZ);
   {
-    // Tie the main plinth and the gate into a single dressed river-side retaining course.
+    qc.updateMatrixWorld(true);
+    const toWorld = (x,y,z) => qc.localToWorld(V(x,y,z));
+    function addQuaySurface(mesh, name, material) {
+      mesh.name = name;
+      mesh.userData.landscapeSurface = { group: '晴川阁', name, material };
+      scene.add(mesh);
+    }
+
+    // Keep the dressed coping and the foundation behind the exposed rock.
     const footing = new Acc();
-    footing.box(46.4, 3.35, 18.95, 4.0, -1.675, 2.43);
+    footing.box(46.4, 3.35, 16.55, 4.0, -1.675, 1.23);
     footing.box(46.7, .20, 19.23, 4.0, -.072, 2.43);
     const apron = footing.mesh(M.bankStone, false);
-    apron.name = '晴川阁 · 禹功矶石台驳岸';
-    apron.userData.landscapeSurface = { group: '晴川阁', name: apron.name, material: 'BankStone' };
-    qc.updateMatrixWorld(true);
     apron.applyMatrix4(qc.matrixWorld);
-    scene.add(apron);
+    addQuaySurface(apron,'晴川阁 · 禹功矶石台驳岸','BankStone');
+
+    function rockMesh(vertices, material) {
+      const geometry = new THREE.BufferGeometry();
+      geometry.setAttribute('position',new THREE.Float32BufferAttribute(vertices,3));
+      geometry.computeVertexNormals();
+      return new THREE.Mesh(geometry,material);
+    }
+
+    // The exposed courses strike obliquely across the face and break into uneven shelves.
+    const stations = [
+      [-19.2, .02, .00, 1.8], [-17.8, .42, .10, 2.5], [-15.1, 1.06, .16, 3.5],
+      [-12.4, .76, .07, 3.0], [-10.3, -.14, -.20, 1.8], [-7.2, -.51, -.27, 1.5],
+      [-4.3, .44, -.07, 2.4], [-.5, 1.02, .10, 3.8], [2.6, 1.29, .14, 4.5],
+      [5.3, .53, .20, 4.3], [7.4, -.34, -.08, 2.8], [9.3, -.58, -.22, 1.8],
+      [11.1, .20, -.18, 2.8], [14.6, 1.02, .08, 4.25], [16.8, .76, .13, 2.7],
+      [18.15, -.8, -.12, .15], [21.85, -.83, -.09, .12], [23.5, .24, .17, 2.05],
+      [25.4, .55, .25, 2.4], [27.2, .05, .10, 1.2]
+    ];
+    const rows = stations.map(([x,reach,tilt,toe]) => [
+      toWorld(x,-.10,9.36),
+      toWorld(x,-.19,11.45+reach*.36),
+      toWorld(x,-.71+tilt,12.00+reach),
+      toWorld(x,-1.03+tilt,11.64+reach),
+      toWorld(x,-1.30+tilt,13.18+reach+toe*.16),
+      toWorld(x,-1.78+tilt,13.68+reach+toe*.33),
+      toWorld(x,-2.02+tilt,13.16+reach+toe*.34),
+      toWorld(x,-2.44+tilt,13.98+reach+toe*.57),
+      toWorld(x,-2.94,14.05+reach+toe),
+      toWorld(x,-3.65,14.5+reach+toe)
+    ]);
+    const rockFace = [];
+    const triangle = (vertices,a,b,c) => vertices.push(...a.toArray(),...b.toArray(),...c.toArray());
+    for (let i=1; i<rows.length; i++) {
+      const a=rows[i-1], b=rows[i];
+      for (let j=1; j<a.length; j++) {
+        triangle(rockFace,a[j-1],a[j],b[j-1]);
+        triangle(rockFace,a[j],b[j],b[j-1]);
+      }
+    }
+    for (const [side,row] of [rows[0],rows.at(-1)].entries()) {
+      const heel=row[0].clone().setY(qc.position.y-3.65*qc.scale.y);
+      for (let j=1; j<row.length; j++) {
+        if (side) triangle(rockFace,heel,row[j-1],row[j]);
+        else triangle(rockFace,heel,row[j],row[j-1]);
+      }
+    }
+    addQuaySurface(rockMesh(rockFace,M.bankStone),'晴川阁 · 禹功矶层理岩壁','BankStone');
+
+    // Sample the original shore mask along each local ray; the lower rim of every
+    // tongue is buried, and its water-plane ring supplies the ripple dimensions.
+    function shoreAt(x) {
+      let land=12, river=32;
+      for (let i=0; i<12; i++) {
+        const middle=(land+river)/2, p=toWorld(x,0,middle);
+        if (onLand(p.x,p.z)) land=middle;
+        else river=middle;
+      }
+      return toWorld(x,0,(land+river)/2).setY(0);
+    }
+    const along = shoreAt(15).sub(shoreAt(-17)).normalize();
+    const outward = V(-along.z,0,along.x);
+    waterU.uQuayOut.value.set(outward.x,outward.z);
+    const wetStone = inkMat(.13,false,['#626b61','#a6a797']);
+    wetStone.defines.TIDAL_STONE = 1;
+    const tongues = [
+      // A broken set of overlapping shelves, a long tapered point and a narrow split ledge.
+      [-14,2.65,2.85,.67,.66,[[-.88,-2.75],[-1,-.87],[-.72,.06],[-.81,.68],[-.36,.86],
+        [.08,1],[.62,.70],[1,.31],[.66,-.40],[.36,-1.65],[.67,-2.62]]],
+      [2.1,4.75,3.4,.66,.86,[[-.76,-2.73],[-.94,-1.40],[-.84,-.30],[-.67,.27],[-.34,.79],
+        [.03,1],[.47,.83],[.96,.47],[1.31,.27],[1.52,-.12],[1.06,-.79],[.83,-2.14]]],
+      [12.5,2.18,1.22,.44,-.32,[[-.20,-5.86],[-.94,-4.56],[-1,-2.63],[-.85,-.44],[-.72,.40],
+        [-.38,.83],[.20,1],[.60,.70],[.82,-.42],[.56,-2.23],[.40,-4.91]]]
+    ];
+    function stoneTongue(center,width,reach,crest,skew,footprint,phase) {
+      const rings=[
+        [-.36,.91,1.03,-.11], [0,1,1,0], [.21,.98,.88,-.02],
+        [.31,.91,.91,.02], [crest,.86,.88,-.13], [crest+.07,.58,.76,-.22]
+      ].map(([y,sx,sz,inset]) => footprint.map(([u,v]) => {
+        const root=Math.max(0,-v)*reach/3;
+        const bankRise=.48*y*(1-THREE.MathUtils.smoothstep(v,-.62,.36))/(crest+.07);
+        return center.clone().addScaledVector(along,width*sx*u+skew*v)
+          .addScaledVector(outward,reach*(sz*v+inset))
+          .setY(y > 0 ? y*(1+.20*Math.sin(u*3.7+phase)-.43*Math.max(0,v)) + root*(.24+y*.52) + bankRise : y);
+      }));
+      const faces=[];
+      for (let band=1; band<rings.length; band++) {
+        const a=rings[band-1],b=rings[band];
+        for (let j=0;j<a.length;j++) {
+          const k=(j+1)%a.length;
+          triangle(faces,a[j],a[k],b[j]);
+          triangle(faces,a[k],b[k],b[j]);
+        }
+      }
+      const top=rings.at(-1);
+      const crown=center.clone().addScaledVector(outward,-reach*.48).setY(crest+.64);
+      for (let j=0;j<top.length;j++) triangle(faces,crown,top[j],top[(j+1)%top.length]);
+      const radius=Math.max(...rings[1].filter((_,j)=>footprint[j][1]>=0)
+        .map(p=>Math.abs(p.clone().sub(center).dot(along))));
+      return {faces,radius};
+    }
+    for (const [i,[x,width,reach,crest,skew,footprint]] of tongues.entries()) {
+      const center=shoreAt(x).addScaledVector(outward,.37);
+      const {faces,radius}=stoneTongue(center,width,reach,crest,skew,footprint,i);
+      if (i === 0) {
+        const flank=center.clone().addScaledVector(along,1.62).addScaledVector(outward,-.92);
+        const slab=[[-.45,-2.4],[-1,-1.02],[-.73,.23],[-.03,.76],[.58,.82],
+          [1,.39],[.78,-.63],[.45,-2.1]];
+        faces.push(...stoneTongue(flank,1.4,2.70,.46,.12,slab,2.5).faces);
+      } else if (i === 1) {
+        const shelf=center.clone().addScaledVector(along,5.44).addScaledVector(outward,-1.25);
+        const slab=[[-1.0,-2.15],[-1.18,-1.52],[-.94,-.55],[-.69,.24],[-.25,.54],
+          [.25,.41],[.70,.16],[1.15,-.03],[1.21,-.57],[.84,-1.05],[.49,-1.81],[-.37,-2.28]];
+        faces.push(...stoneTongue(shelf,4.45,2.78,.55,-.54,slab,4).faces);
+      }
+      addQuaySurface(rockMesh(faces,wetStone),'晴川阁 · 禹功矶入水石舌 '+(i+1),'ShoreStone');
+      waterU.uQuaySpurs.value[i].set(center.x,center.z,radius,reach);
+    }
+
+    // The exposed rock bed follows the bank grade and tapers above the waterline.
+    const gravel = [];
+    const gravelRows = Array.from({length:39},(_,i) => {
+      const x=-21+i*.99, edge=qc.worldToLocal(shoreAt(x)).z;
+      const ends=THREE.MathUtils.smoothstep(i,0,4)*THREE.MathUtils.smoothstep(38-i,0,5);
+      const inlet=1-THREE.MathUtils.smoothstep(Math.abs(x+6.3),.9,4.1);
+      const top=13.25+.39*Math.sin(x*.67)+.42*Math.cos(x*1.42);
+      const toe=edge-.25-.88*inlet-.22*Math.sin(x*1.23);
+      return Array.from({length:9},(_,j) => {
+        const t=j/8, ripple=j===0 || j===8 ? 0 : .27*Math.sin(x*1.05+j*2.4);
+        const z=THREE.MathUtils.lerp(top,toe,t*ends)+ripple*ends;
+        const p=toWorld(x,0,z);
+        const relief=(.035+.13*(1-t))*ends*(.78+.22*Math.cos(x*1.6+j*2.8));
+        return p.setY(terrainTop(p.x,p.z)+.024+relief);
+      });
+    });
+    for (let i=1;i<gravelRows.length;i++) {
+      const a=gravelRows[i-1], b=gravelRows[i];
+      for (let j=1;j<a.length;j++) {
+        if (i>1) triangle(gravel,a[j-1],a[j],b[j-1]);
+        if (i<gravelRows.length-1) triangle(gravel,a[j],b[j],b[j-1]);
+      }
+    }
+    const gravelStone=inkMat(.20,false,['#767263','#aca692']);
+    addQuaySurface(rockMesh(gravel,gravelStone),'晴川阁 · 禹功矶岸脚碎砾浅滩','ShoreStone');
 
     // Begin inside the apron coping and end on the sampled bank at the foot of the gate.
     const steps = new Acc(), gateX = 20, first = 12, run = .79, count = 10;
