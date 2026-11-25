@@ -170,8 +170,17 @@
     'wc-door':['武昌 · 转角公寓',[-47.0,3,77.2],[-40.95,1.88,75.4]],
     'wc-court':['武昌 · 灰瓦人家',[-32.65,3.05,52.4],[-36.5,1.3,55.65]],
     'wc-out':['武昌 · 回望鹦鹉洲长江大桥',[-66,3.18,84.4],[-159,17.1,121]],
+    'hy-above':['汉阳 · 茶棚与江岸',[-249,53,70],[-200,1,-1]],
+    'wc-above':['武昌 · 里分与红桥',[-28,61,44],[-99,6,124]],
   };
-  for (const [key,[label]] of Object.entries(walkViews)) walkSelect.add(new Option(label,key));
+  for (const [name,above] of [['街巷近景',false],['小城沙盘斜俯视',true]]) {
+    const group=document.createElement('optgroup');
+    group.label=name;
+    for (const [key,[label]] of Object.entries(walkViews)) {
+      if (key.endsWith('-above')===above) group.append(new Option(label,key));
+    }
+    walkSelect.append(group);
+  }
   let walkReturn;
   function leaveWalk() {
     if (walkSelect.hidden) return;

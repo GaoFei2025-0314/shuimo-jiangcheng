@@ -134,7 +134,7 @@ function capture() {
       const select = document.getElementById('walk-view');
       const {camera, controls} = window.__dbg;
       const views = {};
-      for (const key of ['hy-door', 'hy-court', 'wc-door', 'wc-court']) {
+      for (const key of ['hy-door', 'hy-court', 'wc-door', 'wc-court', 'hy-above', 'wc-above']) {
         select.value = key;
         select.dispatchEvent(new Event('change'));
         if (location.hash !== '#walk='+key) throw new Error('Missing public walking view: '+key);

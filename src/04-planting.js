@@ -633,7 +633,148 @@
       [-40.72,54.21,.35,.27],
     ]) plant('broadleaf',x,z,spread,height,laneGrove);
 
-    const paperTargets=[[-226,40],[-216.88,42.4],[-50.7,79.2],[-78.8,80.9]];
+    // Four tended plots add shade and crops to the existing blocks without reseeding street planting.
+    function plantCultivatedCourts() {
+      const gardens=[
+        {name:'汉阳树荫小院', at:[-217,2.4], extent:[3.65,1.70], yaw:.15, tree:[-1.16,.05,.72,.68], layout:'shade'},
+        {name:'汉阳竹篱菜畦', at:[-212,25.2], extent:[3.50,1.90], yaw:.20, tree:[-1.94,.32,.68,.58], layout:'beds'},
+        {name:'武昌木架菜圃', at:[-50,113.4], extent:[3.65,1.76], yaw:.24, tree:[1.76,-.24,.68,.62], layout:'trellis'},
+        {name:'武昌石沿树庭', at:[-68,89.1], extent:[3.46,1.66], yaw:.15, tree:[.80,.20,.71,.67], layout:'stone'},
+      ];
+      const soil=vergeWash(.32,['#8e795e','#b7a681']);
+      const trenches=inkMat(.30,false,['#76674c','#a99874']);
+      const cropInk=[
+        inkMat(.27,true,['#4b654b','#87936c']),
+        inkMat(.31,true,['#617857','#abb181']),
+      ];
+      const caneInk=inkMat(.53,false,['#776850','#a69167']);
+      const rockInk=inkMat(.49,false,['#73736a','#b4ac90']);
+      const lowStone=new THREE.IcosahedronGeometry(.7,0);
+      const paths=[...cityGround.streets,...cityGround.courtyardPaths];
+      const closePaths=([x,z])=>paths.filter(({a,b})=>x>Math.min(a.x,b.x)-6&&x<Math.max(a.x,b.x)+6&&
+        z>Math.min(a.z,b.z)-6&&z<Math.max(a.z,b.z)+6);
+      for (const [index,{name,at:[x,z],extent:[a,b],yaw,tree,layout}] of gardens.entries()) {
+        const ground=[], alpha=[], furrows=[], foliage=[[],[]], cane=new Acc(), stones=new Acc();
+        const rng=seeded(0xf1bd9d+index*167);
+        const nearby=closePaths([x,z]);
+        const c=Math.cos(yaw),s=Math.sin(yaw);
+        function at(u,v,pad=.12) {
+          const X=x+c*u+s*v, Z=z-s*u+c*v;
+          if (occupied(X,Z,pad) || !offBridge(X,Z) || nearby.some(path=>
+            distanceTo(X,Z,path.a,path.b)<path.width*.5+pad)) return null;
+          const y=plantingSurface(X,Z);
+          return y===null || y>LAND_Y+.35 ? null : V(X,y,Z);
+        }
+        const shade=at(tree[0],tree[1],.45);
+        if (shade) plant('broadleaf',shade.x,shade.z,tree[2],tree[3],rng);
+        function quad(target,p,q,r,t,lift) {
+          if (!p||!q||!r||!t) return false;
+          for (const v of [p,r,q,q,r,t]) target.push(v.x,v.y+lift,v.z);
+          return true;
+        }
+        const corners=[[-.86,-.82],[-.28,-.97],[.54,-.90],[.93,-.64],[.99,.48],[.59,.94],
+          [-.32,.83],[-.92,.66],[-1,.06]];
+        for (let i=0;i<corners.length;i++) {
+          const [u0,v0]=corners[i], [u1,v1]=corners[(i+1)%corners.length];
+          const p=at(u0*a*.72,v0*b*.72), q=at(u1*a*.72,v1*b*.72);
+          const r=at(u0*a,v0*b), t=at(u1*a,v1*b);
+          const center=at(0,0);
+          if (p&&q&&center) {
+            for (const v of [center,q,p]) ground.push(v.x,v.y+.042,v.z);
+            alpha.push(.81,.66,.66);
+          }
+          if (quad(ground,p,q,r,t,.042)) alpha.push(.66,0,.66,.66,0,0);
+        }
+        function rosette(u,v,h,patch) {
+          const p=at(u,v,.20);
+          if (!p || (shade && p.distanceTo(shade)<.28)) return;
+          const leaves=foliage[patch];
+          for(let i=0,n=4+Math.floor(rng()*3);i<n;i++){
+            const angle=i*2.399+rng()*.75, dx=Math.cos(angle),dz=Math.sin(angle);
+            const length=h*(.62+.46*rng()), width=length*(.29+.26*rng());
+            const a=p.clone().add(V(dx*.30*length-dz*width,h*.56,dz*.30*length+dx*width));
+            const b=p.clone().add(V(dx*.27*length+dz*width,h*.62,dz*.27*length-dx*width));
+            const tip=p.clone().add(V(dx*length,h*(.75+.37*rng()),dz*length));
+            leaves.push(...p.toArray(),...a.toArray(),...tip.toArray(),...p.toArray(),...tip.toArray(),...b.toArray());
+          }
+        }
+        if (layout==='beds' || layout==='trellis') {
+          const count=layout==='beds'?3:4, along=layout==='beds'?.37:.48;
+          const lo=layout==='beds'?-1.04:-3.13, hi=layout==='beds'?2.81:.42;
+          for (let row=0;row<count;row++) {
+            const v=(row-(count-1)*.5)*along*1.49;
+            const offset=.10*Math.sin(row*1.75);
+            for (let k=0,n=Math.ceil((hi-lo)/.31);k<n;k++) {
+              const u=lo+(hi-lo)*k/n+offset, end=lo+(hi-lo)*(k+1)/n+offset;
+              quad(furrows,at(u,v-.16),at(end,v-.16),at(u,v+.16),at(end,v+.16),.066);
+              const h=layout==='beds'?.21:.25;
+              rosette((u+end)*.5,v+(rng()-.5)*.13,h+rng()*.17,(row+k%3)%2);
+            }
+          }
+        } else {
+          const patches=layout==='shade' ? [[1.1,-.56,7,.76],[1.98,.36,5,.52]] : [[-1.88,-.48,10,.70],[1.81,.82,5,.45]];
+          for(const [u,v,count,radius] of patches) for(let i=0;i<count;i++){
+            const a=i*2.4, r=radius*Math.sqrt(i/count);
+            rosette(u+r*Math.cos(a),v+r*Math.sin(a),.27+rng()*.20,i%2);
+          }
+        }
+        function frame(u0,u1,v,height,trellis) {
+          const bases=[];
+          const count=trellis?4:7;
+          for (let i=0;i<count;i++) {
+            const t=i/(count-1), base=at(THREE.MathUtils.lerp(u0,u1,t),v+.07*Math.sin(i*1.37));
+            if (!base) return;
+            bases.push(base);
+          }
+          for (const [i,base] of bases.entries()) {
+            const top=base.clone().add(V(.025*Math.sin(i),height+.04*Math.cos(i*2.41),.03*Math.cos(i)));
+            cane.beam(base,top,trellis?.078:.048);
+            if (!i) continue;
+            const prev=bases[i-1];
+            for(const level of trellis?[height*.9,height*.60]:[height*.7,height*.31])
+              cane.beam(prev.clone().add(V(0,level,0)),base.clone().add(V(0,level,0)),trellis?.063:.040);
+            if (trellis) {
+              const t=i/(bases.length-1);
+              rosette(THREE.MathUtils.lerp(u0,u1,t)-.20,v+.21,.62+rng()*.23,i%2);
+            }
+          }
+        }
+        if (layout==='beds') frame(-.94,2.20,1.46,.55,false);
+        if (layout==='trellis') frame(-2.52,.02,1.24,1.16,true);
+        if (layout==='shade' || layout==='stone') {
+          const v=layout==='shade'?-1.10:1.22;
+          for (let i=0,n=layout==='shade'?5:11;i<n;i++) {
+            const u=layout==='shade'?-2.72+i*.42:-2.52+i*.43;
+            const p=at(u,v+.10*Math.sin(i*.86));
+            if (!p || i%5===4) continue;
+            stones.place(lowStone,p.x,p.y+.07,p.z,.31+rng()*.16,.12+rng()*.07,.20+rng()*.14,yaw+rng()*.32);
+          }
+        }
+        function tag(mesh,label,material) {
+          mesh.name=name+' · '+label;
+          mesh.userData.landscapeSurface={group:'两岸街坊栽培小院',name:mesh.name,material};
+          mesh.userData.detailSize=1.12;
+          mesh.userData.vergePlanting=true;
+          scene.add(mesh);
+        }
+        function show(positions,ink,label,material,cover) {
+          if (!positions.length) return;
+          const geometry=new THREE.BufferGeometry();
+          geometry.setAttribute('position',new THREE.Float32BufferAttribute(positions,3));
+          if (cover) geometry.setAttribute('vergeCover',new THREE.Float32BufferAttribute(cover,1));
+          geometry.computeVertexNormals();
+          tag(new THREE.Mesh(geometry,ink),label,material);
+        }
+        show(ground,soil,'院土','BankGrass',alpha);
+        show(furrows,trenches,'菜畦垄沟','Path');
+        foliage.forEach((positions,i)=>show(positions,cropInk[i],i?'浅青菜叶':'深青菜叶','Reeds'));
+        if (cane.l.length) tag(cane.mesh(caneInk,false),'竹木围架','BoatLoad');
+        if (stones.l.length) tag(stones.mesh(rockInk,false),'低矮散石','ShoreStone');
+      }
+    }
+    plantCultivatedCourts();
+
+    const paperTargets=[[-226,40],[-216.88,42.4],[-50.7,79.2],[-78.8,80.9],[-212,31]];
     const activePaperTrees=paperTargets.map(([x,z])=>V(x,z,0));
 
     // Paper branches sit on the same twig tips and move in the same wind as their trunk.
@@ -742,14 +883,14 @@
       vertexShader: vegetationWind + `
         attribute float windResponse;
         attribute vec3 crownCenter;
-        uniform vec3 uPaperTrees[4];
+        uniform vec3 uPaperTrees[${paperTargets.length}];
         varying vec3 vTint, vNormal, vWorld, vSprig;
         varying float vDistance;
         void main() {
           vec2 root = (modelMatrix * instanceMatrix[3]).xz;
           vec3 sprig=position;
           if(crownCenter.y>0.){
-            for(int i=0;i<4;i++){
+            for(int i=0;i<${paperTargets.length};i++){
               vec3 tree=uPaperTrees[i];
               vec2 offset=root-tree.xy;
               if(tree.z>.0 && dot(offset,offset)<.025)

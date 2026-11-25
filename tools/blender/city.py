@@ -233,7 +233,8 @@ def imported_mesh(item, mat, dest, parent=None):
     courtyard_paving = (item["group"] in ("汉阳滨水街巷生活", "汉阳茶棚后街坊", "武昌滨水街巷生活")
                        and item["material"] in ("Path", "BankStone"))
     paving_detail = item["name"].endswith((" · 石缝", " · 镶边", " · 错缝铺石"))
-    if paving_detail or courtyard_paving or waterfront_paving or item["material"] in ("Streets", "ApproachPaving", "RoadPaint") or item["group"] in (
+    court_ground = item["group"].endswith("滨水街坊共同院埕") or "院埕间旧巷石土" in item["name"]
+    if court_ground or paving_detail or courtyard_paving or waterfront_paving or item["material"] in ("Streets", "ApproachPaving", "RoadPaint") or item["group"] in (
             "汉阳桥头街坊", "武昌桥头街坊", "汉阳两桥街道", "武昌两桥街道"):
         # Thin paving ribbons meet at intersections; their pigment casts no extra shadow.
         obj.visible_shadow = False

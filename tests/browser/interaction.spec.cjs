@@ -153,7 +153,7 @@ test('all sixteen navigation destinations and music toggle remain usable', async
   await expect(page.locator('#sound')).toHaveAttribute('aria-pressed', 'false');
 });
 
-test('the architectural atlas opens eight shareable riverbank walks and restores navigation', async ({ page }) => {
+test('the architectural atlas opens shareable riverbank walks and district overlooks and restores navigation', async ({ page }) => {
   await page.emulateMedia({ reducedMotion: 'reduce' });
   await ready(page);
   const walk = page.getByRole('combobox', { name: '选择江岸街巷视角' });
@@ -161,8 +161,11 @@ test('the architectural atlas opens eight shareable riverbank walks and restores
   await page.locator('#atlas-open').click();
   await page.locator('#atlas-walk').click();
   await expect(walk).toBeFocused();
-  await expect(walk.locator('option')).toHaveCount(8);
+  await expect(walk.locator('optgroup[label="街巷近景"] option')).toHaveCount(8);
+  await expect(walk.locator('optgroup[label="小城沙盘斜俯视"] option')).toHaveCount(2);
   await expect(page).toHaveURL(/#walk=hy-in$/);
+  await walk.selectOption('wc-above');
+  await expect.poll(() => page.evaluate(() => window.__testCamera.position.y)).toBeGreaterThan(40);
   await walk.selectOption('wc-out');
   await expect(page).toHaveURL(/#walk=wc-out$/);
   await expect(page.locator('#dock')).toBeHidden();

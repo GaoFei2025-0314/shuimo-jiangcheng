@@ -768,7 +768,7 @@
       layWalkDetails(group,name,sections,null,true);
     }
     const dripTile=new THREE.CylinderGeometry(.50,.45,1,7,1,false,Math.PI*.5,Math.PI).rotateX(Math.PI*.5);
-    function streetEaves(group,name,x,z) {
+    function streetEaves(group,name,x,z,features=[]) {
       const matrix=lanes.find(({elements:e})=>Math.hypot(x-e[12],z-e[14])<.28);
       if (!matrix) return;
       const e=matrix.elements, scale=Math.hypot(e[0],e[2]), height=e[5], yaw=Math.atan2(-e[2],e[0]);
@@ -784,6 +784,51 @@
             const u=bay-1.39+.25*tile, sag=.027*Math.sin(tile*1.34+i*.71);
             trim.round('ShoreStone',dripTile,point(u,2.655+sag,side*(2.94+sag*.42)),
               .213*scale,.14*height,.173*scale,yaw);
+          }
+        }
+      }
+      const roofHeight=v=>4.14-Math.abs(v)*1.46/2.94;
+      for (const {kind,u,v} of features) {
+        const side=Math.sign(v);
+        if (kind==='chimney') {
+          const top=roofHeight(v)+.83;
+          const foot=roofHeight(v)-.22;
+          trim.box('Masonry',point(u,(top+foot)*.5,v),.52*scale,(top-foot)*height,.46*scale,yaw);
+          trim.box('BoatAccent',point(u,top-.20,v),.54*scale,.066*height,.48*scale,yaw);
+          trim.box('ShoreStone',point(u,top-.065,v),.66*scale,.132*height,.57*scale,yaw);
+          trim.box('Ink',point(u,top+.006,v),.30*scale,.025*height,.24*scale,yaw);
+        } else if (kind==='dormer') {
+          const front=v+side*.47, back=v-side*.56;
+          const foot=roofHeight(front)-.13, sill=foot+.15;
+          const lintel=foot+.62;
+          trim.box('Masonry',point(u,foot+.325,(front+back)*.5),.94*scale,.67*height,1.03*scale,yaw);
+          trim.box('Ink',point(u,(sill+lintel)*.5,front+side*.012),.66*scale,(lintel-sill)*height,.042*scale,yaw);
+          trim.box('ShoreStone',point(u,sill,front+side*.068),.82*scale,.070*height,.18*scale,yaw);
+          trim.box('BoatAccent',point(u,(lintel+sill)*.5,front+side*.041),.069*scale,.47*height,.038*scale,yaw);
+          for (const slope of [-1,1]) {
+            const panel=(a,b)=>point(u+slope*.64*a,lintel+.335-.305*a+.11*b,
+              front+side*.15-side*1.34*b);
+            fabric(trim,'Slate',(a,b)=>panel(a,slope===side?1-b:b),7,4);
+            cane(trim,'ShoreStone',[panel(.99,.02),panel(.99,.98)],.031*scale);
+          }
+          cane(trim,'Ink',[point(u,lintel+.342,front+side*.16),point(u,lintel+.449,back-side*.18)],.045*scale);
+        } else {
+          // Thin replacements sit flush with the common roof slope.
+          for (let row=0;row<4;row++) for(let col=0;col<6;col++) {
+            if ((row===0&&col>3)||(row===3&&col<2)) continue;
+            const tileU=u+(col-2.5)*.27+(row%2)*.12;
+            const tileV=v+side*(row-1.5)*.31;
+            const material=kind==='glass'&&col>0&&col<4&&row<3?'BoatGlass':
+              (row*3+col)%5<3?'ShoreStone':'Slate';
+            fabric(trim,material,(a,b)=>{
+              const depth=tileV+(b-.5)*.305;
+              return point(tileU+(a-.5)*.26,roofHeight(depth)+.021+.040*Math.sin(a*Math.PI),depth);
+            },4,1);
+          }
+          if (kind==='mended') {
+            for (const [dx,len] of [[-.20,.56],[.54,.78]]) {
+              trim.box('BankStone',point(u+dx,4.226,0),len*scale,.14*height,.29*scale,yaw);
+            }
           }
         }
       }
@@ -1502,8 +1547,10 @@
       }
     }
     hanyangCourtyards();
-    streetEaves('汉阳茶棚后街坊','汉阳茶棚旧屋起伏瓦檐',-218,29);
-    streetEaves('汉阳茶棚后街坊','汉阳后院灰瓦滴水',-222.30,20.50);
+    streetEaves('汉阳茶棚后街坊','汉阳茶棚旧屋起伏瓦檐',-218,29,[{kind:'mended',u:2.92,v:-1.23}]);
+    streetEaves('汉阳茶棚后街坊','汉阳后院灰瓦滴水',-222.30,20.50,[{kind:'dormer',u:-2.89,v:-1.18}]);
+    streetEaves('汉阳茶棚后街坊','汉阳后排灶间砖烟囱',-234.64,48.70,[{kind:'chimney',u:.67,v:-.72}]);
+    streetEaves('汉阳茶棚后街坊','汉阳内街补瓦压脊',-224.11,9.04,[{kind:'mended',u:-3.01,v:1.29}]);
 
     // The other bank has a quieter house gate, with short caps and an open way into the courtyard.
     const east=laneFront(-59.58,75.26,false);
@@ -1564,8 +1611,10 @@
     }
 
     const backGroup='武昌滨水街巷生活', routeName='武昌后巷步道';
-    streetEaves(backGroup,'武昌入巷老宅错搭瓦檐',-59.58,75.26);
-    streetEaves(backGroup,'武昌里分后排灰瓦滴水',-37.73,58.08);
+    streetEaves(backGroup,'武昌入巷老宅错搭瓦檐',-59.58,75.26,[{kind:'glass',u:.12,v:-1.36}]);
+    streetEaves(backGroup,'武昌里分后排灰瓦滴水',-37.73,58.08,[{kind:'chimney',u:-2.88,v:-.62}]);
+    streetEaves(backGroup,'武昌临桥旧屋老虎窗',-72.17,112.68,[{kind:'dormer',u:3.03,v:-1.12}]);
+    streetEaves(backGroup,'武昌临桥偏置砖烟囱',-76.14,123.58,[{kind:'chimney',u:-.61,v:.83}]);
     function oldThreshold(matrices,x,z,doorX,wallZ) {
       const matrix=matrices.find(({elements:e})=>Math.hypot(x-e[12],z-e[14])<.28);
       if (!matrix) return null;
@@ -1591,6 +1640,49 @@
       }
       return best<4 ? lip : null;
     }
+    function apartmentEdge(group,name,x,z,draw) {
+      const matrix=apartments.find(({elements:e})=>Math.hypot(x-e[12],z-e[14])<.28);
+      if (!matrix) return;
+      const e=matrix.elements, yaw=Math.atan2(-e[2],e[0]);
+      const scale=Math.hypot(e[0],e[2]), height=e[5];
+      const point=(u,h,v)=>V(u,h,v).applyMatrix4(matrix);
+      const detail=blocks(group,name);
+      const box=(key,u,h,v,w,t,d,pitch=0)=>detail.box(key,point(u,h,v),w*scale,t*height,d*scale,yaw,pitch);
+      draw(box,point,detail,scale);
+      detail.show();
+    }
+    apartmentEdge('汉阳茶棚后街坊','汉阳茶棚后公寓砖腰线与雨管',-240.52,24.59,(box,point,detail,scale)=>{
+      box('Masonry',-4.485,4.28,.14,.14,.20,5.36);
+      box('ShoreStone',-4.535,4.41,.14,.23,.073,5.53);
+      box('BankStone',-4.485,6.59,.14,.16,.10,5.42);
+      // The old side coping turns around the two corners without crossing the glazing.
+      box('ShoreStone',-4.47,7.522,.14,.36,.15,5.68);
+      for (const side of [-1,1]) box('ShoreStone',-4.14,7.522,.14+side*2.72,1.02,.15,.24);
+      box('Masonry',-2.99,9.005,.25,1.60,.16,4.71);
+      box('Slate',-3.11,9.095,.25,1.38,.074,4.83);
+      box('Masonry',-4.485,5.75,.57,.10,.76,.95);
+      box('Ink',-4.548,5.75,.57,.055,.56,.72);
+      for(let i=0;i<5;i++) box('BankStone',-4.586,5.53+i*.11,.57,.079,.05,.74);
+      cane(detail,'BankStone',[[ -4.62,7.47,2.33],[-4.71,6.92,2.33],[-4.69,3.00,2.34],
+        [-4.97,2.20,2.36],[-4.97,.18,2.36]].map(v=>point(...v)),.047*scale);
+    });
+    apartmentEdge('汉阳茶棚后街坊','汉阳内街公寓短挑檐',-242.97,11.21,box=>{
+      box('BankStone',2.04,9.895,.40,2.13,.085,3.86);
+      box('Masonry',2.04,9.81,.40,2.04,.117,3.75);
+      box('Masonry',4.48,6.70,.08,.12,.20,5.40);
+      box('Slate',4.535,6.81,.08,.26,.081,5.60);
+      box('ShoreStone',4.61,5.29,1.64,.40,.094,1.65);
+      for(const v of [.94,2.34]) box('Masonry',4.58,5.12,v,.26,.29,.15);
+      box('Ink',4.49,4.73,1.64,.047,.67,1.23);
+      for(let i=0;i<4;i++) box('BankStone',4.518,4.48+i*.15,1.64,.074,.059,1.26);
+    });
+    apartmentEdge(backGroup,'武昌街口公寓旧压顶与山墙线脚',-40.09,71.99,box=>{
+      box('Slate',-.59,9.015,2.55,6.39,.145,.25);
+      box('BankStone',-3.66,9.015,.68,.25,.145,3.62);
+      box('Masonry',-4.49,6.68,.01,.112,.17,5.30);
+      box('ShoreStone',-4.52,6.79,.01,.18,.074,5.42);
+      box('ShoreStone',-4.49,7.52,.48,.28,.095,2.71);
+    });
     const middle=oldThreshold(apartments,-40.09,71.99,-1.05,3.29);
     const rear=oldThreshold(lanes,-37.73,58.08,-.75,2.73);
     const branch=cityGround.riverfrontPaths.filter(p=>p.name==='武昌滨水通街支巷');
@@ -1801,6 +1893,8 @@
     const earth=vergeWash(.47,['#9c9079','#c8baa1']);
     const moss=vergeWash(.24,['#596750','#9c9f7b']);
     const field=vergeWash(.34,['#918972','#c2b69a']);
+    const courtEdge=vergeWash(.45,['#85816e','#bfb198']);
+    const shoreEdge=vergeWash(.36,['#717d65','#afa98b']);
     field.fragmentShader=field.fragmentShader.replace('vec4(col, vVergeCover *',`vec4(col *
       (1. + (vnoise(vW.xz*12.1)-.5)*.105 + (vnoise(vW.xz*2.49)-.5)*.09), vVergeCover *`);
     const grass=inkMat(.47,true,['#627057','#9f9e76']);
@@ -1839,24 +1933,31 @@
           const walkFade=THREE.MathUtils.smoothstep(gap,.07,.91);
           return walkFade*(!underWall&&cityGround.occupied(x,z,.35) ? .30 : 1);
         };
-        const c=Math.cos(yaw),s=Math.sin(yaw), vertices=[], coverage=[], faces=[], sides=23;
+        const openWash=ink===courtEdge || ink===shoreEdge;
+        const rings=openWash ? [[.18,.84],[.36,.78],[.52,.66],[.69,.45],[.84,.22],[1,0]]
+          : [[.38,.72],[.72,.50],[1,0]];
+        const c=Math.cos(yaw),s=Math.sin(yaw), vertices=[], coverage=[], faces=[];
+        const sides=openWash ? 36 : 23;
         const point=(u,v,lift)=>{
           const x=cx+c*u+s*v,z=cz-s*u+c*v;
           return [x,(plantingSurface(x,z) ?? LAND_Y)+lift,z];
         };
-        vertices.push(point(0,0,ink===field ? .021 : .037)); coverage.push(.79);
-        for (const [ring,alpha] of [[.38,.72],[.72,.50],[1,0]]) {
+        vertices.push(point(0,0,openWash ? .028 : ink===field ? .021 : .037)); coverage.push(.79);
+        for (const [ring,alpha] of rings) {
           for (let i=0;i<sides;i++) {
-            const a=i/sides*Math.PI*2, noise=.93+.12*Math.sin(i*2.29+seed)+.10*Math.cos(i*1.11+seed*.78);
-            vertices.push(point(Math.cos(a)*rx*ring*noise,Math.sin(a)*rz*ring*noise,(ink===field ? .018 : .012+.028*(1-ring))));
-            coverage.push(alpha*(.75+.25*Math.cos(i*1.7+seed)**2));
+            const a=i/sides*Math.PI*2;
+            const shape=openWash ? .92+.12*Math.sin(3*a+seed)+.08*Math.cos(5*a-seed)
+              : .93+.12*Math.sin(i*2.29+seed)+.10*Math.cos(i*1.11+seed*.78);
+            const lift=openWash ? .028 : ink===field ? .018 : .012+.028*(1-ring);
+            vertices.push(point(Math.cos(a)*rx*ring*shape,Math.sin(a)*rz*ring*shape,lift));
+            coverage.push(alpha*(openWash ? .83+.17*Math.cos(a*2+seed)**2 : .75+.25*Math.cos(i*1.7+seed)**2));
           }
         }
         for (let i=0;i<sides;i++) {
           const j=(i+1)%sides;
           faces.push([0,1+j,1+i]);
-          for (const base of [1,1+sides]) {
-            const a=base+i,b=base+j,c=a+sides,d=b+sides;
+          for (let ring=0;ring<rings.length-1;ring++) {
+            const base=1+ring*sides, a=base+i,b=base+j,c=a+sides,d=b+sides;
             faces.push([a,b,c],[b,d,c]);
           }
         }
@@ -1894,6 +1995,19 @@
         plot('低草与湿土',meadow,'BankGrass',x,z,rx,rz,yaw,1.9+i*1.23);
         if (i%3!==2) plot('巷边露土',earth,'WetBank',x+.22,z-rz*.61,rx*.85,rz*.56,yaw,4.3+i);
       }
+      const [courts,shoulders]=group.startsWith('汉阳') ? [
+        [[-231.5,16.4,8.9,4.6,-.65],[-213.5,24.4,9.0,3.8,-.28]],
+        [[-197.2,23.2,5.2,2.8,1.02],[-203.2,36.1,5.2,3.3,1.22]],
+      ] : [
+        [[-45.3,99.8,12.0,6.8,.53],[-53.2,105.4,9.2,4.0,.79],[-48.0,88.5,8.1,4.8,-.28]],
+        [[-80.9,82.1,5.4,2.4,1.34],[-83.8,96.6,7.0,3.5,1.34],[-85.3,109.3,4.9,2.6,1.49]],
+      ];
+      for (const [i,[x,z,rx,rz,yaw]] of courts.entries()) {
+        plot('院埕浅土渗边',courtEdge,'WetBank',x,z,rx,rz,yaw,32+i*2.06,false,.94);
+      }
+      for (const [i,[x,z,rx,rz,yaw]] of shoulders.entries()) {
+        plot('靠陆岸肩散墨',shoreEdge,'BankGrass',x,z,rx,rz,yaw,39+i*1.73,false,1);
+      }
       const nearHouses=group.startsWith('汉阳') ? [[-218,29,'lane'],[-222,45,'lane'],[-234.64,48.70,'lane']]
         : [[-59.58,75.26,'lane'],[-40.09,71.99,'apartment'],[-37.73,58.08,'lane']];
       for (const [j,[x,z,kind]] of nearHouses.entries()) {
@@ -1922,6 +2036,136 @@
   }
 
   /* ═════════ 九、三镇市廛 ═════════ */
+  // Ground shared by a row of houses: compacted earth behind a lip of salvaged flagstones.
+  function dressNeighborhoodCourts(lots) {
+    const earthInk=vergeWash(.38,['#928268','#c8b796']);
+    const stones=[
+      inkMat(.31,false,['#777c70','#b0ad95']),
+      inkMat(.37,false,['#838774','#bdb398']),
+    ];
+    const drainInk=inkMat(.29,false,['#5d6257','#8d8a71']);
+    const walkPaths=[...cityGround.streets,...cityGround.courtyardPaths];
+    const banks=[
+      {
+        name:'汉阳',
+        rows:[
+          [-224.11,9.04,-223.7,15.3],[-210.48,6.88,-210,12.1],
+          [-222.3,20.5,-222.8,15.3],[-208.67,18.34,-209.7,12.6],
+        ],
+        lanes:[
+          [[-228.8,15.8],[-231.1,16.8],[-232.6,19.1],[-233.2,21.5]],
+          [[-203.6,11.6],[-201.8,12.8],[-201.1,15.3],[-200.8,18.4],[-202.8,22.7],[-202.5,25]],
+          [[-225.8,16.7],[-220.6,15.7],[-214.8,14.7],[-210.5,14.0],[-206.2,13.35]],
+        ],
+      },
+      {
+        name:'武昌',
+        rows:[
+          [-72.17,112.68,-73,107.3],[-56.55,120.04,-57.2,114.3],
+          [-43.58,124.76,-44.8,118.8],[-67.02,99.73,-66.8,93.3],
+          [-59.58,75.26,-60.0,82.9],
+        ],
+        lanes:[
+          [[-60.3,85.1],[-59.7,89.1],[-60.4,94.4],[-60.1,98.2],[-57.7,102.6],[-56.1,107.1],[-54.6,114.8]],
+          [[-77.9,108.4],[-73.1,107.45],[-67.5,109.4],[-63,111.7],[-59.8,114],[-55,115],[-49.8,116.5],[-42.9,119.15]],
+          [[-71.1,94.1],[-69.4,93.6],[-65.1,94.25],[-60.4,94.4]],
+        ],
+      },
+    ];
+    function buildBank({name,rows,lanes}) {
+      const group=name+'滨水街坊共同院埕';
+      const coarse=walkPaths.filter(({a,b})=>name==='汉阳' ?
+        Math.max(a.x,b.x)>-239 && Math.min(a.x,b.x)<-194 && Math.max(a.z,b.z)>5 && Math.min(a.z,b.z)<34 :
+        Math.max(a.x,b.x)>-83 && Math.min(a.x,b.x)<-37 && Math.max(a.z,b.z)>74 && Math.min(a.z,b.z)<127);
+      const trees=riverfrontBlocks[name==='汉阳'?0:1].groves.flatMap(({positions})=>positions);
+      const plots=new Map();
+      function point(x,z,h) {
+        if (cityGround.occupied(x,z,.23) || !offBridge(x,z) ||
+          coarse.some(path=>distanceToPath(x,z,path)<path.width*.50+.08) ||
+          trees.some(([a,b])=>Math.hypot(x-a,z-b)<.49)) return null;
+        const y=plantingSurface(x,z);
+        return y===null || y>LAND_Y+.38 ? null : [x,y+h,z];
+      }
+      function panel(key,points,alpha) {
+        if (points.some(p=>!p)) return;
+        if (!point(points.reduce((a,p)=>a+p[0],0)/4,points.reduce((a,p)=>a+p[2],0)/4,0)) return;
+        if (!plots.has(key)) plots.set(key,{positions:[],covers:[]});
+        const {positions,covers}=plots.get(key);
+        const [a,b,c]=points;
+        const ccw=(b[2]-a[2])*(c[0]-a[0])>(b[0]-a[0])*(c[2]-a[2]);
+        for (const j of ccw ? [0,1,2,2,1,3] : [0,2,1,2,3,1]) {
+          positions.push(...points[j]);
+          if (alpha) covers.push(alpha[j]);
+        }
+      }
+      function section(a,b,t,offset,lift) {
+        const dx=b[0]-a[0],dz=b[1]-a[1],d=Math.hypot(dx,dz);
+        return point(a[0]+dx*t+dz/d*offset,a[1]+dz*t-dx/d*offset,lift);
+      }
+      function course(a,b,t0,t1,lo,hi,key,lift,alpha) {
+        panel(key,[section(a,b,t0,lo,lift),section(a,b,t1,lo,lift),
+          section(a,b,t0,hi,lift),section(a,b,t1,hi,lift)],alpha);
+      }
+      const soil=.051, stone=.071, groove=.067;
+      for (const [k,[x,z,sx,sz]] of rows.entries()) {
+        const matrix=[...lots.lane,...lots.apartment].find(({elements:e})=>Math.hypot(e[12]-x,e[14]-z)<.08);
+        if (!matrix) continue;
+        const e=matrix.elements, scale=Math.hypot(e[0],e[2]);
+        const normal=V(e[8],0,e[10]).normalize();
+        if (normal.dot(V(sx-x,0,sz-z))<0) normal.negate();
+        const front=V(x,0,z).addScaledVector(normal,3.95*scale+.36);
+        const tangent=V(e[0],0,e[2]).normalize();
+        const a=front.clone().addScaledVector(tangent,-4.8*scale),b=front.clone().addScaledVector(tangent,4.8*scale);
+        const start=[a.x,a.z],end=[b.x,b.z];
+        const orientation=normal.dot(V(tangent.z,0,-tangent.x));
+        const depth=k%3===1?2.9:2.2;
+        for (let i=0,n=Math.ceil(10*scale);i<n;i++) {
+          const t0=i/n,t1=(i+1)/n;
+          const skirt=(depth+.28*Math.sin(i*1.07+k))*orientation;
+          course(start,end,t0,t1,0,skirt*.69,'院土',soil,[.95,.92,.88,.88]);
+          course(start,end,t0,t1,skirt*.68,skirt,'院土',soil,[.84,.84,0,0]);
+          if ((i+k)%6===4) continue;
+          const inset=.018/n;
+          const key=(i+2*k)%4===0?'灰石浅面':'青灰条石';
+          course(start,end,t0+inset,t1-inset,.16*orientation,.77*orientation,key,stone);
+          if ((i+k)%3!==1)
+            course(start,end,t0+inset,t1-inset,.82*orientation,1.32*orientation,key,stone+.003);
+          if (name==='汉阳' && (i+k)%5<2)
+            course(start,end,t0+inset,t1-inset,1.37*orientation,1.92*orientation,'灰石浅面',stone+.006);
+        }
+      }
+      for (const [li,route] of lanes.entries()) {
+        const points=new THREE.CatmullRomCurve3(route.map(([x,z])=>V(x,0,z)))
+          .getSpacedPoints(Math.ceil(route.slice(1).reduce((d,[x,z],i)=>d+Math.hypot(x-route[i][0],z-route[i][1]),0)/.71));
+        for (let i=0;i+1<points.length;i++) {
+          const a=[points[i].x,points[i].z],b=[points[i+1].x,points[i+1].z];
+          const spread=.68+.16*Math.sin(i*.32+li), shoulders=[-spread-.45,-spread*.75,spread*.75,spread+.40];
+          for (let j=0;j<3;j++) course(a,b,0,1,shoulders[j],shoulders[j+1],'院土',soil,
+            j===0?[0,0,.92,.92]:j===1?[.92,.92,.92,.92]:[.92,.92,0,0]);
+          const facing=(li===1?-1:1), slab=.26+.09*Math.sin(i*.76), lift=li*.003;
+          course(a,b,.04,.95,-slab*facing,.43*facing,i%4===0?'灰石浅面':'青灰条石',stone+lift);
+          if (i%9===6 || i%9===7) continue;
+          const inset=(spread+.06)*facing;
+          course(a,b,0,1,inset,inset+.22*facing,'落水浅沟',groove+lift);
+          course(a,b,.02,.97,inset+.22*facing,inset+.36*facing,'灰石浅面',stone+.009+lift);
+        }
+      }
+      for (const [label,{positions,covers}] of plots) {
+        const geometry=new THREE.BufferGeometry();
+        geometry.setAttribute('position',new THREE.Float32BufferAttribute(positions,3));
+        if (covers.length) geometry.setAttribute('vergeCover',new THREE.Float32BufferAttribute(covers,1));
+        geometry.computeVertexNormals();
+        const material=covers.length?'BankGrass':label==='落水浅沟'?'BankStone':'Masonry';
+        const mesh=new THREE.Mesh(geometry,covers.length?earthInk:label==='落水浅沟'?drainInk:stones[label==='青灰条石'?0:1]);
+        mesh.name=name+label;
+        mesh.userData.landscapeSurface={group,name:mesh.name,material};
+        mesh.userData.detailSize=.72;
+        scene.add(mesh);
+      }
+    }
+    banks.forEach(buildBank);
+  }
+
   // 以街坊为单位，里分顺巷成排、临江商埠与厂房成带，现代楼群在内街起伏。
   // 空间为画意概括，河湖、桥轴和地标仍使用实测位置。
   function distanceToPath(x, z, {a, b}) {
@@ -1956,15 +2200,15 @@
       return false;
     }
     const occupied = occupiedIn.bind(null,cells);
-    function oldStreetBed(a,b,width,bank,looseAtStart) {
+    function oldStreetBed(a,b,width,bank,looseAtStart,court='') {
       const length=Math.hypot(b.x-a.x,b.z-a.z), steps=Math.ceil(length/.65);
       const nx=(b.z-a.z)/length, nz=(a.x-b.x)/length;
       const positions=[],cover=[],indices=[],rows=[],visible=[];
       const lerp=THREE.MathUtils.lerp, smooth=THREE.MathUtils.smoothstep;
-      const ink=vergeWash(.50,['#9a917b','#d2c5a9']);
+      const ink=court ? vergeWash(.28,['#797e71','#b6af95']) : vergeWash(.50,['#9a917b','#d2c5a9']);
       for (let i=0;i<=steps;i++) {
         const t=i/steps, fromEnd=(looseAtStart?t:1-t)*length;
-        const neck=smooth(fromEnd,0,Math.min(2.2,length*.33));
+        const neck=court && looseAtStart===null ? 1 : smooth(fromEnd,0,Math.min(2.2,length*.33));
         const x=lerp(a.x,b.x,t),z=lerp(a.z,b.z,t), course=[];
         for(const [s,alpha] of [[-1,0],[-.80,.91],[0,.98],[.80,.91],[1,0]]) {
           const off=s*width*.5*(.60+.40*neck) +
@@ -1988,7 +2232,8 @@
       geometry.setAttribute('vergeCover',new THREE.Float32BufferAttribute(cover,1));
       geometry.setIndex(indices);
       geometry.computeVertexNormals();
-      const mesh=new THREE.Mesh(geometry,ink), group=bank+'两桥滨水岸线', name=bank+'旧巷石土收口';
+      const mesh=new THREE.Mesh(geometry,ink), group=bank+'两桥滨水岸线';
+      const name=bank+(court ? '院埕间旧巷石土'+court : '旧巷石土收口');
       mesh.name=name;
       mesh.userData.landscapeSurface={group,name,material:'Path'};
       scene.add(mesh);
@@ -2013,6 +2258,12 @@
         oldStreetBed(a,b,width,'汉阳',false);
       else if (Math.hypot(a.x+82.80,a.z-87.82)<.08 && Math.hypot(b.x+60.24,b.z-96.03)<.08)
         oldStreetBed(a,b,width,'武昌',true);
+      else if (Math.hypot(a.x+228.24,a.z-15.56)<.08 && Math.hypot(b.x+204.54,b.z-11.81)<.08)
+        oldStreetBed(a,b,width,'汉阳',null,'主段');
+      else if (Math.hypot(a.x+91.92,a.z-111.67)<.08 && Math.hypot(b.x+52.05,b.z-127.85)<.08)
+        oldStreetBed(a,b,width,'武昌',null,'主段');
+      else if (Math.hypot(a.x+52.05,a.z-127.85)<.08 && Math.hypot(b.x+40.77,b.z-131.95)<.08)
+        oldStreetBed(a,b,width,'武昌',false,'东段');
       else streetsMesh.place(streetSurface, (a.x + b.x) / 2, LAND_Y + .045, (a.z + b.z) / 2, length, 1, width, Math.atan2(-dz, dx));
       cityGround.streets.push({ a: { x: a.x, z: a.z }, b: { x: b.x, z: b.z }, width });
     }
@@ -2328,6 +2579,7 @@
     cityGround.occupied = (x, z, radius) => occupied(x, z, radius);
     buildRiverfrontAlleys(lots);
     dressRiverfrontGround(lots);
+    dressNeighborhoodCourts(lots);
     const streets = streetsMesh.mesh(inkMat(.42, false, ['#b3a895', '#dfd8c7']), false);
     streets.name = 'City streets';
     scene.add(streets);
