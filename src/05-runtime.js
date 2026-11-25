@@ -292,6 +292,64 @@
   const nameButton = document.getElementById('atlas-name'), locateButton = document.getElementById('atlas-locate');
   const craftButton = document.getElementById('atlas-craft');
   let plateMode = 'whole';
+  // The studio renders arrive on a grey cyclorama. Print each one onto the map's paper the
+  // first time it opens: the backdrop becomes paper, paint settles to a light wash, value
+  // steps become ink lines, and the same fibre runs through it. The original shows meanwhile.
+  const printedPlates = new Map();
+  function printPlate(key) {
+    if (!printedPlates.has(key)) printedPlates.set(key, (async () => {
+      const source = new Image();
+      source.src = 'data:image/jpeg;base64,' + LANDMARK_PLATES[key];
+      await source.decode();
+      const w = source.naturalWidth, h = source.naturalHeight;
+      const canvas = document.createElement('canvas');
+      canvas.width = w; canvas.height = h;
+      const context = canvas.getContext('2d', { willReadFrequently: true });
+      context.drawImage(source, 0, 0);
+      const image = context.getImageData(0, 0, w, h), px = image.data;
+      const paper = sharedInk.uPaper.value, ink = sharedInk.uInk.value;
+      const P = [paper.r * 255, paper.g * 255, paper.b * 255], K = [ink.r * 255, ink.g * 255, ink.b * 255];
+      // Backdrop colour from the four corners.
+      const backdrop = [0, 0, 0];
+      for (const [cx, cy] of [[4, 4], [w - 5, 4], [4, h - 5], [w - 5, h - 5]])
+        for (let c = 0; c < 3; c++) backdrop[c] += px[(cy * w + cx) * 4 + c] / 4;
+      const lum = new Float32Array(w * h);
+      for (let i = 0; i < w * h; i++) lum[i] = (.26 * px[i * 4] + .59 * px[i * 4 + 1] + .15 * px[i * 4 + 2]) / 255;
+      const smooth = (a, b, x) => { const t = Math.min(1, Math.max(0, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
+      const fibre = (x, y) => { const s = Math.sin(x * 12.9898 + y * 78.233) * 43758.5453; return s - Math.floor(s); };
+      for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+        const i = y * w + x, o = i * 4;
+        const r = px[o], g = px[o + 1], b = px[o + 2], l = lum[i];
+        const off = Math.hypot(r - backdrop[0], g - backdrop[1], b - backdrop[2]);
+        const ground = 1 - smooth(10, 34, off);
+        // Light wash over the value of the drawing.
+        const tone = Math.min(1, l * 1.08 + .05);
+        let out = [0, 1, 2].map(c => K[c] + (P[c] - K[c]) * smooth(.04, .96, tone));
+        const chroma = [r, g, b].map(v => v - l * 255);
+        out = out.map((v, c) => v + chroma[c] * .5);
+        // Sobel on value: an ink line wherever the drawing turns.
+        let edge = 0;
+        if (x > 0 && y > 0 && x < w - 1 && y < h - 1) {
+          const L = (dx, dy) => lum[i + dy * w + dx];
+          const gx = L(1, -1) + 2 * L(1, 0) + L(1, 1) - L(-1, -1) - 2 * L(-1, 0) - L(-1, 1);
+          const gy = L(-1, 1) + 2 * L(0, 1) + L(1, 1) - L(-1, -1) - 2 * L(0, -1) - L(1, -1);
+          edge = smooth(.16, .55, Math.hypot(gx, gy)) * (.65 + .35 * fibre(x >> 3, y >> 3));
+        }
+        const grain = (fibre(x, y) - .5) * 7;
+        for (let c = 0; c < 3; c++) {
+          let v = out[c] + (K[c] - out[c]) * edge * .82;
+          v = v + (P[c] - v) * ground;
+          px[o + c] = v + grain;
+        }
+      }
+      context.putImageData(image, 0, 0);
+      const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', .9));
+      const url = URL.createObjectURL(blob);
+      app.cleanups.push(() => URL.revokeObjectURL(url));
+      return url;
+    })().catch(() => null));
+    return printedPlates.get(key);
+  }
   function showPlate(mode = 'whole') {
     const key = atlasSite.value, detail = details[key], inscription = bridgeInscriptions[key];
     plateMode = mode;
@@ -303,6 +361,10 @@
     craftButton.setAttribute('aria-pressed', String(craftView));
     atlasPlate.alt = COPY[atlasView(key)][0] + ' · ' + (craftView ? craft.label : nameView ? '桥名题字' : detailView ? detail[1].slice(1) : '建筑全貌');
     atlasPlate.src = 'data:image/jpeg;base64,' + LANDMARK_PLATES[plateKey];
+    atlasPlate.dataset.plate = plateKey;
+    printPlate(plateKey).then(url => {
+      if (url && atlasPlate.dataset.plate === plateKey) atlasPlate.src = url;
+    });
     detailButton.hidden = !detail;
     detailButton.textContent = detailView ? '看全貌' : detail ? detail[1] : '';
     detailButton.setAttribute('aria-pressed', String(detailView));

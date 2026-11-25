@@ -474,6 +474,22 @@
           vec3 neutralPaper = mix(uFog, vec3(dot(uFog, luminance)), .72);
           vec3 wash = mix(vec3(brightness), neutralPaper, .55);
           col = mix(col, wash, uCityWash * smoothstep(86., 425., vD));
+          // Far quarters are painted rather than modelled: a dab of roof ink over walls
+          // that sink into the paper, feet lost in mist, and drifting cloud bands that
+          // leave whole blocks unpainted so the three towns read as clusters, not a grid.
+          float farCity = smoothstep(260., 680., vD);
+          if (farCity > .001) {
+            float blot = fbm(vW.xz * .05 + vec2(vW.y * .2));
+            float roofFace = smoothstep(.35, .75, n.y);
+            float shaded = 1. - smoothstep(-.2, .6, dot(n, normalize(uLight)));
+            vec3 roofInk = mix(uInk, uFog, .24 + .26 * blot);
+            vec3 wallWash = mix(uFog, uInk, .13 + .10 * blot + .16 * shaded);
+            vec3 painted = mix(wallWash, roofInk, roofFace);
+            painted = mix(painted, uFog, (1. - smoothstep(0., 1.4, vCityPosition.y)) * .6);
+            float cloud = smoothstep(.54, .68, fbm(vW.xz * .011 + vec2(3.7, 1.3)));
+            painted = mix(painted, uFog, cloud * .7);
+            col = mix(col, painted, farCity);
+          }
         #endif
       #endif
       #ifdef COURT_TIMBER

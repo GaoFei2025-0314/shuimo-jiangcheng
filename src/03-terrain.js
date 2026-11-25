@@ -43,8 +43,20 @@
     .concat([[X1, yzE[yzE.length - 1][1]], [X1, ZBOT], [yzE[0][0], ZBOT]]);
 
   // 湖：实测水体掩膜圆滑后的岸线。第一个是东湖——中国最大的城中湖，水域约 33 平方公里
-  const LAKES = GEO.lakes.map(L => {                    // 再过一遍 Catmull-Rom，成自然湖岸
-    const c = new THREE.CatmullRomCurve3(L.pts.map(p => gv(p[0], p[1], 0)), true, 'catmullrom', .5);
+  // 水体掩膜的岸线带着像素台阶的硬角：先切一次角（Chaikin）再过 Catmull-Rom，成自然湖岸。
+  // 听涛两桥的石质登陆台按原岸线逐点贴合，附近约 800 米内的岸点保持原位不切。
+  const keepShore = p => { const v = gv(p[0], p[1], 0); return Math.hypot(v.x - AT.xingyin.x, v.z - AT.xingyin.z) < 62; };
+  const chaikin = pts => {
+    const ring = pts.slice(0, pts.length - (pts[0][0] === pts[pts.length - 1][0] && pts[0][1] === pts[pts.length - 1][1] ? 1 : 0));
+    return ring.flatMap((p, i) => {
+      const q = ring[(i + 1) % ring.length], out = [];
+      out.push(keepShore(p) ? p : [.75 * p[0] + .25 * q[0], .75 * p[1] + .25 * q[1]]);
+      if (!keepShore(q)) out.push([.25 * p[0] + .75 * q[0], .25 * p[1] + .75 * q[1]]);
+      return out;
+    });
+  };
+  const LAKES = GEO.lakes.map(L => {
+    const c = new THREE.CatmullRomCurve3(chaikin(L.pts).map(p => gv(p[0], p[1], 0)), true, 'catmullrom', .5);
     return c.getPoints(L.pts.length * 6).map(p => [p.x, p.z]);
   });
   const LAKE = LAKES[0];
@@ -532,8 +544,8 @@
               vec2 ripples = vec2(wind.x+.11*wind.y,wind.y-.08*wind.x)*vec2(.097,.14);
               lakeInk += brokenCrest(ripples)*(.30+.70*wash)*.23*lakeDetail*smoothstep(.018,.21,band);
             }
-            float littoral = (1.-smoothstep(.0,.32,band))*lake*wet;
-            float lakeWash = lake*wet*(.153+.032*vnoise(p*.009))+.12*littoral;
+            float littoral = (1.-smoothstep(.0,.42,band))*lake*wet;
+            float lakeWash = lake*wet*(.153+.032*vnoise(p*.009))+.27*littoral*(.75+.5*vnoise(p*.02));
             float shoreRipples = smoothstep(.86,.99,sin(p.y*2.2+warp+ambientDriftTime*.25));
             lakeInk += .12*littoral*shoreRipples*smoothstep(.32,.70,fbm(p*.075))*lakeDetail;
             base = mix(base,vec3(.43,.57,.57),lakeWash);

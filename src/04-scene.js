@@ -535,7 +535,25 @@
         point = next;
       }
     }
-    const road = new THREE.LineLoop(new THREE.BufferGeometry().setFromPoints(knots), lineSoft);
+    // 绿道只作干笔：沿线按里程断续着墨，不画成与湖岸平行的第二道实线。
+    const roadGeometry = new THREE.BufferGeometry().setFromPoints(knots);
+    const along = new Float32Array(knots.length);
+    for (let i = 1; i < knots.length; i++) along[i] = along[i-1] + knots[i].distanceTo(knots[i-1]);
+    roadGeometry.setAttribute('along', new THREE.BufferAttribute(along, 1));
+    const dryBrush = new THREE.ShaderMaterial({
+      uniforms: { ...fogU, uColor: { value: lineSoft.color } },
+      vertexShader: `attribute float along; varying float vAlong; varying float vD;
+        void main(){ vAlong = along; vec4 mv = modelViewMatrix * vec4(position,1.); vD = -mv.z; gl_Position = projectionMatrix * mv; }`,
+      fragmentShader: NOISE + `uniform vec3 uColor, uFog; uniform float uNear, uFar; varying float vAlong; varying float vD;
+        void main(){
+          float stroke = smoothstep(.38, .56, vnoise(vec2(vAlong * .045, 3.1)));
+          float load = .22 + .30 * vnoise(vec2(vAlong * .21, 8.7));
+          gl_FragColor = vec4(mix(uColor, uFog, smoothstep(uNear, uFar, vD)), stroke * load);
+        }`,
+      transparent: true, depthWrite: false
+    });
+    app.cleanups.push(() => { roadGeometry.dispose(); dryBrush.dispose(); });
+    const road = new THREE.LineLoop(roadGeometry, dryBrush);
     road.userData.lakeGreenway = true;
     road.raycast = function () {}; scene.add(road);
   }
