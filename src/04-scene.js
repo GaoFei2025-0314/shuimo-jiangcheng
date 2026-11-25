@@ -168,12 +168,12 @@
   const tv      = place(builtLandmark('tv'), AT.tv, 1.5, 0, '龟山电视塔', 'tv');
   tv.scale.x = tv.scale.z = 1.13;
   // Keep the exaggerated architectural footprints on the surveyed land side of the bank.
-  const qc      = place(builtLandmark('qc'), {x:AT.qc.x-7,z:AT.qc.z-5}, .92, Math.PI / 2, '晴川阁', 'qc', terrainTop(AT.qc.x,AT.qc.z)+2.18);
-  qc.scale.set(.85,.92,.60);
+  const qc      = place(builtLandmark('qc'), qcSite, 1, qcSite.yaw, '晴川阁', 'qc', qcSite.y+.3);
+  qc.scale.set(qcSite.scaleX,qcSite.scaleY,qcSite.scaleZ);
   {
     // Tie the main plinth and the gate into a single dressed river-side retaining course.
     const footing = new Acc();
-    footing.box(46.4, 4.0, 18.95, 4.0, -2.0, 2.43);
+    footing.box(46.4, 3.35, 18.95, 4.0, -1.675, 2.43);
     footing.box(46.7, .20, 19.23, 4.0, -.072, 2.43);
     const apron = footing.mesh(M.bankStone, false);
     apron.name = '晴川阁 · 禹功矶石台驳岸';

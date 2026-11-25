@@ -182,10 +182,12 @@
   }
 
   /* 水纹图保存横向距离、岸带与沿江航程。两江汇合处让不同方向的笔触都变淡。 */
-  const FN = 512, WR = { x: -1000, z: -1300, w: 2400, h: 2200 };
+  // Extend the atlas downstream at the existing texel density.
+  const FLOW_H = 512, FLOW_W = 640, WR = { x: -1000, z: -1300, w: 3000, h: 2200 };
+  const downstreamFade = '1090.,1610.';
   const [flowTex, driftTex] = (() => {
-    const data = new Uint8Array(FN * FN * 4);
-    const drift = new Uint8Array(FN * FN * 4);
+    const data = new Uint8Array(FLOW_W * FLOW_H * 4);
+    const drift = new Uint8Array(FLOW_W * FLOW_H * 4);
     function segments(samples, step) {
       const stations = samples.filter((_, i) => i % step === 0 || i === samples.length-1);
       let along = 0;
@@ -218,10 +220,10 @@
     const smooth=THREE.MathUtils.smoothstep;
     const byte = v => Math.round(Math.max(0,Math.min(1,v))*255);
     const LK = LAKES.map(L => L.filter((p, k) => k % 3 === 0));
-    for (let j2 = 0; j2 < FN; j2++) {
-      const z = WR.z + (j2 + .5) / FN * WR.h;
-      for (let i2 = 0; i2 < FN; i2++) {
-        const x = WR.x + (i2 + .5) / FN * WR.w;
+    for (let j2 = 0; j2 < FLOW_H; j2++) {
+      const z = WR.z + (j2 + .5) / FLOW_H * WR.h;
+      for (let i2 = 0; i2 < FLOW_W; i2++) {
+        const x = WR.x + (i2 + .5) / FLOW_W * WR.w;
         field(x,z,yangtze,yzField);
         field(x,z,han,hanField);
         const margin=hanField.band-yzField.band;
@@ -251,7 +253,7 @@
           lake = 1;
           break;
         }
-        const o = (j2 * FN + i2) * 4;
+        const o = (j2 * FLOW_W + i2) * 4;
         const cross=Math.round(THREE.MathUtils.clamp(signed/512+.5,0,1)*65535);
         data[o] = cross >> 8;
         data[o+1] = cross & 255;
@@ -265,7 +267,7 @@
       }
     }
     return [data,drift].map(bytes=>{
-      const tex=new THREE.DataTexture(bytes,FN,FN,THREE.RGBAFormat);
+      const tex=new THREE.DataTexture(bytes,FLOW_W,FLOW_H,THREE.RGBAFormat);
       tex.minFilter=tex.magFilter=THREE.LinearFilter;
       tex.needsUpdate=true;
       return tex;
@@ -361,6 +363,8 @@
           float wet = max(lake,smoothstep(-.12,.035,shore))*inR;
 
           float haze = smoothstep(uNear,uFar,vD);
+          // The mapped downstream reach runs east into paper, before the mask ends.
+          float riverFade = (1.-lake)*smoothstep(${downstreamFade},p.x);
           if(wet<.001){
             gl_FragColor=vec4(mix(uPaper,uFog,haze),1.);
             return;
@@ -451,7 +455,7 @@
             foam=max(foam,(v*.60+echo*.29*(1.-smoothstep(.30,.67,t))+prop*.32)*strength);
           }
           col=mix(col,mix(uPaper,vec3(1.,.985,.93),.58),wet*foam*mix(.95,.40,lake));
-          col = mix(col,uFog,haze);
+          col = mix(col,uFog,max(haze,riverFade));
           gl_FragColor = vec4(col, 1.);
         }`
     })
@@ -517,13 +521,24 @@
   }
   const coastCap = riverBanks();
 
+  // Let the ink outline dissolve with the downstream wash at the edge of the map.
+  const coastInk = [lineMat, lineMat2].map(base => {
+    const mat = base.clone();
+    mat.onBeforeCompile = shader => {
+      shader.vertexShader = 'varying float vEasting;\n'+shader.vertexShader.replace(
+        '#include <begin_vertex>', '#include <begin_vertex>\nvEasting = (modelMatrix * vec4(position, 1.)).x;');
+      shader.fragmentShader = 'varying float vEasting;\n'+shader.fragmentShader.replace(
+        '#include <color_fragment>', `#include <color_fragment>\ndiffuseColor.a *= 1.-smoothstep(${downstreamFade},vEasting);`);
+    };
+    return mat;
+  });
   /* 陆地：三镇分别成块，湖洞沿用水体掩膜。 */
   function landMesh(poly, holes) {
     const sh = new THREE.Shape(poly.map(p => coastCap.get(p) || p).map(p => new THREE.Vector2(p[0], -p[1])));
     (holes || []).forEach(h => sh.holes.push(new THREE.Path(h.map(p => new THREE.Vector2(p[0], -p[1])))));
     const g = new THREE.ExtrudeGeometry(sh, { depth: 1.3, bevelEnabled: false });
     g.rotateX(-Math.PI / 2);
-    const m = new THREE.Mesh(g, M.land); m.position.y = LAND_Y - 1.3; ink(m, 35);  // 挤出体的顶面与地形、街巷共用 LAND_Y
+    const m = new THREE.Mesh(g, M.land); m.position.y = LAND_Y - 1.3; ink(m, 35, ...coastInk);  // 挤出体的顶面与地形、街巷共用 LAND_Y
     m.raycast = function () {};
     return m;
   }
@@ -560,9 +575,28 @@
     const row = jj => crSpline(at(i - 1, jj), at(i, jj), at(i + 1, jj), at(i + 2, jj), fx);
     return Math.max(0, crSpline(row(j - 1), row(j), row(j + 1), row(j + 2), fz));
   }
+  // Align the long terrace face to the shore at the foot of Guishan.
+  const qcSite = {
+    x: AT.qc.x-9, z: AT.qc.z-5, y: LAND_Y+2.8, yaw: 1.16,
+    scaleX: .85, scaleY: .92, scaleZ: .60
+  };
+  const qcCos = Math.cos(qcSite.yaw), qcSin = Math.sin(qcSite.yaw);
+  function cutForQingchuan(x, z, y) {
+    const dx = x-qcSite.x, dz = z-qcSite.z;
+    const u = (qcCos*dx-qcSin*dz)/qcSite.scaleX, v = (qcSin*dx+qcCos*dz)/qcSite.scaleZ;
+    const side = Math.max(-24.7-u, u-27.7, 0);
+    const rear = Math.max(0, -7.7-v);
+    const front = Math.max(0, v-25);
+    const blend = THREE.MathUtils.smoothstep(Math.hypot(side*qcSite.scaleX, Math.max(rear,front)*qcSite.scaleZ), 0, 8);
+    if (blend === 1) return y;
+    // The uphill terrace meets the deck below its coping. The front lands at the bank walk.
+    const frontGrade = THREE.MathUtils.smoothstep(v, 3.5, 10.5);
+    const grade = THREE.MathUtils.lerp(qcSite.y-.16, LAND_Y+.07, frontGrade);
+    return Math.min(y, THREE.MathUtils.lerp(grade, y, blend));
+  }
   const hillGround = new Map();
   const HILLS = GEO.hills.map(t => {
-    const f = hillField(t), pk = geo(t.peak[0], t.peak[1]);
+    const f = hillField(t), pk = geo(t.peak[0], t.peak[1]), guishan = t.name === '龟山';
     const SUB = 3, cols = (f.nx - 1) * SUB + 1, rows = (f.nz - 1) * SUB + 1;
     const pos = new Float32Array(cols * rows * 3), idx = [], points = [];
     for (let j = 0; j < rows; j++) for (let i = 0; i < cols; i++) {
@@ -571,7 +605,8 @@
       const coast = groundSampler(coastGround, x, z);
       const y = LAND_Y + (.03+h)*toe - .075*(1-toe);
       pos[k] = x - pk.x;
-      pos[k+1] = Number.isFinite(coast) || !onLand(x,z) ? -.12 : cutForApproach(x,z,y);
+      const grade = guishan ? cutForQingchuan(x,z,y) : y;
+      pos[k+1] = Number.isFinite(coast) || !onLand(x,z) ? -.12 : cutForApproach(x,z,grade);
       pos[k+2] = z - pk.z;
       points.push([x, pos[k+1], z]);
     }
@@ -598,6 +633,19 @@
   const reliefAt = (x, z) => Math.max(0, terrainTop(x, z)-LAND_Y);
   const plantingSurface = (x, z) => onLand(x, z) ? Math.max(landSurface(x, z), groundSampler(shoulderGround, x, z)) : null;
 
+  // Keep a continuous low corridor through the distant washes, including the eastward bend.
+  function riverClearance(x, z) {
+    let clearance = Infinity;
+    for (let i = 0; i < YZ.s.length-1; i += 3) {
+      const a = YZ.s[i], b = YZ.s[Math.min(i+3,YZ.s.length-1)];
+      const dx = b.p.x-a.p.x, dz = b.p.z-a.p.z, lengthSq = dx*dx+dz*dz;
+      const t = THREE.MathUtils.clamp(((x-a.p.x)*dx+(z-a.p.z)*dz)/lengthSq,0,1);
+      const across = Math.hypot(x-a.p.x-t*dx,z-a.p.z-t*dz);
+      clearance = Math.min(clearance, across-THREE.MathUtils.lerp(a.w,b.w,t));
+    }
+    return THREE.MathUtils.smoothstep(clearance, 35, 210);
+  }
+
   // 远山：层层淡出，烘托「烟波浩渺」
   [
     { z:  -980, tone: .24, n: 10, h: 48, w: 300 },
@@ -608,7 +656,13 @@
     const mat = inkMat(.82 + Lr.tone * .15, false, null, null, { foot: 1 });
     for (let i = 0; i < Lr.n; i++) {
       const x = (i - (Lr.n - 1) / 2) * Lr.w * .95 + (rnd() - .5) * 200 + 200;
-      const ridge = ellipsoid(Lr.w * (.6 + rnd() * .5), Lr.h * (.55 + rnd() * .7), Lr.w * .35, x, -6, Lr.z + (rnd() - .5) * 160, mat, 20);
+      const ridge = ellipsoid(Lr.w * (.6 + rnd() * .5), Lr.h * (.55 + rnd() * .7), Lr.w * .35, x, -6, Lr.z + (rnd() - .5) * 160, mat, 40);
+      const vertices = ridge.geometry.attributes.position;
+      for (let j = 0; j < vertices.count; j++) {
+        const worldX = x+vertices.getX(j), worldZ = ridge.position.z+vertices.getZ(j);
+        vertices.setY(j,vertices.getY(j)*riverClearance(worldX,worldZ));
+      }
+      ridge.geometry.computeVertexNormals();
       ridge.userData.landscapeSurface = { group: '远山', name: '远岭 ' + Lr.z + ' · ' + (i+1), material: 'DistantRidge' };
       scene.add(ridge);
     }
