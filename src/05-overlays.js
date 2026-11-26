@@ -3,6 +3,11 @@
     const labelBox = document.getElementById('labels');
     // 汉水题记落在实测河心上：取 GEO.hanshui 中离该经度最近的一点，数据重生成后也跟着走
     const hanLabel = lon => GEO.hanshui.reduce((a, p) => Math.abs(p[0] - lon) < Math.abs(a[0] - lon) ? p : a).slice(0, 2);
+    // 拉远到整幅地块后，把三镇题在各自腹地，东湖仍题在实测湖面。
+    const overviewAnchors = {
+      '汉口': V(-700, 1, -1500), '汉阳': V(-1320, 1, 900), '武昌': V(1280, 1, 1550),
+      '东湖': V(lakeC.x, 1, lakeC.z)
+    };
     const LABELS = [
       ['汉口', 114.2820, 30.5990, 'town', 26],
       ['汉阳', 114.2610, 30.5430, 'town', 18],
@@ -21,7 +26,7 @@
       const p = geo(L[1], L[2]);
       const h = HILL[L[0]];                               // 山名题在该山最高处之上 7 个单位，随实测山高
       const y = L[3] === 'hill' ? (h ? LAND_Y + h.f.a.reduce((m, v) => Math.max(m, v), 0) : terrainTop(p.x, p.z)) + 7 : L[4];
-      return { el, v: new THREE.Vector3(p.x, y, p.z), kind: L[3] };
+      return { el, v: new THREE.Vector3(p.x, y, p.z), kind: L[3], overview: overviewAnchors[L[0]] };
     });
     /* 地标竖牌 */
     const markBox = document.getElementById('marks');
@@ -66,8 +71,8 @@
     const gap = 8;
     const collides = (a, b) => a.left < b.right + gap && a.right + gap > b.left && a.top < b.bottom + gap && a.bottom + gap > b.top;
     const within = (r, w, h) => r.left >= gap && r.right <= w - gap && r.top >= gap && r.bottom <= h - gap;
-    function screenRect(item, centered) {
-      projV.copy(item.v).project(camera);
+    function screenRect(item, centered, point = item.v) {
+      projV.copy(point).project(camera);
       const x = Math.round((projV.x * .5 + .5) * viewportWidth * 10) / 10;
       const y = Math.round((-projV.y * .5 + .5) * viewportHeight * 10) / 10;
       return { x, y, left: x - item.width / 2, right: x + item.width / 2,
@@ -125,12 +130,18 @@
       if (activeView === 'bridge' && towerRect) placed.push(towerRect);
       return placed;
     }
+    const labelPoint = new THREE.Vector3();
     function drawLabels(w, h, marks, blocks, activeView) {
       const placed = [];
       const broadView = activeView === 'home' || activeView === 'core' || activeView === 'lake';
+      const overview = activeView === 'home' && w < h
+        ? THREE.MathUtils.smoothstep(camera.position.distanceTo(controls.target), 2800, 4200) : 0;
       LABELS.forEach(L => {
-        const r = screenRect(L, true), d = camera.position.distanceTo(L.v), range = RANGE[L.kind];
-        const o = THREE.MathUtils.smoothstep(d, range[0] * .55, range[0]) * (1 - THREE.MathUtils.smoothstep(d, range[1], range[1] * 1.35));
+        labelPoint.copy(L.v);
+        if (L.overview) labelPoint.lerp(L.overview, overview);
+        const r = screenRect(L, true, labelPoint), d = camera.position.distanceTo(labelPoint), range = RANGE[L.kind];
+        const cityOpacity = THREE.MathUtils.smoothstep(d, range[0] * .55, range[0]) * (1 - THREE.MathUtils.smoothstep(d, range[1], range[1] * 1.35));
+        const o = L.overview ? Math.max(overview, cityOpacity) : cityOpacity;
         const visible = (L.kind !== 'town' || broadView) && (activeView !== 'home' || L.kind !== 'hill') && !(activeView === 'qc' && L.el.textContent === '汉水') && o > .01 && L.width > 0 && r.inDepth && within(r, w, h)
           && ![...marks, ...blocks, ...placed].some(block => collides(r, block));
         L.el.style.visibility = visible ? 'visible' : 'hidden';

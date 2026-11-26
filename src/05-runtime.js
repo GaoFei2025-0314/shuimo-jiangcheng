@@ -91,6 +91,11 @@
   pickables.forEach(object => { viewBounds[object.userData.focus] = new THREE.Box3().setFromObject(object); });
   viewBounds.home = pickables.filter(object => object.userData.focus !== 'lake')
     .map(object => viewBounds[object.userData.focus]);
+  // 竖幅全城需要容纳完整的三镇与东湖，地标的包围盒没有覆盖远岸。
+  const portraitMapBounds = new THREE.Box3(), shorePoint = new THREE.Vector3();
+  for (const ring of [HANKOU, HANYANG, WUCHANG, LAKES[0]]) {
+    for (const [x, z] of ring) portraitMapBounds.expandByPoint(shorePoint.set(x, LAND_Y, z));
+  }
   // Follow the curve as well as the straight truss. A single box around both banks
   // would fit a large empty rectangle beside the Hanyang approach.
   const bridgeSlices = new Map(), bridgePoint = new THREE.Vector3();
@@ -105,7 +110,7 @@
   }
   const bridgeBounds = [...bridgeSlices.values()];
   viewBounds.core = [viewBounds.tower, viewBounds.qc, viewBounds.tv, ...bridgeBounds];
-  const isFramed = key => layout.compact || (key !== 'home' && key !== 'lake');
+  const isFramed = key => layout.compact || (W < H && key === 'home') || (key !== 'home' && key !== 'lake');
   // 以较低的俯角纳入江天地平线，控制近桥的透视变形。
   function mapFov(key) {
     // 两江和黄鹤楼共用镜头，从江面手动回到西园时，同一机位仍指向同一座建筑。
@@ -128,7 +133,10 @@
     // 竖屏沿龟蛇两山的轴线取景，让地标前后展开。
     let base = VIEWS[key];
     if (W < H && key === 'core') base = orbit(geo(114.2855, 30.5528), 32, 440, 55, 14);
-    if (W < H && key === 'home') base = orbit({ x: 245, z: -105 }, 16, 1100, 49, 14);
+    if (W < H && key === 'home') {
+      const northUp = orbit({ x: 0, z: 0 }, 0, 1, 0, 25);
+      return fittedView(northUp, portraitMapBounds, safeRect, W, H, mapFov(key), .98);
+    }
     // Look east across the full lake: its long axis fills the vertical page.
     const portraitLake = W < H && key === 'lake';
     if (portraitLake) base = orbit(lakeC, 3, 560, 266, 59);
@@ -546,20 +554,26 @@
     safeRect = measured.rect; uiBlocks = measured.blocks; layoutDirty = false;
     overlays.invalidate();
     const framed = isFramed(activeView);
-    const signature = [framed, W, H, ...Object.values(safeRect)].join(',');
+    // 竖幅全城把主点压到安全区下半部：让岸线展开，同时把地平线留在上方。
+    const portraitOverview = activeView === 'home' && W < H;
+    const signature = [framed, portraitOverview, W, H, ...Object.values(safeRect)].join(',');
     if (signature === layoutSignature) return;
     layoutSignature = signature;
     sceneDirty = true;
     if (framed) {
-      const cx = (safeRect.left + safeRect.right) / 2, cy = (safeRect.top + safeRect.bottom) / 2;
+      const cx = (safeRect.left + safeRect.right) / 2;
+      const cy = THREE.MathUtils.lerp(safeRect.top, safeRect.bottom, portraitOverview ? .70 : .5);
       camera.setViewOffset(W, H, W / 2 - cx, H / 2 - cy, W, H);
     } else camera.clearViewOffset();
-    if (layout.compact) {
+    if (layout.compact || W < H) {
       const home = viewFor('home'), distance = home.pos.distanceTo(home.target);
       controls.maxDistance = Math.max(2600, distance * 1.4);
-      // 用全城画幅覆盖的宽度标定牌签距离，广角拉近后，东湖远岸仍可点选。
+      // 地标牌签仍以建成区的距离分级，整块陆地入画时留给地名题记。
+      const landmarkView = W < H
+        ? fittedView(VIEWS.home, viewBounds.home, safeRect, W, H, mapFov('home'), .92)
+        : home;
       const halfAngle = Math.PI / 360;
-      const coverage = distance * Math.tan(mapFov('home') * halfAngle) / Math.tan((W / H < .9 ? 52 : 38) * halfAngle);
+      const coverage = landmarkView.pos.distanceTo(landmarkView.target) * Math.tan(mapFov('home') * halfAngle) / Math.tan((W / H < .9 ? 52 : 38) * halfAngle);
       markFarScale = Math.max(1, coverage / 1500);
     } else {
       controls.maxDistance = 2600; markFarScale = 1;
@@ -934,8 +948,11 @@
     // Limit the near plane by both height and viewing distance when descending or zooming in.
     const clipNear = THREE.MathUtils.clamp(.01 * Math.min(camera.position.y - floorY, dist), .5, 12);
     const streetFov=THREE.MathUtils.lerp(lens.fov,camera.aspect<.9?66:51,streetView*(1.-THREE.MathUtils.smoothstep(dist,32,67)));
-    if (Math.abs(camera.near - clipNear) > .04 || Math.abs(camera.fov-streetFov)>.08) {
+    // 完整地块在竖幅全城里超过默认远裁面，飞回城区时随镜头收回。
+    const clipFar = Math.max(9000, dist + 4500);
+    if (camera.far !== clipFar || Math.abs(camera.near - clipNear) > .04 || Math.abs(camera.fov-streetFov)>.08) {
       camera.fov=streetFov;
+      camera.far = clipFar;
       camera.near = clipNear;
       camera.updateProjectionMatrix();
     }

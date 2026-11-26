@@ -207,6 +207,36 @@ for (const [width, height] of [[1440,900], [1280,720], [390,844], [844,390]]) {
   });
 }
 
+test('the portrait overview fits all three town outlines and East Lake across the map area', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await openMap(page);
+  await page.locator('#b-home').click();
+  const bounds = await page.evaluate(async () => {
+    await new Promise(done => requestAnimationFrame(() => requestAnimationFrame(done)));
+    const { HANKOU, HANYANG, WUCHANG, LAKES, LAND_Y, camera } = window.__dbg;
+    const box = new THREE.Box3(), point = new THREE.Vector3();
+    for (const ring of [HANKOU, HANYANG, WUCHANG, LAKES[0]]) {
+      for (const [x, z] of ring) {
+        point.set(x, LAND_Y, z).project(camera);
+        box.expandByPoint(point.set((point.x + 1) * innerWidth / 2, (1 - point.y) * innerHeight / 2, point.z));
+      }
+    }
+    const top = Math.max(...['title', 'sound'].map(id => document.getElementById(id).getBoundingClientRect().bottom)) + 8;
+    return { min: box.min.toArray(), max: box.max.toArray(), top,
+      bottom: document.getElementById('dock').getBoundingClientRect().top - 8 };
+  });
+  expect(bounds.min[0]).toBeGreaterThanOrEqual(16);
+  expect(bounds.max[0]).toBeLessThanOrEqual(390 - 16);
+  expect(bounds.max[0] - bounds.min[0]).toBeGreaterThanOrEqual(390 * .70);
+  expect(bounds.min[1]).toBeGreaterThanOrEqual(bounds.top);
+  expect(bounds.max[1]).toBeLessThanOrEqual(bounds.bottom);
+  expect(bounds.min[2]).toBeGreaterThan(-1);
+  expect(bounds.max[2]).toBeLessThan(1);
+  for (const name of ['汉口', '汉阳', '武昌', '东湖']) {
+    await expect(page.locator('#labels b').filter({ hasText: name })).toBeVisible();
+  }
+});
+
 test('the foreground suspension bridge clears the desktop guide on entry', async ({ page }) => {
   await openMap(page);
   for (const [width, height] of [[1440,900], [1280,720]]) {
