@@ -123,7 +123,17 @@
       vec4 mv = viewMatrix * w; vD = -mv.z;
       gl_Position = projectionMatrix * mv;
     }`;
-  const inkFrag = NOISE + `
+  // 三镇测绘边缘和外围平原共用一层墨，河岸勾线也在同一带收笔。
+  const surveyMargin = `
+    float surveyMargin(vec2 p){return smoothstep(1250.,1850.,length(p));}
+  `;
+  const plainWash = surveyMargin + `
+    vec3 plainWash(vec3 paper,vec2 p){
+      float wash = vnoise(p * vec2(.00043,.0016) + .65*vnoise(p*.0008));
+      return paper*(.975-.065*wash);
+    }
+  `;
+  const inkFrag = NOISE + plainWash + `
     #ifdef RIDGE_CLOUD
       varying vec2 vRidge;
     #endif
@@ -266,6 +276,7 @@
         col *= mix(1.,weathering,1.-smoothstep(62.,165.,vD));
       #endif
       #ifdef COURT_EARTH
+        col = mix(col, plainWash(uFog,vW.xz), surveyMargin(vW.xz));
         float toLane=min(length(vW.xz-vec2(-215.,39.)),length(vW.xz-vec2(-65.,81.)));
         float earthMix=(1.-smoothstep(39.,68.,toLane))*(1.-smoothstep(100.,170.,vD));
         if(earthMix>.001){

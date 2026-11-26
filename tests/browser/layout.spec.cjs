@@ -270,3 +270,112 @@ test('the resting poem returns for keyboard readers', async ({ page }) => {
   await expect(page.locator('#poem')).toBeFocused();
   await expect(line).toHaveCSS('opacity', '1');
 });
+
+for (const [width, height] of [[1440, 900], [1280, 720], [390, 844], [844, 390]]) {
+  test(`home and core ground extends into the fog before the far clip at ${width}x${height}`, async ({ page }) => {
+    await page.setViewportSize({ width, height });
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    await ready(page);
+    for (const key of ['home', 'core']) {
+      await page.locator('#b-' + key).click();
+      const ranges = await page.evaluate(async () => {
+        await new Promise(done => requestAnimationFrame(() => requestAnimationFrame(done)));
+        const scene = window.__testScene, camera = window.__testCamera;
+        const water = scene.children.find(mesh => mesh.material?.uniforms?.uFlow);
+        const towns = scene.children.filter(mesh => mesh.geometry?.type === 'ExtrudeGeometry');
+        const relief = scene.children.filter(mesh => ['三镇河岸', '远山', '山林'].includes(mesh.userData.landscapeSurface?.group));
+        const point = new THREE.Vector3();
+        let furthest = 0;
+        for (const mesh of [water, ...towns, ...relief]) {
+          mesh.geometry.computeBoundingBox();
+          const { min, max } = mesh.geometry.boundingBox;
+          for (const x of [min.x, max.x]) for (const y of [min.y, max.y]) for (const z of [min.z, max.z]) {
+            point.set(x, y, z).applyMatrix4(mesh.matrixWorld);
+            furthest = Math.max(furthest, camera.position.distanceTo(point));
+          }
+        }
+        // At full fog depth the level ground must still cover both sides of the frame.
+        // Moving only the far clip leaves the surveyed rectangle floating in the sky.
+        const fogFar = water.material.uniforms.uFar.value;
+        const base = new THREE.Box3().setFromObject(water);
+        const atFog = [-1, 0, 1].map(x => {
+          const ray = new THREE.Raycaster();
+          ray.setFromCamera(new THREE.Vector2(x, 0), camera);
+          const forward = camera.getWorldDirection(new THREE.Vector3());
+          const right = new THREE.Vector3().setFromMatrixColumn(camera.matrixWorld, 0);
+          const lateral = fogFar * ray.ray.direction.dot(right) / ray.ray.direction.dot(forward);
+          const floorDepth = (fogFar + camera.position.y * forward.y) / Math.hypot(forward.x, forward.z);
+          const sample = forward.setY(0).normalize().multiplyScalar(floorDepth)
+            .addScaledVector(right, lateral).add(camera.position);
+          return base.containsPoint(sample.setY(base.getCenter(point).y));
+        });
+        return { towns: towns.length, relief: relief.length, furthest, far: camera.far, fogFar, atFog };
+      });
+      expect(ranges.towns).toBeGreaterThanOrEqual(3);
+      expect(ranges.relief).toBeGreaterThan(0);
+      expect.soft(ranges.furthest, key + ' terrain corners').toBeLessThan(ranges.far);
+      expect.soft(ranges.fogFar, key + ' full fog depth').toBeLessThanOrEqual(ranges.far);
+      expect.soft(ranges.atFog, key + ' ground across the mist').toEqual([true, true, true]);
+    }
+  });
+}
+
+test('the painted mountain feet dissolve into the ground fog', async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await ready(page);
+  const bands = page.locator('#far-hills .far-hill');
+  await expect.poll(() => bands.evaluateAll(nodes => nodes.filter(el => el.style.backgroundImage).length)).toBe(3);
+  const bottomAlpha = await bands.evaluateAll(async nodes => Promise.all(nodes.map(async el => {
+    const image = new Image();
+    image.src = el.style.backgroundImage.match(/blob:[^")]+/)[0];
+    await image.decode();
+    const canvas = document.createElement('canvas'), ctx = canvas.getContext('2d');
+    ctx.drawImage(image, 0, image.height - 1, 1, 1, 0, 0, 1, 1);
+    return ctx.getImageData(0, 0, 1, 1).data[3];
+  })));
+  expect(bottomAlpha).toEqual([0, 0, 0]);
+});
+
+test('river ink fades across both upstream water atlas boundaries', async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await ready(page);
+  const reaches = await page.evaluate(() => {
+    const renderer = window.__testRenderer;
+    const water = window.__testScene.children.find(mesh => mesh.material?.uniforms?.uFlow);
+    const sheet = new THREE.Scene();
+    sheet.add(water.clone(false));
+    const target = new THREE.WebGLRenderTarget(5, 5), previous = renderer.getRenderTarget();
+    const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 1, 160);
+    camera.up.set(0, 0, -1);
+    const pixels = new Uint8Array(5 * 5 * 4);
+    function green([x, z]) {
+      camera.position.set(x, 80, z);
+      camera.lookAt(x, 0, z);
+      renderer.render(sheet, camera);
+      renderer.readRenderTargetPixels(target, 0, 0, 5, 5, pixels);
+      let sum = 0;
+      for (let i = 1; i < pixels.length; i += 4) sum += pixels[i];
+      return sum / 25;
+    }
+    // Follow the measured channels from two units outside to two units inside the atlas,
+    // then continue along their centrelines, where the original water wash must remain.
+    const channels = {
+      Yangtze: [[-794,902], [-791,898], [-784,888], [-775,876], [-758,856], [-738,836]],
+      Han: [[-1002,-482], [-998,-484], [-988,-489], [-976,-492], [-956,-493], [-936,-483]]
+    };
+    try {
+      renderer.setRenderTarget(target);
+      return Object.fromEntries(Object.entries(channels).map(([river, points]) => [river, points.map(green)]));
+    } finally {
+      renderer.setRenderTarget(previous);
+      target.dispose();
+    }
+  });
+  for (const [river, [plain, edge, ...inside]] of Object.entries(reaches)) {
+    const pigment = plain - inside.at(-1);
+    expect.soft(Math.abs(plain - edge), river + ' colour jump across the atlas boundary').toBeLessThan(5);
+    expect.soft(pigment, river + ' ink within the painted reach').toBeGreaterThan(16);
+    expect.soft(inside.some(value => plain - value > pigment * .08 && plain - value < pigment * .9),
+      river + ' intermediate wash between plain and river').toBe(true);
+  }
+});

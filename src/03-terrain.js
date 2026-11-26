@@ -306,7 +306,7 @@
     uWindDirection: { value: new THREE.Vector2(4.4, 2.8).normalize() }
   };
   const waterU = Object.assign({
-    ...weatherU, uBoats: { value: boatU }, uBoatWake: { value: boatWakeU },
+    ...weatherU, uPlainRadius: { value: 1 }, uBoats: { value: boatU }, uBoatWake: { value: boatWakeU },
     uFlow: { value: flowTex }, uDrift: { value: driftTex },
     uQuaySpurs: { value: Array.from({length: 3}, () => new THREE.Vector4()) },
     uQuayOut: { value: new THREE.Vector2() },
@@ -317,13 +317,13 @@
     uRect: { value: new THREE.Vector4(WR.x, WR.z, WR.w, WR.h) }
   }, fogU, camU, sharedInk);
   const water = new THREE.Mesh(
-    new THREE.PlaneGeometry(X1 - X0 + 900, ZBOT - ZTOP + 900),
+    new THREE.PlaneGeometry(2, 2),
     new THREE.ShaderMaterial({
       uniforms: waterU,
       vertexShader: `varying vec3 vW; varying float vD;
         void main(){ vec4 w = modelMatrix * vec4(position,1.); vW = w.xyz; vec4 mv = viewMatrix * w; vD = -mv.z; gl_Position = projectionMatrix * mv; }`,
-      fragmentShader: NOISE + `
-        uniform vec3 uFog, uInk, uPaper; uniform float uNear, uFar, uTime;
+      fragmentShader: NOISE + plainWash + `
+        uniform vec3 uFog, uInk, uPaper; uniform float uNear, uFar, uTime, uPlainRadius;
         uniform vec2 uWindDirection, uBoats[6]; uniform vec4 uBoatWake[6], uRect;
         uniform vec4 uCutwaterRow, uCutwaterFlow, uQuaySpurs[3];
         uniform vec2 uQuayOut;
@@ -474,8 +474,11 @@
           float haze = smoothstep(uNear,uFar,vD);
           // The mapped downstream reach runs east into paper, before the mask ends.
           float riverFade = (1.-lake)*smoothstep(${downstreamFade},p.x);
+          vec3 ground = mix(uPaper,plainWash(uFog,p),surveyMargin(p));
           if(wet<.001){
-            gl_FragColor=vec4(mix(uPaper,uFog,haze),1.);
+            // 远端只剩纸雾，与画布后的远山山脚叠合；方形网格边缘完全透明。
+            float alpha = 1.-smoothstep(.68, .98, length(p-uCam.xz)/uPlainRadius);
+            gl_FragColor=vec4(mix(ground,uFog,haze)*alpha,alpha);
             return;
           }
           vec3 base = uPaper;
@@ -579,13 +582,16 @@
             foam=max(foam,(v*.60+echo*.29*(1.-smoothstep(.30,.67,t))+prop*.32)*strength);
           }
           col=mix(col,mix(uPaper,vec3(1.,.985,.93),.58),wet*foam*mix(.95,.40,lake));
-          col = mix(col,uFog,max(haze,riverFade));
+          // 两江上游越过测绘纹理边界时，最后一段河墨渐收进同一层平原底色。
+          vec2 margin = min(p-uRect.xy, uRect.xy+uRect.zw-p);
+          float reach = smoothstep(0.,60.,min(margin.x,margin.y))*(1.-riverFade);
+          col = mix(mix(ground,col,reach),uFog,haze);
           gl_FragColor = vec4(col, 1.);
         }`
     })
   );
   water.rotation.x = -Math.PI / 2;
-  water.position.set((X0 + X1) / 2, 0, (ZTOP + ZBOT) / 2);
+  water.name = '江湖与雾中平原';
   scene.add(water);
 
   /* 岸脚接原水线，岸顶接回三镇陆块。分带退入陆侧，桥下江宽不变。 */
@@ -664,10 +670,10 @@
   const coastInk = [lineMat, lineMat2].map(base => {
     const mat = base.clone();
     mat.onBeforeCompile = shader => {
-      shader.vertexShader = 'varying float vEasting;\n'+shader.vertexShader.replace(
-        '#include <begin_vertex>', '#include <begin_vertex>\nvEasting = (modelMatrix * vec4(position, 1.)).x;');
-      shader.fragmentShader = 'varying float vEasting;\n'+shader.fragmentShader.replace(
-        '#include <color_fragment>', `#include <color_fragment>\ndiffuseColor.a *= 1.-smoothstep(${downstreamFade},vEasting);`);
+      shader.vertexShader = 'varying vec2 vBankXZ;\n'+shader.vertexShader.replace(
+        '#include <begin_vertex>', '#include <begin_vertex>\nvBankXZ = (modelMatrix * vec4(position, 1.)).xz;');
+      shader.fragmentShader = surveyMargin + 'varying vec2 vBankXZ;\n'+shader.fragmentShader.replace(
+        '#include <color_fragment>', `#include <color_fragment>\ndiffuseColor.a *= (1.-surveyMargin(vBankXZ))*(1.-smoothstep(${downstreamFade},vBankXZ.x));`);
     };
     return mat;
   });

@@ -87,6 +87,7 @@
   const walkSelect=document.getElementById('walk-view');
   const layout = createMapLayout(() => { layoutDirty = true; }, leaveWalk);
   scene.updateMatrixWorld(true);
+  const surveyRadius = Math.hypot(Math.max(-X0, X1), Math.max(-ZTOP, ZBOT));
   const viewBounds = {};
   pickables.forEach(object => { viewBounds[object.userData.focus] = new THREE.Box3().setFromObject(object); });
   viewBounds.home = pickables.filter(object => object.userData.focus !== 'lake')
@@ -134,7 +135,7 @@
     let base = VIEWS[key];
     if (W < H && key === 'core') base = orbit(geo(114.2855, 30.5528), 32, 440, 55, 14);
     if (W < H && key === 'home') {
-      const northUp = orbit({ x: 0, z: 0 }, 0, 1, 0, 25);
+      const northUp = orbit({ x: 0, z: 0 }, 0, 1, 0, 18);
       return fittedView(northUp, portraitMapBounds, safeRect, W, H, mapFov(key), .98);
     }
     // Look east across the full lake: its long axis fills the vertical page.
@@ -582,14 +583,14 @@
     overlays.invalidate();
     sceneDirty = true; // 字体或控件可改变避让区域，即使安全区四边不动。
     const framed = isFramed(activeView);
-    // 竖幅全城把主点压到安全区下半部：让岸线展开，同时把地平线留在上方。
+    // 竖幅全城把三镇放在导览与题头之间，给横贯画幅的江面留出纵深。
     const portraitOverview = activeView === 'home' && W < H;
     const signature = [framed, portraitOverview, W, H, ...Object.values(safeRect)].join(',');
     if (signature === layoutSignature) return;
     layoutSignature = signature;
     if (framed) {
       const cx = (safeRect.left + safeRect.right) / 2;
-      const cy = THREE.MathUtils.lerp(safeRect.top, safeRect.bottom, portraitOverview ? .70 : .5);
+      const cy = THREE.MathUtils.lerp(safeRect.top, safeRect.bottom, portraitOverview ? .55 : .5);
       camera.setViewOffset(W, H, W / 2 - cx, H / 2 - cy, W, H);
     } else camera.clearViewOffset();
     if (layout.compact || W < H) {
@@ -986,14 +987,6 @@
     // Limit the near plane by both height and viewing distance when descending or zooming in.
     const clipNear = THREE.MathUtils.clamp(.01 * Math.min(camera.position.y - floorY, dist), .5, 12);
     const streetFov=THREE.MathUtils.lerp(lens.fov,camera.aspect<.9?66:51,streetView*(1.-THREE.MathUtils.smoothstep(dist,32,67)));
-    // 完整地块在竖幅全城里超过默认远裁面，飞回城区时随镜头收回。
-    const clipFar = Math.max(9000, dist + 4500);
-    if (camera.far !== clipFar || Math.abs(camera.near - clipNear) > .04 || Math.abs(camera.fov-streetFov)>.08) {
-      camera.fov=streetFov;
-      camera.far = clipFar;
-      camera.near = clipNear;
-      camera.updateProjectionMatrix();
-    }
     // The ridge is close behind the Red Chamber. Keep the brick facade clear and wash the farther slope.
     const atRedChamber = 1 - THREE.MathUtils.smoothstep(Math.hypot(
       controls.target.x-honglou.position.x, controls.target.z-honglou.position.z), 10, 32);
@@ -1006,6 +999,21 @@
     // 近岭比城区更远，保留其山腹墨色；进入街巷时仍随江岸一起入雾。
     ridgeFogFar.value = THREE.MathUtils.lerp(Math.max(fogU.uFar.value, 3400), fogU.uFar.value, streetView);
     scene.fog.near = fogU.uNear.value; scene.fog.far = fogU.uFar.value;
+
+    // 平原随镜头铺至完整雾带。把测绘地块包在不透明区，最外圈才与纸色山脚渐融。
+    const halfWidth = Math.tan(THREE.MathUtils.degToRad(streetFov / 2)) * camera.aspect;
+    const groundRadius = Math.max(Math.hypot(camera.position.x, camera.position.z) + surveyRadius,
+      fogU.uFar.value * Math.hypot(1, halfWidth)) * 1.5;
+    water.position.set(camera.position.x, 0, camera.position.z);
+    water.scale.set(groundRadius, groundRadius, 1);
+    waterU.uPlainRadius.value = groundRadius;
+    const clipFar = Math.ceil(Math.hypot(groundRadius, groundRadius, camera.position.y)) + 1;
+    if (camera.far !== clipFar || Math.abs(camera.near - clipNear) > .04 || Math.abs(camera.fov-streetFov)>.08) {
+      camera.fov=streetFov;
+      camera.far = clipFar;
+      camera.near = clipNear;
+      camera.updateProjectionMatrix();
+    }
 
     controls.update();
     // Reduced motion freezes the water, wind, boats and birds. Repaint the geometry on a

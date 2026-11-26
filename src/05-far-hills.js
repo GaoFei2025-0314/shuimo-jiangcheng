@@ -2,6 +2,8 @@
   function createFarHills(element) {
     const width = 2400, height = 260, turn = 2 * Math.PI;
     element.replaceChildren();
+    const footAlpha = Uint8ClampedArray.from({length: height}, (_, y) =>
+      255 * (1 - THREE.MathUtils.smoothstep(y, height * .60, height - 1)));
     function paint(layer, speed, ink) {
       const canvas = document.createElement('canvas');
       canvas.width = width; canvas.height = height;
@@ -26,7 +28,7 @@
           pixels.data[i] = 242 - 211 * wash;
           pixels.data[i + 1] = 239 - 209 * wash;
           pixels.data[i + 2] = 230 - 203 * wash;
-          pixels.data[i + 3] = y === edge ? (1 - (crest[x] - edge)) * 255 * dry : 255;
+          pixels.data[i + 3] = y === edge ? (1 - (crest[x] - edge)) * 255 * dry : footAlpha[y];
         }
       }
       ctx.putImageData(pixels, 0, 0);
