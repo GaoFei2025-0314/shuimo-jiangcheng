@@ -86,3 +86,52 @@ test('far hills are built once even after a retry', async ({ page }) => {
   await expect.poll(() => page.evaluate(() => window.__ready), STARTUP).toBe(true);
   await expect(page.locator('#far-hills .far-hill')).toHaveCount(3);
 });
+
+async function sunAtRidge(page) {
+  return page.evaluate(() => {
+    const sun = document.getElementById('sun'), rect = sun.getBoundingClientRect();
+    const ridge = window.__dbg.farHills.ridgeTopAt(rect.x + rect.width / 2);
+    return { visible: Number(getComputedStyle(sun).opacity) > 0, bottom: rect.bottom, limit: ridge + .15 * rect.height };
+  });
+}
+
+test('the cinnabar sun clears the far ridges', async ({ page }) => {
+  await openMap(page);
+  for (const [width, height] of [[1456,788], [390,844], [844,390]]) {
+    await page.setViewportSize({ width, height });
+    await page.locator('#b-qc').click();
+    let visible = 0;
+    for (const [pitch, yaw, distance] of [[6,-30,130], [11,70,580], [14,-130,330]]) {
+      await orbit(page, pitch, yaw, distance);
+      const sun = await sunAtRidge(page);
+      if (!sun.visible) continue;
+      visible++;
+      expect(sun.bottom).toBeLessThanOrEqual(sun.limit);
+    }
+    expect(visible).toBeGreaterThan(0);
+  }
+});
+
+test('resizing reflows the hills and sun at once', async ({ page }) => {
+  await openMap(page);
+  await page.locator('#b-qc').click();
+  await orbit(page, 11, 70, 580);
+  await page.setViewportSize({ width: 390, height: 844 });
+  const result = await page.evaluate(async () => {
+    await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    const { farHills, camera, controls } = window.__dbg;
+    const before = farHills.ridgeTopAt(195), sun = document.getElementById('sun');
+    const direction = camera.getWorldDirection(new THREE.Vector3());
+    direction.y = 0;
+    const point = direction.normalize().multiplyScalar(1e5).add(camera.position).project(camera);
+    const horizonY = (1 - point.y) * innerHeight / 2;
+    const fit = THREE.MathUtils.clamp((horizonY - 8) / (sun.offsetTop + sun.offsetHeight), 0, 1);
+    farHills.update({ horizonY, azimuth: controls.getAzimuthalAngle(), fit, streetView: 0, width: innerWidth, height: innerHeight });
+    return { before, after: farHills.ridgeTopAt(195) };
+  });
+  expect(Number.isFinite(result.before)).toBe(true);
+  expect(result.before).toBeCloseTo(result.after, 3);
+  const sun = await sunAtRidge(page);
+  expect(sun.visible).toBe(true);
+  expect(sun.bottom).toBeLessThanOrEqual(sun.limit);
+});

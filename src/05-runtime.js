@@ -488,7 +488,7 @@
   riverSky.style.backgroundImage='url('+riverSkyImage+')';
   const farHills = createFarHills(document.getElementById('far-hills'));
   app.cleanups.push(() => farHills.dispose());
-  let sunExtent = 1;
+  let sunExtent = 1, sunDiameter = 1;
   const riverSun=new THREE.Vector3(-1,.20,.42).normalize(), skyPoint=new THREE.Vector3();
   function fitSunToSky(streetView) {
     // Project a horizontal sightline using the same off-centre lens as the map.
@@ -499,14 +499,21 @@
     skyPoint.copy(camera.position).addScaledVector(riverSun,900).project(camera);
     const visible=skyPoint.z<1 && skyPoint.z>-1 ? 1.-THREE.MathUtils.smoothstep(Math.abs(skyPoint.x),.88,1.15) : 0;
     const position=THREE.MathUtils.clamp(50+50*skyPoint.x,-15,115);
-    sun.style.left=THREE.MathUtils.lerp(64,position,streetView).toFixed(2)+'%';
+    const left = THREE.MathUtils.lerp(64, position, streetView);
+    sun.style.left = left + '%';
     // A distant cinnabar dab sits behind the street, clear of the silhouettes over the water.
-    sun.style.setProperty('--sun-disc',(1.-.46*streetView).toFixed(3));
+    const disc = 1 - .46 * streetView;
+    sun.style.setProperty('--sun-disc', disc);
     sun.style.setProperty('--sun-presence',((1.-streetView*(1.-visible))*(1.-.54*streetView)).toFixed(3));
     sun.style.setProperty('--sky-fit', fit.toFixed(4));
     // A continuous angle keeps the cloud banks in place through a complete camera orbit.
     const azimuth=controls.getAzimuthalAngle();
     farHills.update({ horizonY, azimuth, fit, streetView: walkSelect.hidden ? streetView : 1, width: W, height: H });
+    // 缩放原点在纸面的上沿，圆心的横坐标不随缩放而变；半像素余量吸收布局取整。
+    const ridge = farHills.ridgeTopAt(W * left / 100 + sunDiameter / 2);
+    const scale = fit * disc;
+    const shift = Math.min(0, ridge + .15 * sunDiameter * scale - sunExtent * scale - .75);
+    sun.style.setProperty('--sun-shift', shift + 'px');
     riverSky.style.setProperty('--sky-x',(50+43*Math.sin(azimuth)).toFixed(2)+'%');
     riverSky.style.setProperty('--sky-wash',(fit*(.15+.55*streetView)).toFixed(3));
   }
@@ -536,7 +543,8 @@
   function resize() {
     if (app.state === 'failed') return;
     W = stage.clientWidth || window.innerWidth; H = stage.clientHeight || window.innerHeight;
-    sunExtent = sun.offsetTop + sun.offsetHeight;
+    sunDiameter = sun.offsetHeight;
+    sunExtent = sun.offsetTop + sunDiameter;
     renderer.setSize(W, H, false);
     camera.aspect = W / H; camera.fov = W / H < .9 ? 52 : 38;
     camera.updateProjectionMatrix();

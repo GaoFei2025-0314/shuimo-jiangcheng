@@ -36,7 +36,7 @@
     background: radial-gradient(ellipse at 47% 43%, #cd9784 0%, #d7a48e 47%, rgba(211,147,126,.74) 57%, rgba(216,161,142,.30) 63%, transparent 70%);
     filter: url(#sun-bleed);
     transform-origin: 50% calc(0px - var(--sun-inset));
-    transform: scale(var(--sky-fit, 0)) scale(var(--sun-disc, 1));
+    transform: translateY(var(--sun-shift, 0px)) scale(var(--sky-fit, 0)) scale(var(--sun-disc, 1));
     opacity: calc(clamp(0, calc((var(--sky-fit, 0) - .12) * 2.4), .72) * var(--sun-presence,1)); pointer-events: none;
   }
   body::before {
