@@ -868,23 +868,26 @@
   }
   let renderInkPrint;
   let renderScale=1, slowFrames=0, fastFrames=0;
-  let slowStillFrames=0, slowRaster=false;
+  let stillSamples=0, slowRaster=false;
   let lastPaintAt=-Infinity, lastMoveAt=-Infinity, nextPaintAt=-Infinity;
   let samplePaint=false, lastPaintMoving=false, openingPaintUntil=-Infinity;
   const fullPixelRatio=()=>Math.min(window.devicePixelRatio||1,2);
   function paintScale(now,moving) {
     if (reduce) {
       samplePaint=false;
-      slowFrames=fastFrames=0;
+      slowFrames=fastFrames=stillSamples=0;
       return 1;
     }
     if (moving) lastMoveAt=now;
     if (samplePaint) {
       const elapsed=now-lastPaintAt;
-      // 连续两次原尺寸静景绘制过慢时，动态画面改用单采样，静态成图保留多重采样。
-      if (!slowRaster && !document.hidden) {
-        slowStillFrames=!lastPaintMoving && renderer.getPixelRatio()===fullPixelRatio() && elapsed>160 ? slowStillFrames+1 : 0;
-        slowRaster=slowStillFrames>=2;
+      // 只计前一次确实绘出的原尺寸静景。连续两慢帧降级，连续三快帧恢复。
+      const fullStill = !document.hidden && !lastPaintMoving && renderer.getPixelRatio() === fullPixelRatio();
+      const changingMode = slowRaster ? elapsed < 80 : elapsed > 160;
+      stillSamples = fullStill && changingMode ? stillSamples + 1 : 0;
+      if (stillSamples === (slowRaster ? 3 : 2)) {
+        slowRaster = !slowRaster;
+        stillSamples = 0;
       }
       if (lastPaintMoving) {
         slowFrames=elapsed>80 ? slowFrames+1 : 0;
@@ -1030,6 +1033,7 @@
   frame();
   // ?debug 时把内部状态挂出来，供浏览器里核对；正常访问不暴露。就绪与否仍以 app.ready() 置的 window.__ready 为准
   if (/[?&]debug\b/.test(location.search)) window.__dbg = {
+    get slowRaster() { return slowRaster; },
     farHills, GEO, LAKES, LAND_HOLES, HILLS, HILL, YZ, HAN, HANKOU, HANYANG, WUCHANG, AT, VIEWS, MARKS: overlays.marks, LABELS: overlays.labels,
     LAND_Y, terrainTop, plantingSurface, cityGround, landmarkGrounds, towerPark, BRIDGES, approachRoads, roadAt, approachHalfWidth, vessels, updateVessels, reliefAt, onLand, inPoly, geo, camera, controls, flyTo, scene
   };

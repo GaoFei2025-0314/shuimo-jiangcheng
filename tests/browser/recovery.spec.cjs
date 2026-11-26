@@ -72,3 +72,54 @@ test('Tab visits only visible controls and Enter activates the focused destinati
   await page.keyboard.press('Enter');
   await expect(page.locator('#cardTitle')).toHaveText('武大 · 老斋舍');
 });
+
+test('three consecutive fast full-size still paints restore multisampling', async ({ page }) => {
+  await page.setViewportSize({ width: 480, height: 360 });
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await page.goto('/?debug');
+  await page.waitForFunction(() => window.__dbg && window.__ready);
+  await page.evaluate(async () => {
+    window.motionChanged = new Promise(done => {
+      matchMedia('(prefers-reduced-motion: reduce)').addEventListener('change', done, { once: true });
+    });
+    const nativeFrame = window.requestAnimationFrame.bind(window);
+    const queued = [];
+    window.requestAnimationFrame = callback => queued.push(callback);
+    // 接住应用已经排队的真实帧，从下一次回调起只推进指定的时间。
+    await new Promise(done => nativeFrame(() => nativeFrame(done)));
+    let now = Math.ceil(performance.now()), painted = false, multisample;
+    window.__dbg.scene.onAfterRender = renderer => {
+      painted = true;
+      multisample = Boolean(renderer.getRenderTarget()?.isWebGLMultisampleRenderTarget);
+    };
+    function tick(ms) {
+      now += ms;
+      painted = false;
+      for (const callback of queued.splice(0)) callback(now);
+    }
+    window.samplePaint = ms => {
+      tick(ms);
+      // 慢帧后的节流可跳过若干 rAF，记录下一次真正绘到的印版。
+      for (let i = 0; !painted && i < 100; i++) tick(16);
+      if (!painted) throw Error('No scene paint after the injected frame');
+      return { multisample, slow: window.__dbg.slowRaster };
+    };
+  });
+  await page.emulateMedia({ reducedMotion: 'no-preference' });
+  const report = await page.evaluate(async () => {
+    await window.motionChanged;
+    window.samplePaint(16);
+    window.samplePaint(16);
+    const samples = [180, 180, 79, 79, 80, 79, 79, 79].map(window.samplePaint);
+    [180, 180, 79].forEach(window.samplePaint);
+    window.__dbg.controls.dispatchEvent({ type: 'change' });
+    window.samplePaint(79); // 上一帧是第二次快静景，本次绘制包含镜头变化。
+    const afterMotion = [79, 79, 79, 79].map(window.samplePaint);
+    const state = Object.getOwnPropertyDescriptor(window.__dbg, 'slowRaster');
+    return { samples, afterMotion, readOnly: Boolean(state?.get && !state.set) };
+  });
+  expect(report.samples.map(s => s.multisample)).toEqual([true, false, false, false, false, false, false, true]);
+  expect(report.samples.map(s => s.slow)).toEqual([false, true, true, true, true, true, true, false]);
+  expect(report.afterMotion.map(s => s.slow)).toEqual([true, true, true, false]);
+  expect(report.readOnly).toBe(true);
+});
