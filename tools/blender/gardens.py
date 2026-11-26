@@ -515,6 +515,55 @@ def canopy_supports(part, x, y, w, d, z, h):
         part.box((x, y + dy, z + h - .22), (w, .17, .25))
 
 
+def arhat_roof(part, x, y):
+    """Nine ridge junctions and their connecting slopes form one roof around four courts."""
+    ridge_axis = (-7.08, 0, 7.08)
+    half, eave, ridge = 1.76, 3.02, 4.34
+    points, faces, index = [], [], {}
+
+    def face(*corners):
+        for point in corners:
+            if point not in index:
+                index[point] = len(points)
+                points.append(point)
+        faces.append(tuple(index[point] for point in corners))
+
+    for col, u in enumerate(ridge_axis):
+        for row, v in enumerate(ridge_axis):
+            left, right, front, back = u-half, u+half, v-half, v+half
+            ring = [
+                (left, front, eave), (u, front, ridge if row else eave),
+                (right, front, eave), (right, v, ridge if col < 2 else eave),
+                (right, back, eave), (u, back, ridge if row < 2 else eave),
+                (left, back, eave), (left, v, ridge if col else eave)
+            ]
+            for a, b in zip(ring, ring[1:] + ring[:1]):
+                face((u, v, ridge), a, b)
+            if col < 2:
+                next_left = ridge_axis[col+1] - half
+                face(ring[2], (next_left, front, eave), (next_left, v, ridge), ring[3])
+                face(ring[3], (next_left, v, ridge), (next_left, back, eave), ring[4])
+            if row < 2:
+                next_front = ridge_axis[row+1] - half
+                face(ring[6], ring[5], (u, next_front, ridge), (left, next_front, eave))
+                face(ring[5], ring[4], (right, next_front, eave), (u, next_front, ridge))
+
+    # Close only the outer and courtyard eaves. The shared edges inside the roof are welded.
+    boundary = set()
+    for polygon in faces:
+        for a, b in zip(polygon, polygon[1:] + polygon[:1]):
+            if (b, a) in boundary:
+                boundary.remove((b, a))
+            else:
+                boundary.add((a, b))
+    count = len(points)
+    top = [(x+u, y+v, z) for u, v, z in points]
+    underside = [(u, v, z-.25) for u, v, z in top]
+    inner = [tuple(i+count for i in reversed(polygon)) for polygon in faces]
+    fascia = [(b, a, a+count, b+count) for a, b in sorted(boundary)]
+    part.solid(top + underside, faces + inner + fascia)
+
+
 def guiyuan():
     """Guiyuan's living temple courtyards, with the distinctive 田-plan Arhat Hall."""
     site = Assembly("归元禅寺")
@@ -534,11 +583,14 @@ def guiyuan():
     plaque(site, "归元禅寺山门", 0, -30.43, 3.36, .66, .84)
     threshold = site.part("山门 · dressed threshold and inner stone margins", "stone")
     slab(threshold, 0, -29.63, 2.88, .62, .04, .18)
+    side_doors = site.part("山门 · timber side doors and transoms", "vermilion")
     for sign in (-1, 1):
         x = sign * 2.57
         slab(threshold, x, -29.47, 1.12, .73, .04, .34)
         slab(threshold, x, -29.47, .94, .61, .34, .49)
         slab(threshold, sign * 6.06, -19.33, .31, 6.9, .04, .23)
+        slab(side_doors, sign*3.64, -29.38, 1.26, .26, .22, 2.38)
+        slab(threshold, sign*3.64, -29.49, 1.75, .34, 2.25, 2.52)
     for s in (-1, 1):
         x = s * 8
         label = "钟楼" if s < 0 else "鼓楼"
@@ -556,8 +608,14 @@ def guiyuan():
         circular(hanging, x, -15.22, [(r, z) for r, z in
                  ((.63, 4.11), (.63, 4.26), (.54, 4.53), (.38, 5.15), (.12, 5.35))])
 
-    slab(ground, 0, .5, 19.32, 14.5, .04, 1.27)
-    flight(ground, 0, -9.46, 5.66, 2.71, .12, 1.27, 7)
+    slab(ground, 0, -.51, 19.32, 16.52, .04, 1.27)
+    flight(ground, 0, -10.77, 5.66, 2.0, .12, 1.27, 7)
+    moon_terrace = site.part("大雄宝殿 · moon terrace stone balustrade", "plaster")
+    for sign in (-1, 1):
+        x = sign * 6.17
+        slab(moon_terrace, x, -8.71, 6.12, .31, 1.22, 1.76)
+        for offset in (-3.16, 0, 3.16):
+            slab(moon_terrace, x+offset, -8.71, .42, .42, 1.22, 1.94)
     hall(site, "大雄宝殿", 0, .65, 15.24, 10.62, 1.27, 4.92, 5, "ink",
          wall="roofGold", rise=3.17, kick=1.04, style="vermilion")
     roof(site, "大雄宝殿 · lower skirt roof", 0, -.08, 18.63, 12.37, 4.84, 1.15, "ink",
@@ -565,32 +623,25 @@ def guiyuan():
     censer = site.part("大雄宝殿 · incense cauldron", "bronze")
     foot = site.part("大雄宝殿 · incense stone bases", "stone")
     for x in (-4.14, 4.14):
-        slab(foot, x, -9.98, 1.03, 1.03, .04, .23)
-        circular(censer, x, -9.98, [(.28, .23), (.29, .57), (.57, .77), (.59, 1.02), (.52, 1.12)])
+        y, base = -7.42, 1.27
+        slab(foot, x, y, 1.03, 1.03, base, base+.27)
+        circular(censer, x, y, [(r, base+z) for r, z in
+                    ((.28, .27), (.29, .59), (.57, .79), (.59, 1.06), (.44, 1.19), (.32, 1.02))])
         for sign in (-1, 1):
-            censer.beam((x + sign * .54, -9.98, .8), (x + sign * .7, -9.98, 1.19), .10)
+            censer.beam((x + sign*.49, y, base+.85), (x + sign*.69, y, base+1.24), .25)
     plaque(site, "大雄宝殿", 0, -4.79, 5.82, 3.35, .63)
 
     # Four open courts are defined by the cross and perimeter rooms of the Arhat Hall.
-    room_xy = (22.38, -.6)
-    rx, ry = room_xy
+    rx, ry = 22.38, -.6
     slab(ground, rx, ry, 17.68, 17.68, .04, .57)
-    rooms = site.part("罗汉堂 · nine roof junctions and four light courts", "plaster")
-    ridges = site.part("罗汉堂 · tiled cross wings", "ink")
-    for x in (rx - 7.15, rx, rx + 7.15):
-        slab(rooms, x, ry, 3.33, 17.64, .57, 3.2)
-        roof(site, "罗汉堂 · north-south wings", x, ry, 4.1, 18.37, 3.12, 1.16,
-             "ink", inner=(.44, 10.8), kick=.18)
-        slab(ridges, x, ry, .44, 10.8, 4.105, 4.3)
-    for y in (ry - 7.15, ry, ry + 7.15):
-        for x in (rx - 3.575, rx + 3.575):
-            slab(rooms, x, y, 3.98, 3.36, .57, 3.2)
-            elevation_prism(ridges, [(x - 2.11, 3.12), (x + 2.11, 3.12),
-                                     (x + 1.9, 3.4), (x - 1.9, 3.4)], y - 1.96, y + 1.96)
-            # Two roof slopes converge on each east-west ridge.
-            for s in (-1, 1):
-                ridges.beam((x - 2.02, y + s * 1.13, 3.58), (x + 2.02, y + s * 1.13, 3.58), 2.28, .35)
-            ridges.beam((x - 2.02, y, 4.1), (x + 2.02, y, 4.1), .35, .2)
+    rooms = site.part("罗汉堂 · galleries around four light courts", "plaster")
+    doors = site.part("罗汉堂 · south gallery doors", "timber")
+    for offset in (-7.08, 0, 7.08):
+        slab(rooms, rx+offset, ry, 2.92, 17.08, .57, 3.08)
+        slab(doors, rx+offset, ry-8.45, 1.38, .25, .59, 2.39)
+        for sign in (-1, 1):
+            slab(rooms, rx+sign*3.54, ry+offset, 4.16, 2.92, .57, 3.08)
+    arhat_roof(site.part("罗汉堂 · interlocking tiled ridges", "ink"), rx, ry)
 
     pond = site.part("翠微古池 · stone pond rim", "stone")
     for x in (-4.56, 4.56):
@@ -605,7 +656,10 @@ def guiyuan():
         for i in range(8):
             slab(coping, (i - 3.5) * 1.065, 12.45 + sign * 2.7, 1.04, .58, .61, .735)
     slab(ground, 0, 23.22, 15.0, 10.5, .04, .79)
+    flight(ground, 0, 16.32, 3.76, 1.65, .12, .79, 3)
     lower_canopy(site, "藏经阁 · lower gallery", 0, 23.22, 12.03, 7.82, .79, 3.35, 5, "ink", wall="plaster")
+    upper_floor = site.part("藏经阁 · upper timber platform", "timber")
+    slab(upper_floor, 0, 23.22, 10.50, 6.46, 3.94, 5.12)
     hall(site, "藏经阁 · sutra storey", 0, 23.22, 10.13, 6.1, 5.1, 2.98, 5, "ink", rise=2.13,
          kick=.67)
     plaque(site, "藏经阁", 0, 20.05, 7.74, 2.7, .53)
