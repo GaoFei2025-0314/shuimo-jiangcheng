@@ -542,10 +542,18 @@ def canopy_supports(part, x, y, w, d, z, h):
         part.box((x, y + dy, z + h - .22), (w, .17, .25))
 
 
-def arhat_roof(part, x, y):
-    """Nine ridge junctions and their connecting slopes form one roof around four courts."""
-    ridge_axis = (-7.08, 0, 7.08)
-    half, eave, ridge = 1.76, 3.02, 4.34
+ARHAT_AXES = (-7.08, 0, 7.08)
+ARHAT_ROOF_HALF_WIDTH = 1.76
+ARHAT_COURT_ROOF_HALF_WIDTH = 1.23
+ARHAT_COURT_EAVE = 3.86
+
+
+def arhat_roof(site, x, y):
+    """One tiled shell with continuous ridges, hipped corners and four open courts."""
+    half, eave, ridge = ARHAT_ROOF_HALF_WIDTH, 3.20, 5.05
+    tiles = site.part("罗汉堂 · pitched roof tiles", "ink")
+    fascia = site.part("罗汉堂 · deep eave fascia", "shadow")
+    crest = site.part("罗汉堂 · main ridges and outer hips", "shadow")
     points, faces, index = [], [], {}
 
     def face(*corners):
@@ -555,25 +563,35 @@ def arhat_roof(part, x, y):
                 points.append(point)
         faces.append(tuple(index[point] for point in corners))
 
-    for col, u in enumerate(ridge_axis):
-        for row, v in enumerate(ridge_axis):
-            left, right, front, back = u-half, u+half, v-half, v+half
+    def limits(axis, position):
+        inner = ARHAT_COURT_ROOF_HALF_WIDTH
+        return axis - (inner if position else half), axis + (half if position == 2 else inner)
+
+    def corner_eave(outer_x, outer_y):
+        if outer_x and outer_y:
+            return eave + .24
+        return eave if outer_x or outer_y else ARHAT_COURT_EAVE
+
+    for col, u in enumerate(ARHAT_AXES):
+        for row, v in enumerate(ARHAT_AXES):
+            left, right = limits(u, col)
+            front, back = limits(v, row)
             ring = [
-                (left, front, eave), (u, front, ridge if row else eave),
-                (right, front, eave), (right, v, ridge if col < 2 else eave),
-                (right, back, eave), (u, back, ridge if row < 2 else eave),
-                (left, back, eave), (left, v, ridge if col else eave)
+                (left, front, corner_eave(col == 0, row == 0)), (u, front, ridge if row else eave),
+                (right, front, corner_eave(col == 2, row == 0)), (right, v, ridge if col < 2 else eave),
+                (right, back, corner_eave(col == 2, row == 2)), (u, back, ridge if row < 2 else eave),
+                (left, back, corner_eave(col == 0, row == 2)), (left, v, ridge if col else eave),
             ]
             for a, b in zip(ring, ring[1:] + ring[:1]):
                 face((u, v, ridge), a, b)
             if col < 2:
-                next_left = ridge_axis[col+1] - half
-                face(ring[2], (next_left, front, eave), (next_left, v, ridge), ring[3])
-                face(ring[3], (next_left, v, ridge), (next_left, back, eave), ring[4])
+                next_left, _ = limits(ARHAT_AXES[col + 1], col + 1)
+                face(ring[2], (next_left, front, ring[2][2]), (next_left, v, ridge), ring[3])
+                face(ring[3], (next_left, v, ridge), (next_left, back, ring[4][2]), ring[4])
             if row < 2:
-                next_front = ridge_axis[row+1] - half
-                face(ring[6], ring[5], (u, next_front, ridge), (left, next_front, eave))
-                face(ring[5], ring[4], (right, next_front, eave), (u, next_front, ridge))
+                next_front, _ = limits(ARHAT_AXES[row + 1], row + 1)
+                face(ring[6], ring[5], (u, next_front, ridge), (left, next_front, ring[6][2]))
+                face(ring[5], ring[4], (right, next_front, ring[4][2]), (u, next_front, ridge))
 
     # Close only the outer and courtyard eaves. The shared edges inside the roof are welded.
     boundary = set()
@@ -584,11 +602,93 @@ def arhat_roof(part, x, y):
             else:
                 boundary.add((a, b))
     count = len(points)
-    top = [(x+u, y+v, z) for u, v, z in points]
-    underside = [(u, v, z-.25) for u, v, z in top]
-    inner = [tuple(i+count for i in reversed(polygon)) for polygon in faces]
-    fascia = [(b, a, a+count, b+count) for a, b in sorted(boundary)]
-    part.solid(top + underside, faces + inner + fascia)
+    top = [(x + u, y + v, z) for u, v, z in points]
+    underside = [(u, v, z - .32) for u, v, z in top]
+    inner = [tuple(i + count for i in reversed(polygon)) for polygon in faces]
+    tiles.solid(top + underside, faces + inner)
+    for a, b in sorted(boundary):
+        fascia.solid([top[b], top[a], underside[a], underside[b]], [(0, 1, 2, 3)])
+
+    # Break the raised tile crests at the junction blocks, keeping the valleys open.
+    width, crest_z = .42, ridge + .09
+    for axis in ARHAT_AXES:
+        for start, end in zip(ARHAT_AXES, ARHAT_AXES[1:]):
+            lo, hi = start + width / 2, end - width / 2
+            crest.beam((x + lo, y + axis, crest_z), (x + hi, y + axis, crest_z), width, .33)
+            crest.beam((x + axis, y + lo, crest_z), (x + axis, y + hi, crest_z), width, .33)
+        for other in ARHAT_AXES:
+            crest.box((x + axis, y + other, crest_z), (width, width, .33))
+    for u in (ARHAT_AXES[0], ARHAT_AXES[-1]):
+        for v in (ARHAT_AXES[0], ARHAT_AXES[-1]):
+            sx, sy = u / abs(u), v / abs(v)
+            join = width / 4
+            tip = corner_eave(True, True)
+            crest.beam((x + u + sx * join, y + v + sy * join,
+                        crest_z - (ridge - tip) * join / half),
+                       (x + u + sx * half, y + v + sy * half, tip + .09), .34, .28)
+
+
+def arhat_walls(site, x, y, floor):
+    plaster = site.part("罗汉堂 · plaster walls and deep jambs", "plaster")
+    footing = site.part("罗汉堂 · stone wall base and sills", "deck")
+    cap = site.part("罗汉堂 · wall cap below the eaves", "ink")
+    doors = site.part("罗汉堂 · recessed timber doors and lattice", "timber")
+    windows = site.part("罗汉堂 · recessed window panels", "shadow")
+    edge, depth = 8.10, .66
+    sill, head, cap_bottom = floor + .91, floor + 2.10, 3.19
+
+    for turned in (False, True):
+        for sign in (-1, 1):
+            # Give the full-width walls the corners and fit the other pair between them.
+            end = edge - depth if turned else edge
+
+            def panel(part, left, right, bottom, top, near=0, far=depth):
+                along = (left + right) / 2
+                across = sign * (edge - (near + far) / 2)
+                length, thickness = right - left, far - near
+                if turned:
+                    slab(part, x + across, y + along, thickness, length, bottom, top)
+                else:
+                    slab(part, x + along, y + across, length, thickness, bottom, top)
+
+            panel(cap, -end, end, cap_bottom, 3.70)
+            last = -end
+            for center in (-6.62, -3.54, 0, 3.54, 6.62):
+                doorway = not turned and sign < 0 and center in (-6.62, 0, 6.62)
+                width = 1.34 if doorway else 1.48
+                left, right = center - width / 2, center + width / 2
+                panel(footing, last, left, floor, floor + .35)
+                panel(plaster, last, left, floor + .35, cap_bottom)
+                panel(plaster, left, right, head, cap_bottom)
+                if doorway:
+                    panel(footing, left, right, floor, floor + .14, -.08, depth)
+                    panel(doors, left, right, floor + .14, head, .50)
+                else:
+                    panel(footing, left, right, floor, floor + .35)
+                    panel(plaster, left, right, floor + .35, sill - .28)
+                    panel(footing, left, right, sill - .28, sill, -.08, depth)
+                    panel(windows, left, right, sill, head, .50)
+                    panel(doors, center - .09, center + .09, sill, head, .36, .53)
+                last = right
+            panel(footing, last, end, floor, floor + .35)
+            panel(plaster, last, end, floor + .35, cap_bottom)
+
+
+def arhat_court(site, x, y, floor):
+    posts = site.part("罗汉堂 · court colonnades and lintels", "timber")
+    shoes = site.part("罗汉堂 · court column shoes", "stone")
+    # Inset the columns from the open edges so that the eaves shelter the galleries.
+    span = ARHAT_AXES[-1] / 2 - ARHAT_COURT_ROOF_HALF_WIDTH + .60
+    for dx in (-span, 0, span):
+        for dy in (-span, 0, span):
+            if dx == dy == 0:
+                continue
+            slab(shoes, x + dx, y + dy, .58, .58, floor, floor + .27)
+            posts.cylinder(x + dx, y + dy, floor + .27, 4.12, .24, 8)
+            slab(posts, x + dx, y + dy, .57, .57, 3.89, 4.16)
+    for side in (-span, span):
+        slab(posts, x, y + side, 2 * span + .38, .38, 3.93, 4.24)
+        slab(posts, x + side, y, .38, 2 * span - .38, 3.93, 4.24)
 
 
 def guiyuan():
@@ -658,17 +758,15 @@ def guiyuan():
             censer.beam((x + sign*.49, y, base+.85), (x + sign*.69, y, base+1.24), .25)
     plaque(site, "大雄宝殿", 0, -4.79, 5.82, 3.35, .63)
 
-    # Four open courts are defined by the cross and perimeter rooms of the Arhat Hall.
+    # The perimeter wings and the cross gallery shelter the edges of all four courts.
     rx, ry = 22.38, -.6
-    slab(ground, rx, ry, 17.68, 17.68, .04, .57)
-    rooms = site.part("罗汉堂 · galleries around four light courts", "plaster")
-    doors = site.part("罗汉堂 · south gallery doors", "timber")
-    for offset in (-7.08, 0, 7.08):
-        slab(rooms, rx+offset, ry, 2.92, 17.08, .57, 3.08)
-        slab(doors, rx+offset, ry-8.45, 1.38, .25, .59, 2.39)
-        for sign in (-1, 1):
-            slab(rooms, rx+sign*3.54, ry+offset, 4.16, 2.92, .57, 3.08)
-    arhat_roof(site.part("罗汉堂 · interlocking tiled ridges", "ink"), rx, ry)
+    floor = .57
+    slab(ground, rx, ry, 17.68, 17.68, .04, floor)
+    arhat_walls(site, rx, ry, floor)
+    for dx in (-3.54, 3.54):
+        for dy in (-3.54, 3.54):
+            arhat_court(site, rx + dx, ry + dy, floor)
+    arhat_roof(site, rx, ry)
 
     pond = site.part("翠微古池 · stone pond rim", "stone")
     for x in (-4.56, 4.56):
