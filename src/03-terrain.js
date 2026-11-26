@@ -494,7 +494,10 @@
             float phase = aw*.22+4.8*vnoise(current*vec2(.011,.036))+.47*sin(current.x*.033);
             float strokes = smoothstep(.08,.94,sin(phase))*smoothstep(.31,.77,group);
             float away = smoothstep(.04,.30,band);
-            vec2 ripples = vec2(current.y+.16*current.x, current.x-.24*current.y)*vec2(.073,.061);
+            // 低机位放大近岸细笔，放慢细纹漂移，宽笔水势仍沿原流速推进。
+            float fineDriftTime = ambientDriftTime / 7.;
+            float fineStation = station-fineDriftTime*13.;
+            vec2 ripples = vec2(aw+.16*fineStation, fineStation-.24*aw)*vec2(.073,.061);
             float crests = brokenCrest(ripples)*(.46+.54*group)*fineDetail;
             ink += (strokes*.26+crests*.25)*away*drift.a*(1.-lake);
 
@@ -502,13 +505,13 @@
             float driftPhase = aw*.78+knot*.93;
             float track = floor(driftPhase/6.28318+.5);
             float across = abs(fract(driftPhase/6.28318+.5)-.5)*6.28318;
-            float advance = (station-ambientDriftTime*9.)*.071+hash(vec2(track,17.));
+            float advance = (station-fineDriftTime*9.)*.071+hash(vec2(track,17.));
             float segment = floor(advance);
             float grain = hash(vec2(segment,track));
             float along = (fract(advance)-.5)/mix(.19,.47,grain);
             float shape = length(vec2(across/mix(.22,.46,grain),along));
             float main = (1.-smoothstep(.14,1.,shape))*smoothstep(.16,.69,grain);
-            float dryMask = smoothstep(.47,.74,vnoise(stream*vec2(.31,.19)-vec2(ambientDriftTime*.047,0.)));
+            float dryMask = smoothstep(.47,.74,vnoise(stream*vec2(.31,.19)-vec2(fineDriftTime*.047,0.)));
             float faint = smoothstep(.92,.999,sin(driftPhase*2.07+knot))*dryMask;
             ink += (main*.17+faint*.065)*fineDetail*away*drift.a*(1.-lake);
 

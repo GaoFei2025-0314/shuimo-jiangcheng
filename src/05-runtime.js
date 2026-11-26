@@ -108,11 +108,11 @@
   const isFramed = key => layout.compact || (key !== 'home' && key !== 'lake');
   // 城市全景用较宽的取景角，在保留俯角与河岸纵深的同时纳入地平线。
   function mapFov(key) {
-    if (walkSelect.hidden && (key === 'home' || key === 'core')) {
+    // 两江和黄鹤楼共用镜头，从江面手动回到西园时，同一机位仍指向同一座建筑。
+    if (walkSelect.hidden && (key === 'home' || key === 'core' || key === 'tower')) {
       if (W < H) return 84;
       return key === 'home' ? 68 : 76;
     }
-    if (walkSelect.hidden && key === 'tower') return W < H ? 67 : 74;
     return W / H < .9 ? 52 : 38;
   }
   function viewFor(key) {
@@ -689,13 +689,17 @@
   // to a mineral wash, and lets the same paper fibre show through models and terrain.
   function inkPrint() {
     const depthReady=renderer.capabilities.isWebGL2 || renderer.extensions.has('WEBGL_depth_texture');
-    const Target=renderer.capabilities.isWebGL2 ? THREE.WebGLMultisampleRenderTarget : THREE.WebGLRenderTarget;
-    const target=new Target(1,1,{minFilter:THREE.LinearFilter,magFilter:THREE.LinearFilter});
-    if (target.isWebGLMultisampleRenderTarget) target.samples=Math.min(4,renderer.capabilities.maxSamples);
-    if (depthReady) {
-      target.depthTexture=new THREE.DepthTexture(1,1);
-      target.depthTexture.type=THREE.UnsignedIntType;
+    function makeTarget(multisample) {
+      const Target=multisample ? THREE.WebGLMultisampleRenderTarget : THREE.WebGLRenderTarget;
+      const buffer=new Target(1,1,{minFilter:THREE.LinearFilter,magFilter:THREE.LinearFilter});
+      if (multisample) buffer.samples=Math.min(4,renderer.capabilities.maxSamples);
+      if (depthReady) {
+        buffer.depthTexture=new THREE.DepthTexture(1,1);
+        buffer.depthTexture.type=THREE.UnsignedIntType;
+      }
+      return buffer;
     }
+    let target=makeTarget(renderer.capabilities.isWebGL2);
     const drawingSize = new THREE.Vector2();
     const material = new THREE.ShaderMaterial({
       defines:depthReady ? {CONTOUR:1} : {},
@@ -728,26 +732,29 @@
           vec3 color=clamp(original.rgb/max(original.a,.01),0.,1.);
           float l=lightness(color);
           vec2 x=vec2(pixel.x,0.), y=vec2(0.,pixel.y);
-          float grain1=grain(gl_FragCoord.xy*.19),grain2=grain(gl_FragCoord.xy*.04);
-          float reach=1.05+1.4*grain2;
-          float edge=max(max(paperValue(where+x*reach),paperValue(where-x*reach)),
-            max(paperValue(where+y*reach),paperValue(where-y*reach)))-l;
-          float nib=smoothstep(.035,.23,edge)*(.29+.32*grain1);
-          float lift=smoothstep(.26,.82,l);
-          float tone=clamp(l*.95 + .16*lift-.088*(1.-lift),0.,1.);
-          vec3 halfInk=mix(ink,paper,.36);
-          vec3 shade=mix(ink,halfInk,smoothstep(.02,.53,tone));
-          vec3 pigment=mix(shade,paper,smoothstep(.37,.94,tone));
           float chroma=max(color.r,max(color.g,color.b))-min(color.r,min(color.g,color.b));
-          pigment+=(color-vec3(l))*(.71+.33*smoothstep(.08,.32,chroma));
-          pigment+=vec3(.022,.025,.023)*(grain1-.5)*smoothstep(.06,.29,l)*(1.-smoothstep(.77,.96,l));
-          pigment=mix(pigment,ink,nib*(1.-smoothstep(.74,.94,l)));
-          float amount=strength*(.89-.70*smoothstep(.59,.94,l));
-          color=mix(color,pigment,amount);
-          // Let paper show through broad midtones while leaving a broken ink edge at the folds.
-          float wash=smoothstep(.08,.39,l)*(1.-smoothstep(.72,.94,l));
-          color=mix(color,paper,wash*strength*(.095+.035*grain2));
-          color=mix(color,ink,nib*strength*.93*(1.-smoothstep(.68,.97,l)));
+          // 地图视角的街巷墨量为零，跳过对颜色没有贡献的四次采样与纤维噪声。
+          if(strength>0.){
+            float grain1=grain(gl_FragCoord.xy*.19),grain2=grain(gl_FragCoord.xy*.04);
+            float reach=1.05+1.4*grain2;
+            float edge=max(max(paperValue(where+x*reach),paperValue(where-x*reach)),
+              max(paperValue(where+y*reach),paperValue(where-y*reach)))-l;
+            float nib=smoothstep(.035,.23,edge)*(.29+.32*grain1);
+            float lift=smoothstep(.26,.82,l);
+            float tone=clamp(l*.95 + .16*lift-.088*(1.-lift),0.,1.);
+            vec3 halfInk=mix(ink,paper,.36);
+            vec3 shade=mix(ink,halfInk,smoothstep(.02,.53,tone));
+            vec3 pigment=mix(shade,paper,smoothstep(.37,.94,tone));
+            pigment+=(color-vec3(l))*(.71+.33*smoothstep(.08,.32,chroma));
+            pigment+=vec3(.022,.025,.023)*(grain1-.5)*smoothstep(.06,.29,l)*(1.-smoothstep(.77,.96,l));
+            pigment=mix(pigment,ink,nib*(1.-smoothstep(.74,.94,l)));
+            float amount=strength*(.89-.70*smoothstep(.59,.94,l));
+            color=mix(color,pigment,amount);
+            // Let paper show through broad midtones while leaving a broken ink edge at the folds.
+            float wash=smoothstep(.08,.39,l)*(1.-smoothstep(.72,.94,l));
+            color=mix(color,paper,wash*strength*(.095+.035*grain2));
+            color=mix(color,ink,nib*strength*.93*(1.-smoothstep(.68,.97,l)));
+          }
 
           if(aerial>.001){
             // Mineral wash: gilt, brick and steel keep their hue at the strength of a light
@@ -763,7 +770,7 @@
           }
           #ifdef CONTOUR
             float here=nearness(where);
-            if(here>0.){
+            if(here>1./min(mist.y*.86,720.)){
               float depth=1./here;
               // Past a few hundred units a house is only a few pixels wide; outlining it there
               // turns the far shore to grit, so the contour gives way to the wash.
@@ -787,8 +794,15 @@
     });
     const sheet=new THREE.PlaneGeometry(2,2), page=new THREE.Scene(), lens=new THREE.Camera();
     const print=new THREE.Mesh(sheet,material);print.frustumCulled=false;page.add(print);
-    app.cleanups.push(()=>{sheet.dispose();material.dispose();target.dispose();target.depthTexture?.dispose();});
+    app.cleanups.push(()=>{sheet.dispose();material.dispose();target.dispose();});
     return (street,aerial)=>{
+      const multisample=renderer.capabilities.isWebGL2 && (reduce || !slowRaster);
+      if (Boolean(target.isWebGLMultisampleRenderTarget)!==multisample) {
+        target.dispose();
+        target=makeTarget(multisample);
+        material.uniforms.drawing.value=target.texture;
+        material.uniforms.depthMap.value=target.depthTexture;
+      }
       renderer.getDrawingBufferSize(drawingSize);
       // Keep the multisampled print within a GPU memory budget a phone can still afford.
       const ratio=Math.min(1,Math.sqrt(4200000/(drawingSize.x*drawingSize.y)));
@@ -809,6 +823,7 @@
   }
   let renderInkPrint;
   let renderScale=1, slowFrames=0, fastFrames=0;
+  let slowStillFrames=0, slowRaster=false;
   let lastPaintAt=-Infinity, lastMoveAt=-Infinity, nextPaintAt=-Infinity;
   let samplePaint=false, lastPaintMoving=false, openingPaintUntil=-Infinity;
   const fullPixelRatio=()=>Math.min(window.devicePixelRatio||1,2);
@@ -821,6 +836,11 @@
     if (moving) lastMoveAt=now;
     if (samplePaint) {
       const elapsed=now-lastPaintAt;
+      // 连续两次原尺寸静景绘制过慢时，动态画面改用单采样，静态成图保留多重采样。
+      if (!slowRaster && !document.hidden) {
+        slowStillFrames=!lastPaintMoving && renderer.getPixelRatio()===fullPixelRatio() && elapsed>160 ? slowStillFrames+1 : 0;
+        slowRaster=slowStillFrames>=2;
+      }
       if (lastPaintMoving) {
         slowFrames=elapsed>80 ? slowFrames+1 : 0;
         fastFrames=elapsed<34 ? fastFrames+1 : 0;
