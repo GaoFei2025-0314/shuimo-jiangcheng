@@ -6,6 +6,11 @@ const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 
 const root = path.resolve(__dirname, '..');
+
+test('architecture data stays under 6.5 MB', () => {
+  assert.ok(fs.statSync(path.join(root, 'src/architecture.gen.js')).size <= 6_815_744);
+});
+
 function fixture(t) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'jiangcheng-build-'));
   t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
