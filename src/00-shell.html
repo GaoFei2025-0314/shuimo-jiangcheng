@@ -30,7 +30,7 @@
     font-family: var(--song); overflow: hidden;
   }
   #sun {
-    --sun-inset: 8vh;
+    --sun-inset: 4vh;
     position: fixed; z-index: 0; left: 64%; top: var(--sun-inset);
     width: clamp(74px, 10vw, 148px); aspect-ratio: 1; border-radius: 50%;
     background: radial-gradient(ellipse at 47% 43%, #cd9784 0%, #d7a48e 47%, rgba(211,147,126,.74) 57%, rgba(216,161,142,.30) 63%, transparent 70%);
@@ -50,6 +50,8 @@
     background-repeat: repeat-x; background-size: auto 100%; background-position: var(--sky-x,50%) 0;
     opacity: var(--sky-wash,0); mask-image: linear-gradient(to bottom,black 0%,black 22%,transparent 78%);
   }
+  #far-hills { position: fixed; inset: 0; z-index: 0; overflow: hidden; pointer-events: none; opacity: 0; }
+  .far-hill { position: absolute; inset: 0 0 auto; background-repeat: repeat-x; }
   #stage { position: fixed; inset: 0; z-index: 1; touch-action: none; }
   #stage canvas { display: block; width: 100%; height: 100%; }
   #stage.hot { cursor: pointer; }
@@ -480,6 +482,7 @@
 </defs></svg>
 <div id="river-sky" aria-hidden="true"></div>
 <div id="sun" aria-hidden="true"></div>
+<div id="far-hills" aria-hidden="true"></div>
 <div id="stage" aria-busy="true" role="img" aria-label="水墨风格的武汉三维地图：长江与汉江交汇，汉口、汉阳、武昌三镇，黄鹤楼、长江大桥、晴川阁、龟山电视塔、江汉关、武大樱园、汉口水塔、红楼、洪山宝塔、湖北省博物馆、鹦鹉洲长江大桥、归元禅寺、古琴台与东湖"></div>
 <div id="grain" aria-hidden="true"></div>
 <div id="vignette" aria-hidden="true"></div>

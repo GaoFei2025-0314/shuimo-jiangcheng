@@ -486,6 +486,8 @@
   const sun = document.getElementById('sun');
   const riverSky=document.getElementById('river-sky');
   riverSky.style.backgroundImage='url('+riverSkyImage+')';
+  const farHills = createFarHills(document.getElementById('far-hills'));
+  app.cleanups.push(() => farHills.dispose());
   let sunExtent = 1;
   const riverSun=new THREE.Vector3(-1,.20,.42).normalize(), skyPoint=new THREE.Vector3();
   function fitSunToSky(streetView) {
@@ -504,6 +506,7 @@
     sun.style.setProperty('--sky-fit', fit.toFixed(4));
     // A continuous angle keeps the cloud banks in place through a complete camera orbit.
     const azimuth=controls.getAzimuthalAngle();
+    farHills.update({ horizonY, azimuth, fit, streetView: walkSelect.hidden ? streetView : 1, width: W, height: H });
     riverSky.style.setProperty('--sky-x',(50+43*Math.sin(azimuth)).toFixed(2)+'%');
     riverSky.style.setProperty('--sky-wash',(fit*(.15+.55*streetView)).toFixed(3));
   }
@@ -926,6 +929,6 @@
   frame();
   // ?debug 时把内部状态挂出来，供浏览器里核对；正常访问不暴露。就绪与否仍以 app.ready() 置的 window.__ready 为准
   if (/[?&]debug\b/.test(location.search)) window.__dbg = {
-    GEO, LAKES, LAND_HOLES, HILLS, HILL, YZ, HAN, HANKOU, HANYANG, WUCHANG, AT, VIEWS, MARKS: overlays.marks, LABELS: overlays.labels,
+    farHills, GEO, LAKES, LAND_HOLES, HILLS, HILL, YZ, HAN, HANKOU, HANYANG, WUCHANG, AT, VIEWS, MARKS: overlays.marks, LABELS: overlays.labels,
     LAND_Y, terrainTop, plantingSurface, cityGround, landmarkGrounds, towerPark, BRIDGES, approachRoads, roadAt, approachHalfWidth, vessels, updateVessels, reliefAt, onLand, inPoly, geo, camera, controls, flyTo, scene
   };
