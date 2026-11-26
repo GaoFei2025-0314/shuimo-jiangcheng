@@ -783,14 +783,16 @@
   }
 
   // 远山：层层淡出，烘托「烟波浩渺」
+  const ridgeFogFar = { value: 3400 };
   [
     { z:  -980, tone: .24, n: 10, h: 132, w: 390 },
     { z: -1360, tone: .44, n: 9,  h: 187, w: 520 },
     { z:  1080, tone: .32, n: 9,  h: 149, w: 442 },
     { z:  1520, tone: .52, n: 8,  h: 209, w: 559 }
   ].forEach(Lr => {
-    const mat = inkMat(.82 + Lr.tone * .15, false, null, null, { foot: 1 });
+    const mat = inkMat(.46 + Lr.tone * .24, false, ['#454b44', '#d9d9ce'], null, { foot: 1 });
     mat.defines = { RIDGE_CLOUD: 1 };
+    mat.uniforms.uFar = ridgeFogFar;
     for (let i = 0; i < Lr.n; i++) {
       const x = (i - (Lr.n - 1) / 2) * Lr.w * .95 + (rnd() - .5) * 200 + 200;
       const radius = Lr.w * (.6 + rnd() * .5), height = Lr.h * (.55 + rnd() * .7);

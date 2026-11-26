@@ -11,11 +11,11 @@
   const VIEWS = {
     home:    orbit({ x: 250, z: -130 }, 0, 875, 8.25, 16),
     core:    orbit(geo(114.2855, 30.5528), 32, 440, 22, 18),
-    tower:   orbit(AT.tower, terrainTop(AT.tower.x, AT.tower.z) + 13, 100, -48, 35),
-    bridge:  orbit(AT.bridge, 6.2, 174, -71, 16),
+    tower:   orbit(AT.tower, terrainTop(AT.tower.x, AT.tower.z) + 13, 100, -48, 27),
+    bridge:  orbit(AT.bridge, 6.2, 174, -71, 11),
     qc:      orbit(qc.position, qc.position.y + 7, 112, 65, 8),
-    tv:      orbit(AT.tv, 82, 350, 104, 10),
-    customs: orbit(AT.customs, 18, 115, 92, 17),
+    tv:      orbit(AT.tv, 82, 350, 104, 7),
+    customs: orbit(AT.customs, 18, 115, 92, 11),
     wuda:    orbit(wudaAt, terrainTop(wudaAt.x, wudaAt.z) + 6, 112, 152, 26),
     xingyin:  orbit(xingyin.position, xingyin.position.y + 5, 68, 22, 17),
     lake:    orbit(lakeC, 3, 560, 14, 25),
@@ -24,7 +24,7 @@
     watertower: orbit(AT.watertower, 12, 95, 38, 15),
     museum:     orbit(AT.museum, 6, 150, 146, 20),
     honglou:    orbit(AT.honglou, terrainTop(AT.honglou.x, AT.honglou.z) + 7, 120, 34, 19),
-    yingwuzhou: orbit(AT.yingwuzhou, 14, 300, -24, 11),
+    yingwuzhou: orbit(AT.yingwuzhou, 14, 300, -24, 8),
     guiyuan:    orbit(AT.guiyuan, 5, 135, 18, 22),
     qintai:     orbit(AT.qintai, 4, 110, 25, 23)
   };
@@ -112,6 +112,7 @@
       if (W < H) return 84;
       return key === 'home' ? 68 : 76;
     }
+    if (walkSelect.hidden && key === 'tower') return W < H ? 67 : 74;
     return W / H < .9 ? 52 : 38;
   }
   function viewFor(key) {
@@ -132,11 +133,11 @@
     // Look east across the full lake: its long axis fills the vertical page.
     const portraitLake = W < H && key === 'lake';
     if (portraitLake) base = orbit(lakeC, 3, 560, 266, 59);
-    if (W < H && key === 'tower') base = orbit(AT.tower, VIEWS.tower.target.y, 100, -66, 29);
+    if (W < H && key === 'tower') base = orbit(AT.tower, VIEWS.tower.target.y, 100, -66, 22);
     const portraitBridge = key === 'bridge' && W < H;
     const landscapeBridge = key === 'bridge' && !layout.compact && W >= H;
-    if (landscapeBridge) base = orbit(AT.bridge, 6.2, 174, 140, 10);
-    if (portraitBridge) base = orbit(AT.bridge, 6.2, 174, -100, 11);
+    if (landscapeBridge) base = orbit(AT.bridge, 6.2, 174, 140, 7);
+    if (portraitBridge) base = orbit(AT.bridge, 6.2, 174, -100, 8);
     if (!isFramed(key)) return base;
     const bounds = key === 'tower' ? [viewBounds.tower, ...towerPark.assetBounds] : key === 'bridge' ? bridgeBounds : viewBounds[key];
     let fill = .8;
@@ -923,6 +924,8 @@
     fogU.uNear.value = THREE.MathUtils.lerp(near,22,streetView);
     fogU.uFar.value = THREE.MathUtils.lerp(cityNear + Math.max(420, dist * 2.3), dist + 77, courtyard);
     fogU.uFar.value = THREE.MathUtils.lerp(fogU.uFar.value,293,streetView);
+    // 近岭比城区更远，保留其山腹墨色；进入街巷时仍随江岸一起入雾。
+    ridgeFogFar.value = THREE.MathUtils.lerp(Math.max(fogU.uFar.value, 3400), fogU.uFar.value, streetView);
     scene.fog.near = fogU.uNear.value; scene.fog.far = fogU.uFar.value;
 
     controls.update();
