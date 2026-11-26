@@ -182,14 +182,15 @@
     apron.applyMatrix4(qc.matrixWorld);
     addQuaySurface(apron,'晴川阁 · 禹功矶石台驳岸','BankStone');
 
-    function rockMesh(vertices, material) {
+    function rockMesh(vertices, material, rounded = false) {
       const geometry = new THREE.BufferGeometry();
       geometry.setAttribute('position',new THREE.Float32BufferAttribute(vertices,3));
-      geometry.computeVertexNormals();
-      return new THREE.Mesh(geometry,material);
+      const surface = rounded ? BGU.mergeVertices(geometry) : geometry;
+      surface.computeVertexNormals();
+      return new THREE.Mesh(surface,material);
     }
 
-    // The exposed courses strike obliquely across the face and break into uneven shelves.
+    // Keep long, nearly level beds with uneven breaks where they meet the shore.
     const stations = [
       [-19.2, .02, .00, 1.8], [-17.8, .42, .10, 2.5], [-15.1, 1.06, .16, 3.5],
       [-12.4, .76, .07, 3.0], [-10.3, -.14, -.20, 1.8], [-7.2, -.51, -.27, 1.5],
@@ -199,18 +200,24 @@
       [18.15, -.8, -.12, .15], [21.85, -.83, -.09, .12], [23.5, .24, .17, 2.05],
       [25.4, .55, .25, 2.4], [27.2, .05, .10, 1.2]
     ];
-    const rows = stations.map(([x,reach,tilt,toe]) => [
+    function roundedRun(points, toward) {
+      return points.flatMap((point, i) => i === 0 || i === points.length-1 ? [point] :
+        [toward(point, points[i-1]), toward(point, points[i+1])]);
+    }
+    const soften = (a, b) => a.clone().lerp(b, .21);
+    const sections = stations.map(([x,reach,tilt,toe]) => roundedRun([
       toWorld(x,-.10,9.36),
-      toWorld(x,-.19,11.45+reach*.36),
-      toWorld(x,-.71+tilt,12.00+reach),
-      toWorld(x,-1.03+tilt,11.64+reach),
-      toWorld(x,-1.30+tilt,13.18+reach+toe*.16),
-      toWorld(x,-1.78+tilt,13.68+reach+toe*.33),
-      toWorld(x,-2.02+tilt,13.16+reach+toe*.34),
-      toWorld(x,-2.44+tilt,13.98+reach+toe*.57),
+      toWorld(x,-.23,11.45+reach*.36),
+      toWorld(x,-.65+tilt*.48,12.00+reach),
+      toWorld(x,-.93+tilt*.48,11.63+reach),
+      toWorld(x,-1.20+tilt*.45,13.18+reach+toe*.16),
+      toWorld(x,-1.63+tilt*.42,13.68+reach+toe*.33),
+      toWorld(x,-1.94+tilt*.38,13.11+reach+toe*.34),
+      toWorld(x,-2.35+tilt*.35,13.98+reach+toe*.57),
       toWorld(x,-2.94,14.05+reach+toe),
       toWorld(x,-3.65,14.5+reach+toe)
-    ]);
+    ], soften));
+    const rows = roundedRun(sections, (a, b) => a.map((point, i) => soften(point, b[i])));
     const rockFace = [];
     const triangle = (vertices,a,b,c) => vertices.push(...a.toArray(),...b.toArray(),...c.toArray());
     for (let i=1; i<rows.length; i++) {
@@ -227,7 +234,7 @@
         else triangle(rockFace,heel,row[j],row[j-1]);
       }
     }
-    addQuaySurface(rockMesh(rockFace,M.bankStone),'晴川阁 · 禹功矶层理岩壁','BankStone');
+    addQuaySurface(rockMesh(rockFace,M.bankStone,true),'晴川阁 · 禹功矶层理岩壁','BankStone');
 
     // Sample the original shore mask along each local ray; the lower rim of every
     // tongue is buried, and its water-plane ring supplies the ripple dimensions.
@@ -256,26 +263,33 @@
     ];
     function stoneTongue(center,width,reach,crest,skew,footprint,phase) {
       const rings=[
-        [-.36,.91,1.03,-.11], [0,1,1,0], [.21,.98,.88,-.02],
-        [.31,.91,.91,.02], [crest,.86,.88,-.13], [crest+.07,.58,.76,-.22]
+        [-.36,.91,1.03,-.11], [0,1,1,0], [.16,.99,.94,-.02],
+        [crest*.52,.95,.90,-.025], [crest*.58,.87,.81,-.06],
+        [crest*.88,.86,.82,-.10], [crest+.06,.68,.73,-.19]
       ].map(([y,sx,sz,inset]) => footprint.map(([u,v]) => {
         const root=Math.max(0,-v)*reach/3;
-        const bankRise=.48*y*(1-THREE.MathUtils.smoothstep(v,-.62,.36))/(crest+.07);
+        const bankRise=.35*y*(1-THREE.MathUtils.smoothstep(v,-.62,.36))/(crest+.06);
         return center.clone().addScaledVector(along,width*sx*u+skew*v)
           .addScaledVector(outward,reach*(sz*v+inset))
-          .setY(y > 0 ? y*(1+.20*Math.sin(u*3.7+phase)-.43*Math.max(0,v)) + root*(.24+y*.52) + bankRise : y);
+          .setY(y > 0 ? y*(1+.10*Math.sin(u*3.7+phase)-.21*Math.max(0,v)) + root*(.18+y*.33) + bankRise : y);
+      }));
+      // Keep the wet outline for the ripple shader. Round the rock above it along both axes.
+      const courses = rings.map((ring, band) => ring.flatMap((point, i) => {
+        const a=soften(point,ring[(i+ring.length-1)%ring.length]);
+        const b=soften(point,ring[(i+1)%ring.length]);
+        return [a, band < 2 ? point : a.clone().lerp(b,.5), b];
       }));
       const faces=[];
-      for (let band=1; band<rings.length; band++) {
-        const a=rings[band-1],b=rings[band];
+      for (let band=1; band<courses.length; band++) {
+        const a=courses[band-1],b=courses[band];
         for (let j=0;j<a.length;j++) {
           const k=(j+1)%a.length;
           triangle(faces,a[j],a[k],b[j]);
           triangle(faces,a[k],b[k],b[j]);
         }
       }
-      const top=rings.at(-1);
-      const crown=center.clone().addScaledVector(outward,-reach*.48).setY(crest+.64);
+      const top=courses.at(-1);
+      const crown=center.clone().addScaledVector(outward,-reach*.48).setY(crest+.23);
       for (let j=0;j<top.length;j++) triangle(faces,crown,top[j],top[(j+1)%top.length]);
       const radius=Math.max(...rings[1].filter((_,j)=>footprint[j][1]>=0)
         .map(p=>Math.abs(p.clone().sub(center).dot(along))));
@@ -295,7 +309,7 @@
           [.25,.41],[.70,.16],[1.15,-.03],[1.21,-.57],[.84,-1.05],[.49,-1.81],[-.37,-2.28]];
         faces.push(...stoneTongue(shelf,4.45,2.78,.55,-.54,slab,4).faces);
       }
-      addQuaySurface(rockMesh(faces,wetStone),'晴川阁 · 禹功矶入水石舌 '+(i+1),'ShoreStone');
+      addQuaySurface(rockMesh(faces,wetStone,true),'晴川阁 · 禹功矶入水石舌 '+(i+1),'ShoreStone');
       waterU.uQuaySpurs.value[i].set(center.x,center.z,radius,reach);
     }
 
