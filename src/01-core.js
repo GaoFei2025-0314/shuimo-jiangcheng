@@ -68,6 +68,9 @@
   const sharedInk = { uStreetLight: streetLight, uInk: { value: new THREE.Color('#29332f') }, uPaper: { value: PAPER }, uLight: { value: new THREE.Vector3(-.45, .85, .5) } };
 
   const inkVert = `
+    #ifdef RIDGE_CLOUD
+      varying float vRidgeLevel;
+    #endif
     #ifdef WALK_WEAR
       attribute float walkEdge;
       varying float vWalkEdge;
@@ -85,6 +88,9 @@
     #endif
     varying vec3 vN; varying vec3 vW; varying float vD; varying vec3 vC;
     void main(){
+      #ifdef RIDGE_CLOUD
+        vRidgeLevel = position.y;
+      #endif
       #ifdef WALK_WEAR
         vWalkEdge = walkEdge;
       #endif
@@ -117,6 +123,9 @@
       gl_Position = projectionMatrix * mv;
     }`;
   const inkFrag = NOISE + `
+    #ifdef RIDGE_CLOUD
+      varying float vRidgeLevel;
+    #endif
     #ifdef WALK_WEAR
       varying float vWalkEdge;
     #endif
@@ -515,6 +524,9 @@
         float closeWall=wall*(1.-smoothstep(52.,145.,vD));
         float daylight=.105+.105*smoothstep(-.3,.72,dot(n,normalize(uLight)));
         col=mix(col,mix(uFog,vec3(.76,.80,.78),.44),closeWall*daylight*(.78+.22*vSky));
+      #endif
+      #ifdef RIDGE_CLOUD
+        col = mix(col, uFog, smoothstep(.70, 1., vRidgeLevel));
       #endif
       float mist=smoothstep(uNear,uFar,vD);
       #if defined(ARCHITECTURE_AO) && !defined(CITY_DETAIL)

@@ -135,3 +135,43 @@ test('resizing reflows the hills and sun at once', async ({ page }) => {
   expect(sun.visible).toBe(true);
   expect(sun.bottom).toBeLessThanOrEqual(sun.limit);
 });
+
+test('near ridges rise as a middle distance and stay out of the rivers', async ({ page }) => {
+  await openMap(page);
+  const ridges = await page.evaluate(() => {
+    const { scene, YZ, HAN } = window.__dbg;
+    const segments = [YZ, HAN].flatMap(river => river.s.slice(1).map((b, i) => {
+      const a = river.s[i], dx = b.p.x - a.p.x, dz = b.p.z - a.p.z;
+      const margin = Math.max(a.w, b.w);
+      return { a, b, dx, dz, lengthSq: dx * dx + dz * dz,
+        left: Math.min(a.p.x, b.p.x) - margin, right: Math.max(a.p.x, b.p.x) + margin,
+        top: Math.min(a.p.z, b.p.z) - margin, bottom: Math.max(a.p.z, b.p.z) + margin };
+    }));
+    let height = 0, peak = 0, inRiver = 0, riverTop = -Infinity;
+    const point = new THREE.Vector3();
+    scene.traverse(mesh => {
+      if (mesh.userData.landscapeSurface?.group !== '远山') return;
+      const box = new THREE.Box3().setFromObject(mesh);
+      height = Math.max(height, box.max.y - box.min.y);
+      peak = Math.max(peak, box.max.y);
+      const vertices = mesh.geometry.attributes.position;
+      for (let i = 0; i < vertices.count; i++) {
+        point.fromBufferAttribute(vertices, i).applyMatrix4(mesh.matrixWorld);
+        for (const { a, b, dx, dz, lengthSq, left, right, top, bottom } of segments) {
+          if (point.x < left || point.x > right || point.z < top || point.z > bottom) continue;
+          const x = point.x - a.p.x, z = point.z - a.p.z;
+          const t = THREE.MathUtils.clamp((x * dx + z * dz) / lengthSq, 0, 1);
+          if (Math.hypot(x - t * dx, z - t * dz) > THREE.MathUtils.lerp(a.w, b.w, t)) continue;
+          riverTop = Math.max(riverTop, point.y);
+          inRiver++;
+          break;
+        }
+      }
+    });
+    return { height, peak, inRiver, riverTop };
+  });
+  expect(ridges.height).toBeGreaterThanOrEqual(180);
+  expect(ridges.peak).toBeGreaterThanOrEqual(180);
+  expect(ridges.inRiver).toBeGreaterThan(0);
+  expect(ridges.riverTop).toBeLessThanOrEqual(.5);
+});

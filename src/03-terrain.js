@@ -772,8 +772,8 @@
   // Keep a continuous low corridor through the distant washes, including the eastward bend.
   function riverClearance(x, z) {
     let clearance = Infinity;
-    for (let i = 0; i < YZ.s.length-1; i += 3) {
-      const a = YZ.s[i], b = YZ.s[Math.min(i+3,YZ.s.length-1)];
+    for (const river of [YZ, HAN]) for (let i = 0; i < river.s.length-1; i += 3) {
+      const a = river.s[i], b = river.s[Math.min(i+3,river.s.length-1)];
       const dx = b.p.x-a.p.x, dz = b.p.z-a.p.z, lengthSq = dx*dx+dz*dz;
       const t = THREE.MathUtils.clamp(((x-a.p.x)*dx+(z-a.p.z)*dz)/lengthSq,0,1);
       const across = Math.hypot(x-a.p.x-t*dx,z-a.p.z-t*dz);
@@ -784,15 +784,19 @@
 
   // 远山：层层淡出，烘托「烟波浩渺」
   [
-    { z:  -980, tone: .24, n: 10, h: 48, w: 300 },
-    { z: -1360, tone: .44, n: 9,  h: 68, w: 400 },
-    { z:  1080, tone: .32, n: 9,  h: 54, w: 340 },
-    { z:  1520, tone: .52, n: 8,  h: 76, w: 430 }
+    { z:  -980, tone: .24, n: 10, h: 132, w: 390 },
+    { z: -1360, tone: .44, n: 9,  h: 187, w: 520 },
+    { z:  1080, tone: .32, n: 9,  h: 149, w: 442 },
+    { z:  1520, tone: .52, n: 8,  h: 209, w: 559 }
   ].forEach(Lr => {
     const mat = inkMat(.82 + Lr.tone * .15, false, null, null, { foot: 1 });
+    mat.defines = { RIDGE_CLOUD: 1 };
     for (let i = 0; i < Lr.n; i++) {
       const x = (i - (Lr.n - 1) / 2) * Lr.w * .95 + (rnd() - .5) * 200 + 200;
-      const ridge = ellipsoid(Lr.w * (.6 + rnd() * .5), Lr.h * (.55 + rnd() * .7), Lr.w * .35, x, -6, Lr.z + (rnd() - .5) * 160, mat, 40);
+      const radius = Lr.w * (.6 + rnd() * .5), height = Lr.h * (.55 + rnd() * .7);
+      const ridge = ellipsoid(radius, 1, Lr.w * .35, x, -6, Lr.z + (rnd() - .5) * 160, mat, 40);
+      // 局部 y 保留相对高度，着色器据此把每座近岭的顶部洇进云气。
+      ridge.scale.y = height;
       const vertices = ridge.geometry.attributes.position;
       for (let j = 0; j < vertices.count; j++) {
         const worldX = x+vertices.getX(j), worldZ = ridge.position.z+vertices.getZ(j);

@@ -93,11 +93,14 @@ test('each atlas plate opens for its own model, with two architectural detail vi
   await select.selectOption('tower');
   for (const key of keys) {
     await select.selectOption(key);
+    // 水墨图会替换原始 JPEG；待成图就位后核对解码与实际分辨率。
+    await expect(image).toHaveAttribute('src', /^blob:/);
     await image.evaluate(image => image.decode());
     expect(await image.evaluate(image => image.naturalWidth)).toBeGreaterThanOrEqual(1000);
     if (key === 'tower' || key === 'bridge') {
       const before = await image.getAttribute('alt');
       await dialog.locator('#atlas-detail').click();
+      await expect(image).toHaveAttribute('src', /^blob:/);
       await image.evaluate(image => image.decode());
       await expect(image).not.toHaveAttribute('alt', before);
       await expect(dialog.locator('#atlas-detail')).toHaveAttribute('aria-pressed', 'true');
