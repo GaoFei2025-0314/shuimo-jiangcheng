@@ -104,7 +104,7 @@
 
   .ui { position: fixed; z-index: 5; }
   /* 焦点：全页统一为朱砂细线，只在键盘操作时出现。 */
-  button:focus-visible, select:focus-visible, summary:focus-visible, #retry:focus-visible {
+  button:focus-visible, select:focus-visible, summary:focus-visible, #poem:focus-visible {
     outline: 1.5px solid var(--cinnabar); outline-offset: 3px;
   }
   /* 墨痕：一道朱砂笔触，悬停半显，选中全显。 */
@@ -332,7 +332,7 @@
   /* 底部导览：宋体平铺，只有当前所在处用书法。行首压三镇小印。 */
   #nav {
     /* 占满说明卡与罗盘之间的余宽；常见桌面宽度下罗盘比例尺与导览同行。 */
-    flex: 1 1 520px; min-width: 0; display: flex; gap: 2px 16px; pointer-events: auto; padding-bottom: 12px; flex-wrap: wrap;
+    flex: 1 1 470px; min-width: 0; display: flex; gap: 2px 16px; pointer-events: auto; padding-bottom: 12px; flex-wrap: wrap;
     max-width: 760px;
   }
   #nav .grp { display: flex; flex-wrap: wrap; align-items: center; gap: 0 1px; }
@@ -383,11 +383,14 @@
   [hidden] { display: none !important; }
 
   @media (max-width: 1180px) {
-    #nav { flex-basis: 420px; max-width: min(600px, max(460px, calc(100vw - 450px))); gap: 2px 12px; }
+    #nav { flex-basis: 380px; max-width: min(600px, max(460px, calc(100vw - 450px))); gap: 2px 12px; }
     #nav button { font-size: 16px; padding: 7px 7px 9px; --ink-inset: 7px; }
   }
-  @media (max-width: 860px) {
+  /* 再窄时说明卡、导览与罗盘挤不进一行：罗盘比例尺让位，不另起一行。 */
+  @media (max-width: 1100px) {
     #tools { display: none; }
+  }
+  @media (max-width: 860px) {
     #nav { max-width: 100%; }
   }
   @media (max-width: 640px), (max-height: 500px) {
@@ -432,6 +435,7 @@
     #nav.more-left { --fade-left: 19px; }
     #nav.more-right { --fade-right: 22px; }
     #nav button { flex: 0 0 auto; min-height: 44px; font-size: 16px; padding: 8px; }
+    #nav button:focus-visible { outline-offset: -3px; }
     #nav .grp { flex: none; flex-wrap: nowrap; }
     #credit { flex-basis: auto; margin-top: 0; }
     #tools { display: none; }
@@ -487,7 +491,7 @@
   <p>武汉 · 两江四岸 · 依实境方位</p>
 </header>
 
-<aside id="poem" class="ui" aria-label="崔颢《黄鹤楼》：晴川历历汉阳树，芳草萋萋鹦鹉洲。日暮乡关何处是，烟波江上使人愁。">
+<aside id="poem" class="ui" tabindex="0" aria-label="崔颢《黄鹤楼》：晴川历历汉阳树，芳草萋萋鹦鹉洲。日暮乡关何处是，烟波江上使人愁。">
   <p class="meta" aria-hidden="true"><span>崔</span><span>颢</span><span>·</span><span>黄</span><span>鹤</span><span>楼</span></p>
   <p aria-hidden="true"><span>晴</span><span>川</span><span>历</span><span>历</span><span>汉</span><span>阳</span><span>树</span></p>
   <p aria-hidden="true"><span>芳</span><span>草</span><span>萋</span><span>萋</span><span>鹦</span><span>鹉</span><span>洲</span></p>
@@ -500,7 +504,7 @@
 
 <div id="map-actions" class="ui">
   <select id="walk-view" aria-label="选择江岸街巷视角" disabled hidden></select>
-  <button type="button" id="more-toggle" class="panel-toggle ink-text" aria-label="更多" aria-controls="action-menu" aria-expanded="false">⋯</button>
+  <button type="button" id="more-toggle" class="panel-toggle ink-text" disabled aria-label="更多" aria-controls="action-menu" aria-expanded="false">⋯</button>
   <div id="action-menu">
     <button type="button" id="poem-toggle" class="panel-toggle ink-text ink-underline" disabled aria-controls="poem" aria-expanded="false">题跋</button>
     <button type="button" id="reset-view" class="ink-text ink-underline" disabled><span aria-hidden="true">↑</span>回全城</button>

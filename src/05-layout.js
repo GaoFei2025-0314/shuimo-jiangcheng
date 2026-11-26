@@ -26,6 +26,10 @@
       if (actionMenu.contains(focused) && !focused.getClientRects().length) moreButton.focus({ preventScroll: true });
     });
     function closeOutside(event) { if (menu && !actions.contains(event.target)) setMenu(false); }
+    // 键盘 Tab 出菜单时一并收起；relatedTarget 为空（如 Safari 点击按钮不取焦点）时不动。
+    actions.addEventListener('focusout', event => {
+      if (menu && event.relatedTarget && !actions.contains(event.relatedTarget)) setMenu(false);
+    });
     document.addEventListener('pointerdown', closeOutside);
     app.cleanups.push(() => document.removeEventListener('pointerdown', closeOutside));
     const nav = document.getElementById('nav');

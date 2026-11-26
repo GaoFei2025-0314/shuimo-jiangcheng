@@ -206,6 +206,12 @@ test('the compact action menu opens from the ellipsis, closes on Escape and outs
   await more.click();
   await page.mouse.click(195, 420);
   await expect(menu).toBeHidden();
+  // Tabbing past the last item folds the menu away instead of leaving it over the map.
+  await more.focus();
+  await page.keyboard.press('Enter');
+  await page.locator('#painting-toggle').focus();
+  await page.keyboard.press('Tab');
+  await expect(menu).toBeHidden();
   // Choosing an item by keyboard closes the menu and hands focus back to the ellipsis.
   await more.focus();
   await page.keyboard.press('Enter');
@@ -221,4 +227,46 @@ test('the compact action menu opens from the ellipsis, closes on Escape and outs
   await page.keyboard.press('Escape');
   await expect(more).toBeVisible();
   await expect(menu).toBeHidden();
+});
+
+test('compact nav keeps the whole focus ring inside its scroll strip', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await ready(page);
+  // After a key press, focus counts as keyboard focus (WebKit does not Tab to buttons by default).
+  await page.keyboard.press('Shift');
+  await page.locator('#b-core').focus();
+  expect(await page.locator('#b-core').evaluate(el => el.matches(':focus-visible'))).toBe(true);
+  const ring = await page.locator('#b-core').evaluate(el => {
+    const style = getComputedStyle(el), box = el.getBoundingClientRect(), nav = el.closest('#nav').getBoundingClientRect();
+    const reach = parseFloat(style.outlineWidth) + parseFloat(style.outlineOffset);
+    return { top: box.top - reach, bottom: box.bottom + reach, navTop: nav.top, navBottom: nav.bottom };
+  });
+  expect(ring.top).toBeGreaterThanOrEqual(ring.navTop);
+  expect(ring.bottom).toBeLessThanOrEqual(ring.navBottom);
+});
+
+for (const width of [1440, 1280, 1216, 1181, 1120, 1101, 1000]) {
+  test(`the compass and scale stay on the card's line or step aside at ${width}px`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 900 });
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    await ready(page);
+    const { visible, toolsBottom, cardBottom } = await page.evaluate(() => {
+      const tools = document.getElementById('tools');
+      return { visible: tools.getClientRects().length > 0,
+        toolsBottom: tools.getBoundingClientRect().bottom, cardBottom: document.getElementById('card').getBoundingClientRect().bottom };
+    });
+    if (visible) expect(toolsBottom).toBeLessThanOrEqual(cardBottom + 1);
+  });
+}
+
+test('the resting poem returns for keyboard readers', async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await ready(page);
+  await page.locator('#b-tower').click();
+  const line = page.locator('#poem p').nth(1);
+  await expect(line).toHaveCSS('opacity', '0.35');
+  await page.locator('#poem').focus();
+  await expect(page.locator('#poem')).toBeFocused();
+  await expect(line).toHaveCSS('opacity', '1');
 });
