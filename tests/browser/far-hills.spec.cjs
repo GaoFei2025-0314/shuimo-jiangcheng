@@ -126,7 +126,7 @@ test('resizing reflows the hills and sun at once', async ({ page }) => {
     const point = direction.normalize().multiplyScalar(1e5).add(camera.position).project(camera);
     const horizonY = (1 - point.y) * innerHeight / 2;
     const fit = THREE.MathUtils.clamp((horizonY - 8) / (sun.offsetTop + sun.offsetHeight), 0, 1);
-    farHills.update({ horizonY, azimuth: controls.getAzimuthalAngle(), fit, streetView: 0, width: innerWidth, height: innerHeight });
+    farHills.update({ horizonY, azimuth: controls.getAzimuthalAngle(), fit, streetView: 0, width: innerWidth, height: innerHeight, sunDiameter: sun.offsetHeight });
     return { before, after: farHills.ridgeTopAt(195) };
   });
   expect(Number.isFinite(result.before)).toBe(true);
@@ -174,4 +174,54 @@ test('near ridges rise as a middle distance and stay out of the rivers', async (
   expect(ridges.peak).toBeGreaterThanOrEqual(180);
   expect(ridges.inRiver).toBeGreaterThan(0);
   expect(ridges.riverTop).toBeLessThanOrEqual(.5);
+});
+
+for (const [width, height] of [[1440,900], [1280,720], [390,844], [844,390]]) {
+  test(`home and core show the horizon in the upper sky at ${width}x${height}`, async ({ page }) => {
+    await page.setViewportSize({ width, height });
+    await openMap(page);
+    for (const key of ['home', 'core']) {
+      await page.locator('#b-' + key).click();
+      const ratio = await page.evaluate(async () => {
+        await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+        const { camera } = window.__dbg;
+        const forward = camera.getWorldDirection(new THREE.Vector3());
+        forward.y = 0;
+        forward.normalize().multiplyScalar(1e5).add(camera.position).project(camera);
+        return (1 - forward.y) / 2;
+      });
+      expect(ratio, key).toBeGreaterThanOrEqual(.15);
+      expect(ratio, key).toBeLessThanOrEqual(.40);
+      expect(await hillsOpacity(page), key).toBeGreaterThan(.5);
+    }
+  });
+}
+
+test('the broad city sky keeps the sun inside the paper', async ({ page }) => {
+  await openMap(page);
+  for (const [width, height] of [[1440,900], [1280,720], [390,844], [844,390]]) {
+    await page.setViewportSize({ width, height });
+    for (const key of ['home', 'core']) {
+      await page.locator('#b-' + key).click();
+      const top = await page.locator('#sun').evaluate(async el => {
+        await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+        return el.getBoundingClientRect().top;
+      });
+      expect(top, width + ' ' + key).toBeGreaterThanOrEqual(0);
+    }
+  }
+});
+
+test('the city lens changes with the flight to a landmark', async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: 'no-preference' });
+  await openMap(page);
+  const start = await page.evaluate(() => {
+    const { camera, flyTo } = window.__dbg;
+    const from = camera.fov;
+    flyTo('qc');
+    return { from, first: camera.fov };
+  });
+  expect(start.first).toBeCloseTo(start.from, 2);
+  await expect.poll(() => page.evaluate(() => window.__dbg.camera.fov)).toBeLessThan(start.from - 5);
+  await expect.poll(() => page.evaluate(() => window.__dbg.camera.fov)).toBeCloseTo(38, 1);
 });

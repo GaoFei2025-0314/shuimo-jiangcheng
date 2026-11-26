@@ -44,8 +44,9 @@
     }
     let disposed = false, previousAngle, angle = 0, opacity = 0, scale = 1;
     const bands = [paint(0, .35, .11), paint(1, .6, .17), paint(2, 1, .25)];
+    const maxRise = Math.max(...bands.map((band, i) => 204 - 29 * i - Math.min(...band.crest)));
     return {
-      update({ horizonY, azimuth, fit, streetView, height: screenHeight }) {
+      update({ horizonY, azimuth, fit, streetView, height: screenHeight, sunDiameter = 0 }) {
         // 方位角跨过 ±π 时接续上一帧；每绕一周各层都恰好走完自己的瓦片。
         const delta = azimuth - (previousAngle ?? 0);
         angle += Math.atan2(Math.sin(delta), Math.cos(delta));
@@ -53,7 +54,9 @@
         opacity = THREE.MathUtils.smoothstep(fit, .2, .6) * (1 - streetView);
         element.style.opacity = opacity;
         if (!opacity) return;
-        scale = Math.min(1, screenHeight / 800, Math.max(.12, horizonY / 210));
+        // 留足整个日盘的高度，整条山带等比收低，旋转时山形不会跟着太阳起伏。
+        const rise = Math.max(0, horizonY - .85 * sunDiameter * fit - 4);
+        scale = Math.min(1, screenHeight / 800, horizonY / 210, rise / maxRise);
         for (const [i, band] of bands.entries()) {
           band.tile = width * band.speed;
           band.shift = angle / turn * band.tile;

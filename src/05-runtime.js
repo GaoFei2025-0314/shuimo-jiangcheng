@@ -9,8 +9,8 @@
   }
   const wudaAt = AT.wuda;
   const VIEWS = {
-    home:    { pos: { x: 440, y: 650, z: 1180 }, target: { x: 250, y: 0, z: -130 } },
-    core:    orbit(geo(114.2855, 30.5528), 32, 440, 22, 30),
+    home:    orbit({ x: 250, z: -130 }, 0, 875, 8.25, 16),
+    core:    orbit(geo(114.2855, 30.5528), 32, 440, 22, 18),
     tower:   orbit(AT.tower, terrainTop(AT.tower.x, AT.tower.z) + 13, 100, -48, 35),
     bridge:  orbit(AT.bridge, 6.2, 174, -71, 16),
     qc:      orbit(qc.position, qc.position.y + 7, 112, 65, 8),
@@ -106,6 +106,14 @@
   const bridgeBounds = [...bridgeSlices.values()];
   viewBounds.core = [viewBounds.tower, viewBounds.qc, viewBounds.tv, ...bridgeBounds];
   const isFramed = key => layout.compact || (key !== 'home' && key !== 'lake');
+  // 城市全景用较宽的取景角，在保留俯角与河岸纵深的同时纳入地平线。
+  function mapFov(key) {
+    if (walkSelect.hidden && (key === 'home' || key === 'core')) {
+      if (W < H) return 84;
+      return key === 'home' ? 68 : 76;
+    }
+    return W / H < .9 ? 52 : 38;
+  }
   function viewFor(key) {
     const close = activeView === key && (bridgeCloseView === 'name' ? bridgeInscriptions[key]
       : bridgeCloseView === 'craft' && bridgeCraft[key]);
@@ -113,14 +121,14 @@
       const pose = (!layout.compact && W >= H && close.landscape) || close;
       const target = close.model.localToWorld(pose.at.clone());
       const front = pose.front.clone().applyQuaternion(close.model.quaternion).normalize();
-      const halfFov = THREE.MathUtils.degToRad(camera.fov / 2);
+      const halfFov = THREE.MathUtils.degToRad(mapFov(key) / 2);
       const distance = Math.max(pose.distance, close.width * H / (2 * W * Math.tan(halfFov)));
       return { target, pos: target.clone().addScaledVector(front, distance) };
     }
     // 竖屏沿龟蛇两山的轴线取景，让地标前后展开。
     let base = VIEWS[key];
-    if (W < H && key === 'core') base = orbit(geo(114.2855, 30.5528), 32, 440, 55, 30);
-    if (W < H && key === 'home') base = orbit({ x: 245, z: -105 }, 16, 1100, 49, 38);
+    if (W < H && key === 'core') base = orbit(geo(114.2855, 30.5528), 32, 440, 55, 20);
+    if (W < H && key === 'home') base = orbit({ x: 245, z: -105 }, 16, 1100, 49, 22);
     // Look east across the full lake: its long axis fills the vertical page.
     const portraitLake = W < H && key === 'lake';
     if (portraitLake) base = orbit(lakeC, 3, 560, 266, 59);
@@ -137,7 +145,7 @@
     if (key === 'qc') fill = layout.compact ? .97 : 1.13;
     if (key === 'museum' || key === 'tower' || (key === 'bridge' && !layout.compact)) fill = .97;
     if (layout.compact && (key === 'home' || key === 'bridge')) fill = portraitBridge ? .99 : .92;
-    const view = fittedView(base, bounds, safeRect, W, H, camera.fov, fill);
+    const view = fittedView(base, bounds, safeRect, W, H, mapFov(key), fill);
     if (key === 'honglou' && !layout.compact) {
       view.pos.y += 1.8;
       view.target.y += 1.8;
@@ -165,15 +173,26 @@
     gsap.killTweensOf([camera.position, controls.target, card]);
     card.style.opacity = '1'; card.style.transform = 'none';
   }
+  const lens = { fov: camera.fov };
   function moveCamera(view, animate) {
+    const fov = view.fov ?? mapFov(activeView);
     if (!animate || reduce) {
+      lens.fov = camera.fov = fov;
+      camera.updateProjectionMatrix();
+      sceneDirty = true;
       camera.position.copy(view.pos); controls.target.copy(view.target); controls.update();
       return;
     }
     flightStart=performance.now();
     flight = gsap.timeline({ paused:true, onUpdate: () => controls.update(),
-      onComplete: () => { flight.kill(); flight = null; } });
-    flight.to(camera.position, { ...view.pos, duration: 2.6, ease: 'power3.inOut' }, 0)
+      onComplete: () => {
+        camera.fov = fov;
+        camera.updateProjectionMatrix();
+        sceneDirty = true;
+        flight.kill(); flight = null;
+      } });
+    flight.to(lens, { fov, duration: 2.6, ease: 'power3.inOut' }, 0)
+      .to(camera.position, { ...view.pos, duration: 2.6, ease: 'power3.inOut' }, 0)
       .to(controls.target, { ...view.target, duration: 2.6, ease: 'power3.inOut' }, 0)
       .fromTo(card, { opacity: 0, y: 8 }, { opacity: 1, y: 0, duration: .45 }, 0);
   }
@@ -214,7 +233,7 @@
     controls.maxPolarAngle=Math.PI*.47;
     controls.minDistance=walkReturn.minDistance;
     controls.maxDistance=walkReturn.maxDistance;
-    camera.fov=camera.aspect<.9?52:38;
+    camera.fov=mapFov(activeView);
     camera.updateProjectionMatrix();
     if (cameraMode==='manual') moveCamera(walkReturn,false);
     else layoutSignature=''; // Refit the preset after the dock has been restored.
@@ -225,7 +244,7 @@
   function visitWalk(key) {
     if (!Object.hasOwn(walkViews,key)) return false;
     if (walkSelect.hidden) walkReturn={
-      mode:cameraMode, bridgeCloseView, minDistance:controls.minDistance, maxDistance:controls.maxDistance,
+      mode:cameraMode, bridgeCloseView, fov:lens.fov, minDistance:controls.minDistance, maxDistance:controls.maxDistance,
       pos:camera.position.clone(), target:controls.target.clone()
     };
     stopFlight();
@@ -508,7 +527,7 @@
     sun.style.setProperty('--sky-fit', fit.toFixed(4));
     // A continuous angle keeps the cloud banks in place through a complete camera orbit.
     const azimuth=controls.getAzimuthalAngle();
-    farHills.update({ horizonY, azimuth, fit, streetView: walkSelect.hidden ? streetView : 1, width: W, height: H });
+    farHills.update({ horizonY, azimuth, fit, streetView: walkSelect.hidden ? streetView : 1, width: W, height: H, sunDiameter });
     // 缩放原点在纸面的上沿，圆心的横坐标不随缩放而变；半像素余量吸收布局取整。
     const ridge = farHills.ridgeTopAt(W * left / 100 + sunDiameter / 2);
     const scale = fit * disc;
@@ -533,7 +552,10 @@
     if (layout.compact) {
       const home = viewFor('home'), distance = home.pos.distanceTo(home.target);
       controls.maxDistance = Math.max(2600, distance * 1.4);
-      markFarScale = Math.max(1, distance / 1500);
+      // 用全城画幅覆盖的宽度标定牌签距离，广角拉近后，东湖远岸仍可点选。
+      const halfAngle = Math.PI / 360;
+      const coverage = distance * Math.tan(mapFov('home') * halfAngle) / Math.tan((W / H < .9 ? 52 : 38) * halfAngle);
+      markFarScale = Math.max(1, coverage / 1500);
     } else {
       controls.maxDistance = 2600; markFarScale = 1;
     }
@@ -546,7 +568,7 @@
     sunDiameter = sun.offsetHeight;
     sunExtent = sun.offsetTop + sunDiameter;
     renderer.setSize(W, H, false);
-    camera.aspect = W / H; camera.fov = W / H < .9 ? 52 : 38;
+    camera.aspect = W / H; lens.fov = camera.fov = mapFov(activeView);
     camera.updateProjectionMatrix();
     layoutSignature = '';
     refreshLayout();
@@ -886,7 +908,7 @@
     // A high aerial view needs enough depth precision to separate the water and low banks.
     // Limit the near plane by both height and viewing distance when descending or zooming in.
     const clipNear = THREE.MathUtils.clamp(.01 * Math.min(camera.position.y - floorY, dist), .5, 12);
-    const streetFov=THREE.MathUtils.lerp(camera.aspect<.9?52:38,camera.aspect<.9?66:51,streetView*(1.-THREE.MathUtils.smoothstep(dist,32,67)));
+    const streetFov=THREE.MathUtils.lerp(lens.fov,camera.aspect<.9?66:51,streetView*(1.-THREE.MathUtils.smoothstep(dist,32,67)));
     if (Math.abs(camera.near - clipNear) > .04 || Math.abs(camera.fov-streetFov)>.08) {
       camera.fov=streetFov;
       camera.near = clipNear;
