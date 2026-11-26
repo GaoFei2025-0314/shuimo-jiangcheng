@@ -228,3 +228,41 @@ test('landmark paths reach their gates, streets and banks on the rendered terrai
   });
   expect(failures).toEqual([]);
 });
+
+test('Baotong halls sit on their hillside terraces', async ({ page }) => {
+  await page.goto('/?debug');
+  await page.waitForFunction(() => window.__ready && window.__dbg);
+  const result = await page.evaluate(() => {
+    const { scene, terrainTop } = window.__dbg;
+    const temple = scene.children.find(node => node.userData.modelKey === 'hongshan');
+    temple.updateMatrixWorld(true);
+    const ray = new THREE.Raycaster(), up = new THREE.Vector3(0, 1, 0);
+    ray.far = 1.22;
+    function bottomGap(x, z) {
+      const point = temple.localToWorld(new THREE.Vector3(x, 0, z));
+      const grade = terrainTop(point.x, point.z);
+      ray.set(point.setY(grade - .61), up);
+      const bottom = ray.intersectObject(temple, true).find(hit => hit.face.normal.y < -.75);
+      return bottom ? bottom.point.y - grade : null;
+    }
+    const terraces = [
+      { name: '山门', z: 22.55, across: 4.1, along: 1.45 },
+      { name: '大雄宝殿', z: 16.95, across: 5.2, along: 1.6 },
+      { name: '祖师殿', z: 11.48, across: 2.85, along: 1.08 }
+    ].map(({ name, z, across, along }) => ({
+      name,
+      gaps: [bottomGap(0, z), ...[-across, across].flatMap(x =>
+        [-along, along].map(offset => bottomGap(x, z + offset)))]
+    }));
+    // Between terraces, outside the stair width, the earlier footing must end.
+    const separations = [19.875, 13.81].flatMap(z => [-3.4, 3.4].map(x => bottomGap(x, z)));
+    return { terraces, separations };
+  });
+  for (const { name, gaps } of result.terraces) {
+    for (const gap of gaps) {
+      expect(gap, name + ' foundation surface').not.toBeNull();
+      expect(Math.abs(gap), name + ' ground contact').toBeLessThanOrEqual(.6);
+    }
+  }
+  expect(result.separations).toEqual([null, null, null, null]);
+});
