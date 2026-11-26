@@ -12,9 +12,11 @@ from mesh import Part
 # https://www.crecg.com/web/xwzx61/zfgsdt39/2025021110090542360/index.html
 # Portal, lettering and railing details use the Hanyang tourism photo gallery.
 # https://hanyang.hmltec.com/index.php?c=show&id=227
-# The centre tower has an A-shaped longitudinal elevation. The side towers taper gently.
+# The centre tower has an A-shaped longitudinal elevation.
 # The contractor distinguishes the concrete lower frame from the steel upper tower.
 # https://www.crecg.com/web/xwzx61/zfgsdt39/2025021110084953628/index.html
+# The axial aerial photo shows the shallow arch under the upper beam and raised crowns.
+# https://hbj.wuhan.gov.cn/hjsj/ztzl/mryt/2026mryt/202601/t20260112_2709617.html
 HALF_LENGTH = 100
 SIDE_TOWER = 71.5
 ANCHOR = 91
@@ -24,6 +26,7 @@ GIRDER_X = 6.50
 GIRDER_BOTTOM = -1.66
 SADDLES = ((-ANCHOR, 6.45), (-SIDE_TOWER, 32.20), (0, 36.10),
            (SIDE_TOWER, 32.20), (ANCHOR, 6.45))
+PORTAL_HALF_DEPTH = 1.48
 
 
 def road_height(y):
@@ -35,13 +38,16 @@ def cable_height(span, y):
     run = stop - start
     sag = 22.75 if span in (1, 2) else .79
     t = (y - start) / run
-    height = low + (high-low)*t - 4*sag*t*(1-t)
-    # Ease the approach to the saddles so adjacent spans share a horizontal tangent there.
-    for distance, slope, at_tower in ((y-start, (high-low-4*sag)/run, span > 0),
-                                      (stop-y, (low-high-4*sag)/run, span < 3)):
-        if at_tower and distance < 2.5:
-            height -= slope * distance * (1-distance/2.5)**2
-    return height
+    # Ease the cable through the open crown before it drops clear of the shoulders.
+    # The remapping matches the span's height and tangent again at the far end of the ease.
+    ease = 3.40
+    if span > 0 and y-start < ease:
+        distance = y-start
+        t = distance * (1-(1-distance/ease)**2) / run
+    elif span < 3 and stop-y < ease:
+        distance = stop-y
+        t = 1 - distance * (1-(1-distance/ease)**2) / run
+    return low + (high-low)*t - 4*sag*t*(1-t)
 
 
 def chamfered_ring(x, y, z, width, depth, cut):
@@ -65,34 +71,44 @@ def towers():
                       (.44, 22.6, depth, 1.3), (.69, 22.6, depth, 1.3))])
         girder_bottom = road_height(y) + GIRDER_BOTTOM
         landing = girder_bottom - .29
-        crown_floor = top-(2.62 if center_tower else 2.08)
+        crown_floor = top-.93
         for side in (-1, 1):
             x = side*CABLE_X
             if center_tower:
                 for direction in (-1, 1):
                     # Both longitudinal legs meet the same saddle; the road threads between them.
-                    loft(orange, [chamfered_ring(side*8.10, y+direction*spread, z, w, d, cut)
-                                  for z, spread, w, d, cut in
-                                  ((.61, 6.60, 3.10, 3.82, .31), (6.72, 5.82, 2.96, 3.63, .29))])
                     loft(orange, [chamfered_ring(side*xx, y+direction*spread, z, w, d, cut)
                                   for z, xx, spread, w, d, cut in
-                                  ((6.64, 8.10, 5.84, 2.87, 3.42, .26),
-                                   (8.23, 8.08, 5.47, 2.71, 3.30, .25),
-                                   (crown_floor+.03, 7.36, .67, 2.45, 2.30, .23))])
-                    # The narrow splice collar marks the material junction at the roadway frame.
-                    loft(metalwork, [chamfered_ring(side*8.10, y+direction*5.83, z,
-                                                    2.98, 3.66, .28)
-                                      for z in (6.64, 6.75)])
+                                  ((.61, 8.94, 5.78, 4.70, 4.92, .82),
+                                   (6.53, 8.82, 5.51, 4.12, 4.30, .68))])
+                    loft(orange, [chamfered_ring(side*xx, y+direction*spread, z, w, d, cut)
+                                  for z, xx, spread, w, d, cut in
+                                  ((6.51, 8.82, 5.51, 3.94, 4.13, .63),
+                                   (11.10, 8.71, 4.62, 3.77, 3.90, .60),
+                                   (top-5.4, 7.56, 1.40, 2.84, 2.94, .44),
+                                   (top-3.20, CABLE_X, .64, 2.67, 2.55, .38))])
                 loft(orange, [chamfered_ring(x, y, z, w, d, cut) for z, w, d, cut in
-                              ((crown_floor-.36, 2.55, 3.74, .24), (crown_floor, 2.53, 3.55, .24))])
+                              ((top-3.80, 2.73, 4.36, .40), (top-3.18, 2.67, 3.96, .38))])
             else:
                 loft(orange, [chamfered_ring(side*xx, y, z, w, d, cut) for z, xx, w, d, cut in
-                              ((.61, 8.18, 3.16, 3.42, .31), (DECK, 7.97, 2.85, 3.01, .28),
-                               (crown_floor, CABLE_X, 2.24, 2.34, .25))])
-            # The cable axis at the saddle is shared with cables(). Both ends of the cover are open.
-            crown_depth = 2.78 if center_tower else 2.30
-            pedestal_height = top-.45-crown_floor
-            orange.box((x, y, crown_floor + pedestal_height/2), (1.04, .55, pedestal_height))
+                              ((.61, 8.94, 4.82, 5.14, .81),
+                               (DECK, 8.79, 4.11, 4.32, .66),
+                               (top-5.4, 7.57, 2.84, 3.42, .47),
+                               (top-3.18, CABLE_X, 2.60, 3.34, .37))])
+            crown_depth = 4.12 if center_tower else 3.66
+            # Two shoulders and a short bearing pedestal leave a channel
+            # under both mouths of the saddle cover for the cable approaches.
+            for sign in (-1, 1):
+                loft(orange, [chamfered_ring(x+sign*dx, y, z, w, d, cut)
+                              for z, dx, w, d, cut in
+                              ((top-3.20, .77, 1.20, crown_depth-.21, .23),
+                               (crown_floor+.02, .86, .81, crown_depth-.48, .19))])
+                loft(metalwork, [chamfered_ring(x+sign*1.02, y, z, w, d, cut)
+                                 for z, w, d, cut in
+                                 ((crown_floor-.12, .92, crown_depth-.34, .17),
+                                  (crown_floor+.20, 1.17, crown_depth, .21),
+                                  (crown_floor+.46, 1.17, crown_depth, .21))])
+            orange.box((x, y, top-1.826), (1.04, .64, 2.71))
             saddle_rings = []
             for offset in (-.66, -.33, 0, .33, .66):
                 station = y + offset
@@ -100,51 +116,46 @@ def towers():
                 saddle_rings.append([(x+dx, station, seat-dz) for dx, dz in
                                      ((-.52, 0), (.52, 0), (.52, .28), (-.52, .28))])
             loft(saddles, saddle_rings)
-            for dx in (-.78, .78):
-                cheek_height = top+.29-crown_floor
-                orange.box((x+dx, y, crown_floor+cheek_height/2), (.48, crown_depth, cheek_height))
-            metalwork.box((x, y, top+.415), (2.40, crown_depth, .25))
-            # The existing access rails flank the housing.
-            for dx in (-1.17, 1.17):
-                pale.box((x+dx, y, top+.68), (.05, crown_depth-.14, .06))
-                for dy in (-crown_depth*.42, 0, crown_depth*.42):
-                    pale.box((x+dx, y+dy, top+.51), (.057, .061, .35))
-            # Orange maintenance stages wrap the edge towers just beneath the road.
+            for dx in (-1.13, 1.13):
+                loft(orange, [chamfered_ring(x+dx, y, z, w, d, cut) for z, w, d, cut in
+                              ((top-.50, .82, crown_depth-.18, .15),
+                               (top+.46, .73, crown_depth-.51, .15))])
+            loft(orange, [chamfered_ring(x, y, z, w, d, cut) for z, w, d, cut in
+                          ((top+.43, 3.32, crown_depth-.35, .28),
+                           (top+.58, 3.32, crown_depth-.35, .28),
+                           (top+.71, 2.92, crown_depth-.76, .25))])
             if not center_tower:
-                foot, platform = side*7.88, DECK-1.33
-                metalwork.box((foot, y, platform), (3.38, 3.59, .25))
-                for dx in (-1.61, 1.61):
-                    orange.box((foot+dx, y, platform+.47), (.08, 3.55, .08))
-                    for dy in (-1.75, 1.75):
-                        orange.box((foot+dx, y+dy, platform+.22), (.08, .09, .50))
-                for dy in (-1.75, 1.75):
-                    orange.box((foot, y+dy, platform+.47), (3.27, .08, .08))
+                foot, platform = side*8.83, DECK-1.33
+                metalwork.box((foot, y, platform), (5.06, 5.24, .29))
+                for dx in (-2.46, 2.46):
+                    orange.box((foot+dx, y, platform+.53), (.10, 5.20, .10))
+                    for dy in (-2.56, 2.56):
+                        orange.box((foot+dx, y+dy, platform+.25), (.10, .10, .56))
+                for dy in (-2.56, 2.56):
+                    orange.box((foot, y+dy, platform+.53), (5.02, .10, .10))
         # The centre portal spans both longitudinal legs, with bearings under the main beams.
-        beam_depth = 10.7 if center_tower else 3.46
+        beam_depth = 12.1 if center_tower else 4.12
         loft(orange, [chamfered_ring(0, y, z, w, d, cut) for z, w, d, cut in
-                      ((landing-1.64, 16.20, beam_depth-.55, .28),
-                       (landing-1.28, 16.58, beam_depth, .28),
-                       (landing, 16.58, beam_depth, .28))])
+                      ((landing-2.09, 16.30, beam_depth-.84, .48),
+                       (landing-1.62, 17.66, beam_depth, .48),
+                       (landing, 17.66, beam_depth, .48))])
         for side in (-1, 1):
             saddles.box((side*GIRDER_X, y, (landing+girder_bottom)/2), (1.14, 1.72, .33))
-        # Faceted haunches on the upper crossbeam leave the characteristic tall, open portal.
-        outline = [(-7.83, top-3.78), (-5.90, top-3.51), (-3.60, top-3.03),
-                   (0, top-2.75), (3.60, top-3.03), (5.90, top-3.51), (7.83, top-3.78),
-                   (7.83, top-1.12), (-7.83, top-1.12)]
-        vertices = [(u, y+dy, z) for dy in (-1.03, 1.03) for u, z in outline]
+        # The two shallow soffit slopes in the axial photographs deepen into haunches.
+        outline = [(-8.24, top-5.50), (0, top-4.15), (8.24, top-5.50),
+                   (8.24, top-1.86), (-8.24, top-1.86)]
+        vertices = [(u, y+side*PORTAL_HALF_DEPTH, z) for side in (-1, 1) for u, z in outline]
         n = len(outline)
         faces = [tuple(range(n)), tuple(reversed(range(n, n*2)))]
         faces.extend((i, i+n, (i+1)%n+n, (i+1)%n) for i in range(n))
         orange.solid(vertices, faces)
         for direction in (-1, 1):
-            face = y+direction*1.04
-            metalwork.box((0, face, top-1.16), (12.33, .16, .15))
-            # A shallow inspection walk under the crown frames the haunched beam.
-            edge = face+direction*.30
-            pale.box((0, edge, top-.63), (11.75, .05, .058))
-            metalwork.box((0, face+direction*.18, top-1.12), (11.74, .36, .12))
+            face = y+direction*PORTAL_HALF_DEPTH
+            edge = face+direction*.32
+            pale.box((0, edge, top-1.36), (11.75, .07, .07))
+            metalwork.box((0, face+direction*.12, top-1.90), (12.03, .44, .25))
             for x in (-5.84, -2.93, 0, 2.93, 5.84):
-                pale.box((x, edge, top-.86), (.059, .055, .46))
+                pale.box((x, edge, top-1.60), (.07, .07, .48))
     for sign in (-1, 1):
         for span, width in ((83, 12.8), (97.2, 13.1)):
             y = sign*span
@@ -175,7 +186,7 @@ def cables():
             supports = []
             for k in range(samples):
                 # Keep the hanger stations and sample the approach trims more closely.
-                near_saddle = (i == 0 and k >= samples-2) or (i == 3 and k < 2)
+                near_saddle = (i == 0 and k >= samples-3) or (i == 3 and k < 3)
                 subdivisions = 3 if main or near_saddle else 1
                 for sub in range(subdivisions):
                     t = (k+sub/subdivisions)/samples
@@ -227,7 +238,7 @@ def cables():
             sockets.box((outboard, y, bottom-.20), (.24, .64, .52))
             hangers.box(((x+outboard)/2, y, bottom+.017), (.56, .63, .16))
             # Two small sloping ribs seat the projecting top flange against the plate.
-            profile = [(sign*7.60, bottom-.36), (sign*7.94, bottom+.037), (sign*7.55, bottom+.041)]
+            profile = [(sign*7.63, bottom-.41), (sign*7.96, bottom+.037), (sign*7.53, bottom+.041)]
             if sign < 0:
                 profile.reverse()
             for dy in (-.215, .215):
@@ -266,7 +277,8 @@ def deck():
     main = [(-.42, GIRDER_BOTTOM), (.42, GIRDER_BOTTOM), (.42, -1.40), (.15, -1.40),
             (.15, -.67), (.43, -.67), (.43, -.38), (-.43, -.38), (-.43, -.67),
             (-.15, -.67), (-.15, -1.40), (-.42, -1.40)]
-    nose = [(6.58, -.74), (7.37, -.65), (7.77, -.31), (7.77, -.05), (7.43, .02), (6.58, -.33)]
+    nose = [(6.52, -1.62), (6.97, -1.62), (7.85, -.82), (7.85, -.28),
+            (7.55, -.08), (6.52, -.36)]
     for side in (-1, 1):
         x = side * 7.42
         deck_section(girders, (-97.2, -SIDE_TOWER, SIDE_TOWER, 97.2),
@@ -276,12 +288,12 @@ def deck():
         profile = [(side*px, z) for px, z in nose]
         deck_section(girders, stations, profile if side > 0 else profile[::-1])
         for start, stop in ((-68.5, -7.5), (7.5, 68.5)):
-            deck_ribbon(access, side*7.32, .78, (start, stop), -1.31, .26, road_height)
-            deck_ribbon(access, side*7.69, .26, (start, stop), -.58, .25, road_height)
+            deck_ribbon(access, side*7.58, .77, (start, stop), -1.52, .23, road_height)
+            deck_ribbon(access, side*7.96, .18, (start, stop), -.75, .17, road_height)
             for i in range(13):
                 y = start + (stop-start)*i/12
                 z = road_height(y)
-                access.box((side*7.69, y, z-.99), (.26, .26, .67))
+                access.box((side*7.96, y, z-1.12), (.18, .20, .75))
                 girders.box((side*7.04, y, z-1.56), (1.27, .30, .25))
         deck_ribbon(sidewalk, side*7.15, .93, stations, .15, .21, road_height)
         for h in (.29, .99):
@@ -497,7 +509,7 @@ def bridge_name():
         signs = ((-SIDE_TOWER, SADDLES[1][1], 1), (0, SADDLES[2][1], 1),
                  (0, SADDLES[2][1], -1), (SIDE_TOWER, SADDLES[3][1], -1))
         for y, top, direction in signs:
-            vertices = [(direction*v.co.x, y-direction*(1.09+v.co.z), top-1.85+v.co.y)
+            vertices = [(direction*v.co.x, y-direction*(PORTAL_HALF_DEPTH+.03+v.co.z), top-2.88+v.co.y)
                         for v in glyphs.vertices]
             lettering.solid(vertices, faces)
     finally:
