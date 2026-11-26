@@ -231,7 +231,7 @@ test('both inscribed bridge names are legible in the atlas and on the physical m
         await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
         const scene = window.__testScene, camera = window.__testCamera, renderer = window.__testRenderer;
         const model = scene.children.find(o => o.userData.modelKey === key);
-        const steel = key === 'bridge', center = steel ? new THREE.Vector3(11.98,10.19,-82) : new THREE.Vector3(0,34.25,1.09);
+        const steel = key === 'bridge', center = steel ? new THREE.Vector3(11.98,10.19,-82) : new THREE.Vector3(0,33.24,1.51);
         // Find the raised lettering by its actual face plane, independently of material batches.
         const facePoints = mesh => {
           const vertices = mesh.geometry.attributes.position, letters = new THREE.Box3();
