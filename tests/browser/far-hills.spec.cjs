@@ -205,6 +205,37 @@ test('near ridges have secondary peaks separated by saddles', async ({ page }) =
 });
 
 for (const [width, height] of [[1440,900], [1280,720], [390,844], [844,390]]) {
+  test(`the sun fits the sky clear of visible controls at ${width}x${height}`, async ({ page }) => {
+    await page.setViewportSize({ width, height });
+    await openMap(page);
+    async function checkSun() {
+      const disc = await page.locator('#sun').evaluate(async sun => {
+        await new Promise(done => requestAnimationFrame(() => requestAnimationFrame(done)));
+        const r = sun.getBoundingClientRect();
+        const collisions = [...document.querySelectorAll('#title, #map-actions, #sound, #poem')]
+          .filter(el => el.checkVisibility()).filter(el => {
+            const b = el.getBoundingClientRect();
+            return b.left < r.right && b.right > r.left && b.top < r.bottom && b.bottom > r.top;
+          }).map(el => el.id);
+        return { diameter: Math.max(r.width, r.height), opacity: Number(getComputedStyle(sun).opacity), collisions };
+      });
+      expect(disc.opacity).toBeGreaterThan(0);
+      expect(disc.diameter).toBeGreaterThan(0);
+      expect(disc.diameter).toBeLessThanOrEqual(width < height ? 64 : 104);
+      expect(disc.collisions).toEqual([]);
+    }
+    for (const key of ['home', 'core']) {
+      await page.locator('#b-' + key).click();
+      await checkSun();
+    }
+    if (width < height) {
+      await page.locator('#more-toggle').click();
+      await page.locator('#poem-toggle').click();
+      await expect(page.locator('#poem')).toBeVisible();
+      await checkSun();
+    }
+  });
+
   test(`home, core and tower retain a natural field of view at ${width}x${height}`, async ({ page }) => {
     await page.setViewportSize({ width, height });
     await openMap(page);

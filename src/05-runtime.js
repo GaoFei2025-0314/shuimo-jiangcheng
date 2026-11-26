@@ -522,6 +522,29 @@
   app.cleanups.push(() => farHills.dispose());
   let sunExtent = 1, sunDiameter = 1;
   const riverSun=new THREE.Vector3(-1,.20,.42).normalize(), skyPoint=new THREE.Vector3();
+  function sunSlot(preferredX, scale, horizonY) {
+    const size = sunDiameter * scale, radius = size / 2;
+    const restingTop = (sunExtent - sunDiameter) * scale;
+    const columns = [preferredX, radius, W - radius];
+    for (const b of uiBlocks) columns.push(b.left - radius - 3, b.right + radius + 3);
+    let best = null, distance = Infinity;
+    for (const column of columns) {
+      const x = THREE.MathUtils.clamp(column, radius, W - radius);
+      // 每次横移都重新采样该处山脊，日盘下缘最多入山 15%。
+      const ceiling = Math.min(horizonY - size, farHills.ridgeTopAt(x) - .85 * size) - 1;
+      if (ceiling < 0) continue;
+      const blocks = uiBlocks.filter(b => x + radius + 1 > b.left && x - radius - 1 < b.right);
+      const tops = [Math.min(ceiling, restingTop), 0];
+      for (const b of blocks) tops.push(b.top - size - 3, b.bottom + 3);
+      for (const top of tops) {
+        if (top < 0 || top > ceiling || blocks.some(b => top + size + 1 > b.top && top - 1 < b.bottom)) continue;
+        const delta = (x - preferredX) ** 2 + (top - restingTop) ** 2;
+        if (delta < distance) { best = { x, top }; distance = delta; }
+        if (delta === 0) return best;
+      }
+    }
+    return best;
+  }
   function fitSunToSky(streetView) {
     // Project a horizontal sightline using the same off-centre lens as the map.
     const lens = camera.projectionMatrix.elements;
@@ -532,19 +555,23 @@
     const visible=skyPoint.z<1 && skyPoint.z>-1 ? 1.-THREE.MathUtils.smoothstep(Math.abs(skyPoint.x),.88,1.15) : 0;
     const position=THREE.MathUtils.clamp(50+50*skyPoint.x,-15,115);
     const left = THREE.MathUtils.lerp(64, position, streetView);
-    sun.style.left = left + '%';
     // A distant cinnabar dab sits behind the street, clear of the silhouettes over the water.
-    const disc = 1 - .46 * streetView;
-    sun.style.setProperty('--sun-disc', disc);
+    let disc = 1 - .46 * streetView;
     sun.style.setProperty('--sun-presence',((1.-streetView*(1.-visible))*(1.-.54*streetView)).toFixed(3));
     sun.style.setProperty('--sky-fit', fit.toFixed(4));
     // A continuous angle keeps the cloud banks in place through a complete camera orbit.
     const azimuth=controls.getAzimuthalAngle();
     farHills.update({ horizonY, azimuth, fit, streetView: walkSelect.hidden ? streetView : 1, width: W, height: H, sunDiameter });
-    // 缩放原点在纸面的上沿，圆心的横坐标不随缩放而变；半像素余量吸收布局取整。
-    const ridge = farHills.ridgeTopAt(W * left / 100 + sunDiameter / 2);
-    const scale = fit * disc;
-    const shift = Math.min(0, ridge + .15 * sunDiameter * scale - sunExtent * scale - .75);
+    const preferredX = W * left / 100 + sunDiameter / 2;
+    let slot = fit > 0 && sunSlot(preferredX, fit * disc, horizonY);
+    // 极窄的天际线若被控件占满，缩小朱砂点，保留山脊与纸边间的余地。
+    while (fit > 0 && !slot && disc > .01) {
+      disc *= .75;
+      slot = sunSlot(preferredX, fit * disc, horizonY);
+    }
+    sun.style.left = ((slot ? slot.x : preferredX) - sunDiameter / 2) + 'px';
+    sun.style.setProperty('--sun-disc', disc);
+    const shift = slot ? slot.top - (sunExtent - sunDiameter) * fit * disc : 0;
     sun.style.setProperty('--sun-shift', shift + 'px');
     riverSky.style.setProperty('--sky-x',(50+43*Math.sin(azimuth)).toFixed(2)+'%');
     riverSky.style.setProperty('--sky-wash',(fit*(.15+.55*streetView)).toFixed(3));
@@ -553,13 +580,13 @@
     const measured = layout.measure(W, H);
     safeRect = measured.rect; uiBlocks = measured.blocks; layoutDirty = false;
     overlays.invalidate();
+    sceneDirty = true; // 字体或控件可改变避让区域，即使安全区四边不动。
     const framed = isFramed(activeView);
     // 竖幅全城把主点压到安全区下半部：让岸线展开，同时把地平线留在上方。
     const portraitOverview = activeView === 'home' && W < H;
     const signature = [framed, portraitOverview, W, H, ...Object.values(safeRect)].join(',');
     if (signature === layoutSignature) return;
     layoutSignature = signature;
-    sceneDirty = true;
     if (framed) {
       const cx = (safeRect.left + safeRect.right) / 2;
       const cy = THREE.MathUtils.lerp(safeRect.top, safeRect.bottom, portraitOverview ? .70 : .5);
