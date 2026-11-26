@@ -787,6 +787,11 @@
 
   // 远山：层层淡出，烘托「烟波浩渺」
   const ridgeFogFar = { value: 3400 };
+  function ridgeNoise(t) {
+    const i = Math.floor(t), f = t - i;
+    const sample = k => THREE.MathUtils.euclideanModulo(Math.sin(k * 127.1 + 31.7) * 43758.5453, 1) * 2 - 1;
+    return THREE.MathUtils.lerp(sample(i), sample(i + 1), f * f * (3 - 2 * f));
+  }
   [
     { z:  -980, tone: .24, n: 10, h: 132, w: 390 },
     { z: -1360, tone: .44, n: 9,  h: 187, w: 520 },
@@ -795,19 +800,30 @@
   ].forEach(Lr => {
     const mat = inkMat(.46 + Lr.tone * .24, false, ['#454b44', '#d9d9ce'], null, { foot: 1 });
     mat.defines = { RIDGE_CLOUD: 1 };
+    mat.extensions.derivatives = true;
     mat.uniforms.uFar = ridgeFogFar;
     for (let i = 0; i < Lr.n; i++) {
       const x = (i - (Lr.n - 1) / 2) * Lr.w * .95 + (rnd() - .5) * 200 + 200;
       const radius = Lr.w * (.6 + rnd() * .5), height = Lr.h * (.55 + rnd() * .7);
-      const ridge = ellipsoid(radius, 1, Lr.w * .35, x, -6, Lr.z + (rnd() - .5) * 160, mat, 40);
-      // 局部 y 保留相对高度，着色器据此把每座近岭的顶部洇进云气。
-      ridge.scale.y = height;
-      const vertices = ridge.geometry.attributes.position;
+      const z = Lr.z + (rnd() - .5) * 160, depth = Lr.w * .35;
+      const geometry = new THREE.PlaneGeometry(2, 2, 56, 12);
+      geometry.rotateX(-Math.PI / 2);
+      const vertices = geometry.attributes.position;
       for (let j = 0; j < vertices.count; j++) {
-        const worldX = x+vertices.getX(j), worldZ = ridge.position.z+vertices.getZ(j);
-        vertices.setY(j,vertices.getY(j)*riverClearance(worldX,worldZ));
+        const along = vertices.getX(j), across = vertices.getZ(j);
+        const worldX = x + along * radius;
+        // 中间一行是蜿蜒的分水岭；山腹向两侧跌落，边沿在纸面下接平。
+        const spine = .26 * ridgeNoise((worldX + z) / 125);
+        const offsetZ = depth * (across + spine * (1 - Math.abs(across)));
+        const worldZ = z + offsetZ, station = worldX + worldZ * .23;
+        const peaks = .94 + .37 * ridgeNoise(station / 96) + .22 * ridgeNoise(station / 47) + .09 * ridgeNoise(station / 22);
+        const flank = (1 - along * along) * Math.pow(1 - Math.abs(across), 1.3);
+        vertices.setXYZ(j, along * radius, flank * peaks * riverClearance(worldX, worldZ), offsetZ);
       }
-      ridge.geometry.computeVertexNormals();
+      geometry.computeVertexNormals();
+      const ridge = new THREE.Mesh(geometry, mat);
+      ridge.position.set(x, -6, z);
+      ridge.scale.y = height;
       ridge.userData.landscapeSurface = { group: '远山', name: '远岭 ' + Lr.z + ' · ' + (i+1), material: 'DistantRidge' };
       scene.add(ridge);
     }

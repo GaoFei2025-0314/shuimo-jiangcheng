@@ -176,6 +176,34 @@ test('near ridges rise as a middle distance and stay out of the rivers', async (
   expect(ridges.riverTop).toBeLessThanOrEqual(.5);
 });
 
+test('near ridges have secondary peaks separated by saddles', async ({ page }) => {
+  await openMap(page);
+  const { varied, total } = await page.evaluate(() => {
+    let total = 0, varied = 0;
+    const ray = new THREE.Raycaster();
+    ray.ray.direction.set(0, -1, 0);
+    window.__dbg.scene.traverse(ridge => {
+      if (ridge.userData.landscapeSurface?.group !== '远山') return;
+      const box = new THREE.Box3().setFromObject(ridge);
+      const centerZ = (box.min.z + box.max.z) / 2;
+      // 横穿山顶取高程，单个椭圆拱不会出现两峰间的鞍部。
+      const profile = [];
+      for (let i = 1; i < 40; i++) {
+        const x = THREE.MathUtils.lerp(box.min.x, box.max.x, i / 40);
+        ray.ray.origin.set(x, box.max.y + 1, centerZ);
+        profile.push(ray.intersectObject(ridge, false)[0]?.point.y ?? 0);
+      }
+      const relief = Math.max(...profile) - Math.min(...profile);
+      const hasSaddle = profile.some((height, i) =>
+        Math.min(Math.max(...profile.slice(0, i)), Math.max(...profile.slice(i + 1))) - height > relief * .06);
+      total++;
+      if (hasSaddle) varied++;
+    });
+    return { varied, total };
+  });
+  expect(varied).toBeGreaterThan(total / 2);
+});
+
 for (const [width, height] of [[1440,900], [1280,720], [390,844], [844,390]]) {
   test(`home, core and tower retain a natural field of view at ${width}x${height}`, async ({ page }) => {
     await page.setViewportSize({ width, height });

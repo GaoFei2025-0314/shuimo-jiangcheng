@@ -70,7 +70,7 @@
 
   const inkVert = `
     #ifdef RIDGE_CLOUD
-      varying float vRidgeLevel;
+      varying vec2 vRidge;
     #endif
     #ifdef WALK_WEAR
       attribute float walkEdge;
@@ -90,7 +90,7 @@
     varying vec3 vN; varying vec3 vW; varying float vD; varying vec3 vC;
     void main(){
       #ifdef RIDGE_CLOUD
-        vRidgeLevel = position.y;
+        vRidge = vec2(position.y, 2. * uv.y - 1.);
       #endif
       #ifdef WALK_WEAR
         vWalkEdge = walkEdge;
@@ -125,7 +125,7 @@
     }`;
   const inkFrag = NOISE + `
     #ifdef RIDGE_CLOUD
-      varying float vRidgeLevel;
+      varying vec2 vRidge;
     #endif
     #ifdef WALK_WEAR
       varying float vWalkEdge;
@@ -527,7 +527,12 @@
         col=mix(col,mix(uFog,vec3(.76,.80,.78),.44),closeWall*daylight*(.78+.22*vSky));
       #endif
       #ifdef RIDGE_CLOUD
-        col = mix(col, uFog, smoothstep(.70, 1., vRidgeLevel));
+        // 山腹略露皴色，山脚隐入云气。沿分水岭留一道断续的干笔。
+        float foothill = 1. - smoothstep(.02, .56, vRidge.x);
+        col = mix(col, uFog, .46 + .51 * foothill);
+        float edge = 1. - smoothstep(.006, .018 + min(.09, fwidth(vRidge.y)), abs(vRidge.y));
+        float dry = smoothstep(.24, .72, vnoise(vW.xz * .14));
+        col = mix(col, uInk, .54 * edge * dry * smoothstep(.12, .52, vRidge.x));
       #endif
       float mist=smoothstep(uNear,uFar,vD);
       #if defined(ARCHITECTURE_AO) && !defined(CITY_DETAIL)
