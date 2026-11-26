@@ -92,11 +92,41 @@
   pickables.forEach(object => { viewBounds[object.userData.focus] = new THREE.Box3().setFromObject(object); });
   viewBounds.home = pickables.filter(object => object.userData.focus !== 'lake')
     .map(object => viewBounds[object.userData.focus]);
-  // 竖幅全城需要容纳完整的三镇与东湖，地标的包围盒没有覆盖远岸。
-  const portraitMapBounds = new THREE.Box3(), shorePoint = new THREE.Vector3();
-  for (const ring of [HANKOU, HANYANG, WUCHANG, LAKES[0]]) {
-    for (const [x, z] of ring) portraitMapBounds.expandByPoint(shorePoint.set(x, LAND_Y, z));
+  // 从沙湖一带沿原来的 49° 方位俯看。先把街区和湖岸换算到这个机位的右、上、后三轴。
+  const portraitHome = orbit({ x: 365, z: -120 }, LAND_Y, 1, 49, 38);
+  const portraitTarget = V().copy(portraitHome.target), portraitEye = V().copy(portraitHome.pos);
+  const portraitBack = portraitEye.clone().sub(portraitTarget).normalize();
+  const mapToView = new THREE.Matrix4().lookAt(portraitEye, portraitTarget, camera.up).setPosition(portraitTarget).invert();
+  const portraitSites = LAKE.map(([x, z]) => V(x, LAND_Y, z).applyMatrix4(mapToView));
+  const houseKinds = new Set();
+  for (const mesh of scene.children) {
+    // 同款建筑的各材质批次共用落点。启动时读取完整分布，之后的视锥裁剪不会改变取景。
+    if (!mesh.isInstancedMesh || !mesh.name.startsWith('City / ') || houseKinds.has(mesh.name)) continue;
+    houseKinds.add(mesh.name);
+    for (let i = 0; i < mesh.count; i++) {
+      portraitSites.push(V().fromArray(mesh.instanceMatrix.array, i * 16 + 12).applyMatrix4(mesh.matrixWorld).applyMatrix4(mapToView));
+    }
   }
+  for (const box of viewBounds.home) {
+    for (const x of [box.min.x, box.max.x]) for (const y of [box.min.y, box.max.y]) for (const z of [box.min.z, box.max.z]) {
+      portraitSites.push(V(x, y, z).applyMatrix4(mapToView));
+    }
+  }
+  const portraitAimY = .45;
+  function portraitHomeView() {
+    const width = safeRect.right - safeRect.left, height = safeRect.bottom - safeRect.top;
+    const focal = H / (2 * Math.tan(THREE.MathUtils.degToRad(mapFov('home') / 2)));
+    const halfWidth = width / 2 - 2, above = height * portraitAimY - 2, below = height * (1 - portraitAimY) - 2;
+    let distance = 22;
+    for (const { x, y, z } of portraitSites) {
+      // 深度为 distance - z；每个点到题头、导览和两侧都再留两像素。
+      const depth = focal * Math.max(Math.abs(x) / halfWidth, y / above, -y / below);
+      distance = Math.max(distance, z + depth);
+    }
+    return { target: portraitTarget.clone(), pos: portraitTarget.clone().addScaledVector(portraitBack, distance) };
+  }
+  // 手动环绕仍可退到容纳整块测绘地形的距离。
+  const surveyBounds = new THREE.Box3(V(X0, LAND_Y, ZTOP), V(X1, LAND_Y, ZBOT));
   // Follow the curve as well as the straight truss. A single box around both banks
   // would fit a large empty rectangle beside the Hanyang approach.
   const bridgeSlices = new Map(), bridgePoint = new THREE.Vector3();
@@ -134,10 +164,7 @@
     // 竖屏沿龟蛇两山的轴线取景，让地标前后展开。
     let base = VIEWS[key];
     if (W < H && key === 'core') base = orbit(geo(114.2855, 30.5528), 32, 440, 55, 14);
-    if (W < H && key === 'home') {
-      const northUp = orbit({ x: 0, z: 0 }, 0, 1, 0, 18);
-      return fittedView(northUp, portraitMapBounds, safeRect, W, H, mapFov(key), .98);
-    }
+    if (W < H && key === 'home') return portraitHomeView();
     if (key === 'home' && !layout.compact && safeRect.bottom < H) {
       // 武昌东南街区前排的屋脚对齐导览安全线。沿画面竖轴平移，保留江天地平线。
       const target = V().copy(base.target), pos = V().copy(base.pos).lerp(target, .04);
@@ -572,6 +599,8 @@
     let disc = 1 - .46 * streetView;
     sun.style.setProperty('--sun-presence',((1.-streetView*(1.-visible))*(1.-.54*streetView)).toFixed(3));
     sun.style.setProperty('--sky-fit', fit.toFixed(4));
+    // 完全淡出时让日盘收在自身中心，避免 4vh 的亚像素取整把零宽边界推到纸外。
+    sun.style.transformOrigin = fit === 0 ? 'center' : '';
     // A continuous angle keeps the cloud banks in place through a complete camera orbit.
     const azimuth=controls.getAzimuthalAngle();
     farHills.update({ horizonY, azimuth, fit, streetView: walkSelect.hidden ? streetView : 1, width: W, height: H, sunDiameter });
@@ -602,13 +631,15 @@
     layoutSignature = signature;
     if (framed) {
       const cx = (safeRect.left + safeRect.right) / 2;
-      const cy = THREE.MathUtils.lerp(safeRect.top, safeRect.bottom, portraitOverview ? .55 : .5);
+      const cy = THREE.MathUtils.lerp(safeRect.top, safeRect.bottom, portraitOverview ? portraitAimY : .5);
       camera.setViewOffset(W, H, W / 2 - cx, H / 2 - cy, W, H);
     } else camera.clearViewOffset();
     if (layout.compact || W < H) {
-      const home = viewFor('home'), distance = home.pos.distanceTo(home.target);
-      controls.maxDistance = Math.max(2600, distance * 1.4);
-      // 地标牌签仍以建成区的距离分级，整块陆地入画时留给地名题记。
+      const home = W < H
+        ? fittedView(orbit({ x: 0, z: 0 }, 0, 1, 0, 18), surveyBounds, safeRect, W, H, mapFov('home'), .98)
+        : viewFor('home');
+      controls.maxDistance = Math.max(2600, home.pos.distanceTo(home.target) * 1.4);
+      // 地标牌签仍以建成区的距离分级。
       const landmarkView = W < H
         ? fittedView(VIEWS.home, viewBounds.home, safeRect, W, H, mapFov('home'), .92)
         : home;

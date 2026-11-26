@@ -339,7 +339,7 @@ for (const [width, height] of [[1440,900], [1280,720], [390,844], [844,390]]) {
   test(`the sun fits the sky clear of visible controls at ${width}x${height}`, async ({ page }) => {
     await page.setViewportSize({ width, height });
     await openMap(page);
-    async function checkSun() {
+    async function checkSun(key) {
       const disc = await page.locator('#sun').evaluate(async sun => {
         await new Promise(done => requestAnimationFrame(() => requestAnimationFrame(done)));
         const r = sun.getBoundingClientRect();
@@ -350,6 +350,8 @@ for (const [width, height] of [[1440,900], [1280,720], [390,844], [844,390]]) {
           }).map(el => el.id);
         return { diameter: Math.max(r.width, r.height), opacity: Number(getComputedStyle(sun).opacity), collisions };
       });
+      // 390×844 全城以读图为先；地平线出画时太阳随远山淡出。若仍可见，照常检查遮挡。
+      if (width === 390 && height === 844 && key === 'home' && disc.opacity === 0) return;
       expect(disc.opacity).toBeGreaterThan(0);
       expect(disc.diameter).toBeGreaterThan(0);
       expect(disc.diameter).toBeLessThanOrEqual(width < height ? 64 : 104);
@@ -357,13 +359,13 @@ for (const [width, height] of [[1440,900], [1280,720], [390,844], [844,390]]) {
     }
     for (const key of ['home', 'core']) {
       await page.locator('#b-' + key).click();
-      await checkSun();
+      await checkSun(key);
     }
     if (width < height) {
       await page.locator('#more-toggle').click();
       await page.locator('#poem-toggle').click();
       await expect(page.locator('#poem')).toBeVisible();
-      await checkSun();
+      await checkSun('core');
     }
   });
 
@@ -377,10 +379,12 @@ for (const [width, height] of [[1440,900], [1280,720], [390,844], [844,390]]) {
     }
   });
 
-  test(`home and core show the horizon in the upper sky at ${width}x${height}`, async ({ page }) => {
+  // 竖屏全城以读图为先，地平线可出画，见构图设计文档的竖屏修订。
+  const horizonViews = width < height ? ['core'] : ['home', 'core'];
+  test(`the horizon stays in the upper sky for ${horizonViews.join(' and ')} at ${width}x${height}`, async ({ page }) => {
     await page.setViewportSize({ width, height });
     await openMap(page);
-    for (const key of ['home', 'core']) {
+    for (const key of horizonViews) {
       await page.locator('#b-' + key).click();
       const ratio = await page.evaluate(async () => {
         await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
@@ -397,35 +401,57 @@ for (const [width, height] of [[1440,900], [1280,720], [390,844], [844,390]]) {
   });
 }
 
-test('the portrait overview fits all three town outlines and East Lake across the map area', async ({ page }) => {
-  await page.setViewportSize({ width: 390, height: 844 });
-  await openMap(page);
-  await page.locator('#b-home').click();
-  const bounds = await page.evaluate(async () => {
-    await new Promise(done => requestAnimationFrame(() => requestAnimationFrame(done)));
-    const { HANKOU, HANYANG, WUCHANG, LAKES, LAND_Y, camera } = window.__dbg;
-    const box = new THREE.Box3(), point = new THREE.Vector3();
-    for (const ring of [HANKOU, HANYANG, WUCHANG, LAKES[0]]) {
-      for (const [x, z] of ring) {
-        point.set(x, LAND_Y, z).project(camera);
-        box.expandByPoint(point.set((point.x + 1) * innerWidth / 2, (1 - point.y) * innerHeight / 2, point.z));
+for (const [width, height] of [[390, 844], [360, 640]]) {
+  test(`the portrait overview frames the three built-up towns and the full East Lake shoreline at ${width}x${height}`, async ({ page }) => {
+    await page.setViewportSize({ width, height });
+    await openMap(page);
+    await page.locator('#b-home').click();
+    const bounds = await page.evaluate(async () => {
+      await new Promise(done => requestAnimationFrame(() => requestAnimationFrame(done)));
+      const { scene, camera, HANKOU, HANYANG, WUCHANG, LAKES, LAND_Y, inPoly } = window.__dbg;
+      const box = new THREE.Box3(), lake = new THREE.Box2(), point = new THREE.Vector3();
+      function toPixels(point) {
+        point.project(camera);
+        return point.set((point.x + 1) * innerWidth / 2, (1 - point.y) * innerHeight / 2, point.z);
       }
+      // 三镇多边形用底板四角封口；把封口也收入画面会将城区压成细带。按各镇建筑落点验收。
+      const towns = [HANKOU, HANYANG, WUCHANG], counts = [0, 0, 0], batches = new Set();
+      for (const mesh of scene.children) {
+        const matrices = mesh.userData.authoredMatrices;
+        if (!mesh.name.startsWith('City / ') || !matrices || batches.has(matrices)) continue;
+        batches.add(matrices);
+        for (let i = 0; i < matrices.length; i += 16) {
+          point.fromArray(matrices, i + 12).applyMatrix4(mesh.matrixWorld);
+          const town = towns.findIndex(ring => inPoly(ring, point.x, point.z));
+          if (town >= 0) counts[town]++;
+          box.expandByPoint(toPixels(point));
+        }
+      }
+      for (const [x, z] of LAKES[0]) {
+        toPixels(point.set(x, LAND_Y, z));
+        lake.expandByPoint(point);
+        box.expandByPoint(point);
+      }
+      const top = Math.max(...['title', 'sound'].map(id => document.getElementById(id).getBoundingClientRect().bottom)) + 8;
+      return { min: box.min.toArray(), max: box.max.toArray(), lakeWidth: lake.max.x - lake.min.x, counts, fov: camera.fov, top,
+        bottom: document.getElementById('dock').getBoundingClientRect().top - 8 };
+    });
+    expect(Math.min(...bounds.counts), 'buildings in each town').toBeGreaterThan(0);
+    expect(bounds.fov).toBeLessThanOrEqual(60);
+    expect(bounds.min[0]).toBeGreaterThanOrEqual(16);
+    expect(bounds.max[0]).toBeLessThanOrEqual(width - 16);
+    expect.soft(bounds.max[0] - bounds.min[0], 'horizontal city and lake span').toBeGreaterThanOrEqual(width * .70);
+    expect(bounds.min[1]).toBeGreaterThanOrEqual(bounds.top);
+    expect(bounds.max[1]).toBeLessThanOrEqual(bounds.bottom);
+    expect.soft(bounds.max[1] - bounds.min[1], 'vertical outline span').toBeGreaterThanOrEqual((bounds.bottom - bounds.top) * .45);
+    expect.soft(bounds.lakeWidth, 'East Lake shoreline width').toBeGreaterThanOrEqual(120);
+    expect(bounds.min[2]).toBeGreaterThan(-1);
+    expect(bounds.max[2]).toBeLessThan(1);
+    for (const name of ['汉口', '汉阳', '武昌', '东湖']) {
+      await expect(page.locator('#labels b').filter({ hasText: name })).toBeVisible();
     }
-    const top = Math.max(...['title', 'sound'].map(id => document.getElementById(id).getBoundingClientRect().bottom)) + 8;
-    return { min: box.min.toArray(), max: box.max.toArray(), top,
-      bottom: document.getElementById('dock').getBoundingClientRect().top - 8 };
   });
-  expect(bounds.min[0]).toBeGreaterThanOrEqual(16);
-  expect(bounds.max[0]).toBeLessThanOrEqual(390 - 16);
-  expect(bounds.max[0] - bounds.min[0]).toBeGreaterThanOrEqual(390 * .70);
-  expect(bounds.min[1]).toBeGreaterThanOrEqual(bounds.top);
-  expect(bounds.max[1]).toBeLessThanOrEqual(bounds.bottom);
-  expect(bounds.min[2]).toBeGreaterThan(-1);
-  expect(bounds.max[2]).toBeLessThan(1);
-  for (const name of ['汉口', '汉阳', '武昌', '东湖']) {
-    await expect(page.locator('#labels b').filter({ hasText: name })).toBeVisible();
-  }
-});
+}
 
 test('the foreground suspension bridge clears the desktop guide on entry', async ({ page }) => {
   await openMap(page);
