@@ -9,9 +9,9 @@
   }
   const wudaAt = AT.wuda;
   const VIEWS = {
-    home:    orbit({ x: 250, z: -130 }, 0, 875, 8.25, 16),
-    core:    orbit(geo(114.2855, 30.5528), 32, 440, 22, 18),
-    tower:   orbit(AT.tower, terrainTop(AT.tower.x, AT.tower.z) + 13, 100, -48, 27),
+    home:    orbit({ x: 250, z: -130 }, 0, 1150, 8.25, 11),
+    core:    orbit(geo(114.2855, 30.5528), 32, 440, 22, 12),
+    tower:   orbit(AT.tower, terrainTop(AT.tower.x, AT.tower.z) + 13, 100, -48, 13),
     bridge:  orbit(AT.bridge, 6.2, 174, -71, 11),
     qc:      orbit(qc.position, qc.position.y + 7, 112, 65, 8),
     tv:      orbit(AT.tv, 82, 350, 104, 7),
@@ -106,12 +106,11 @@
   const bridgeBounds = [...bridgeSlices.values()];
   viewBounds.core = [viewBounds.tower, viewBounds.qc, viewBounds.tv, ...bridgeBounds];
   const isFramed = key => layout.compact || (key !== 'home' && key !== 'lake');
-  // 城市全景用较宽的取景角，在保留俯角与河岸纵深的同时纳入地平线。
+  // 以较低的俯角纳入江天地平线，控制近桥的透视变形。
   function mapFov(key) {
     // 两江和黄鹤楼共用镜头，从江面手动回到西园时，同一机位仍指向同一座建筑。
     if (walkSelect.hidden && (key === 'home' || key === 'core' || key === 'tower')) {
-      if (W < H) return 84;
-      return key === 'home' ? 68 : 76;
+      return W < H ? 60 : 50;
     }
     return W / H < .9 ? 52 : 38;
   }
@@ -128,12 +127,12 @@
     }
     // 竖屏沿龟蛇两山的轴线取景，让地标前后展开。
     let base = VIEWS[key];
-    if (W < H && key === 'core') base = orbit(geo(114.2855, 30.5528), 32, 440, 55, 20);
-    if (W < H && key === 'home') base = orbit({ x: 245, z: -105 }, 16, 1100, 49, 22);
+    if (W < H && key === 'core') base = orbit(geo(114.2855, 30.5528), 32, 440, 55, 14);
+    if (W < H && key === 'home') base = orbit({ x: 245, z: -105 }, 16, 1100, 49, 14);
     // Look east across the full lake: its long axis fills the vertical page.
     const portraitLake = W < H && key === 'lake';
     if (portraitLake) base = orbit(lakeC, 3, 560, 266, 59);
-    if (W < H && key === 'tower') base = orbit(AT.tower, VIEWS.tower.target.y, 100, -66, 22);
+    if (W < H && key === 'tower') base = orbit(AT.tower, VIEWS.tower.target.y, 100, -66, 18);
     const portraitBridge = key === 'bridge' && W < H;
     const landscapeBridge = key === 'bridge' && !layout.compact && W >= H;
     if (landscapeBridge) base = orbit(AT.bridge, 6.2, 174, 140, 7);
@@ -147,6 +146,11 @@
     if (key === 'museum' || key === 'tower' || (key === 'bridge' && !layout.compact)) fill = .97;
     if (layout.compact && (key === 'home' || key === 'bridge')) fill = portraitBridge ? .99 : .92;
     const view = fittedView(base, bounds, safeRect, W, H, mapFov(key), fill);
+    if (key === 'core' && !layout.compact && W >= H) {
+      // 对准江面，前景鹦鹉洲大桥的桥面和引桥留在导览上方。
+      view.target.y -= 31;
+      view.pos.y -= 31;
+    }
     if (key === 'honglou' && !layout.compact) {
       view.pos.y += 1.8;
       view.target.y += 1.8;

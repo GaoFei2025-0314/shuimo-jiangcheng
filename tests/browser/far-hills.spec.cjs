@@ -177,6 +177,16 @@ test('near ridges rise as a middle distance and stay out of the rivers', async (
 });
 
 for (const [width, height] of [[1440,900], [1280,720], [390,844], [844,390]]) {
+  test(`home, core and tower retain a natural field of view at ${width}x${height}`, async ({ page }) => {
+    await page.setViewportSize({ width, height });
+    await openMap(page);
+    for (const key of ['home', 'core', 'tower']) {
+      await page.locator('#b-' + key).click();
+      const fov = await page.evaluate(() => window.__dbg.camera.fov);
+      expect(fov, key).toBeLessThanOrEqual(width < height ? 60 : 50);
+    }
+  });
+
   test(`home and core show the horizon in the upper sky at ${width}x${height}`, async ({ page }) => {
     await page.setViewportSize({ width, height });
     await openMap(page);
@@ -196,6 +206,30 @@ for (const [width, height] of [[1440,900], [1280,720], [390,844], [844,390]]) {
     }
   });
 }
+
+test('the foreground suspension bridge clears the desktop guide on entry', async ({ page }) => {
+  await openMap(page);
+  for (const [width, height] of [[1440,900], [1280,720]]) {
+    await page.setViewportSize({ width, height });
+    const gap = await page.evaluate(async () => {
+      await new Promise(done => requestAnimationFrame(() => requestAnimationFrame(done)));
+      const { scene, camera } = window.__dbg;
+      const bridge = scene.children.find(object => object.userData.focus === 'yingwuzhou');
+      const vertex = new THREE.Vector3();
+      let bottom = -Infinity;
+      bridge.traverse(part => {
+        const positions = part.geometry?.attributes.position;
+        if (!positions) return;
+        for (let i = 0; i < positions.count; i++) {
+          vertex.fromBufferAttribute(positions, i).applyMatrix4(part.matrixWorld).project(camera);
+          bottom = Math.max(bottom, (1 - vertex.y) * innerHeight / 2);
+        }
+      });
+      return document.getElementById('dock').getBoundingClientRect().top - bottom;
+    });
+    expect(gap, width + 'px').toBeGreaterThanOrEqual(8);
+  }
+});
 
 test('the broad city sky keeps the sun inside the paper', async ({ page }) => {
   await openMap(page);
