@@ -391,14 +391,16 @@ def chutian():
 def octagonal_tier(site, level, r, ground, height):
     label = f"洪山宝塔 · storey {level + 1}"
     a, depth = r * sin(pi / 8), r * cos(pi / 8)
+    top = ground + height
+    corbel_base = top - 1.04
     body = site.part(label + " brick chamber", "stone")
     piers = site.part(label + " corner columns", "cityBrick")
-    corbel = site.part(label + " corbelled brick eaves", "cityShade")
+    corbel = site.part(label + " corbelled brick eaves", "shadow")
     seat = site.part(label + " flat stone gallery seat", "stone")
     shadow = site.part(label + " recessed doorways", "shadow")
     opening = min(1.05, a * .8)
-    spring = height * .43
     door_base = ground + .26
+    spring = min(height * .43, corbel_base - door_base - opening - .08)
     for side in range(8):
         rotation = side * pi / 4
         nx, ny = sin(rotation), -cos(rotation)
@@ -416,25 +418,21 @@ def octagonal_tier(site, level, r, ground, height):
                          (-opening, ground), (-opening, door_base),
                          *reversed(arch), (opening, door_base)], depth)
             panel(shadow, [(-opening - .1, door_base), (opening + .1, door_base), *arch],
-                  depth - .22)
+                  depth - .34)
             panel(piers, [(-opening, door_base), (opening, door_base),
                           (opening, ground), (-opening, ground)][::-1], depth + .008)
             for pos in (-opening, opening):
                 piers.beam((pos * tx + depth * nx, pos * ty + depth * ny, door_base),
                            (pos * tx + depth * nx, pos * ty + depth * ny, door_base + spring), .139)
         cx, cy = a * tx + depth * nx, a * ty + depth * ny
-        piers.beam((cx, cy, ground + .12), (cx, cy, ground + height - .24), .25)
-        for j in (-1, 0, 1):
-            u = a * j * .67
-            corbel.box((u * tx + (depth + .065) * nx,
-                        u * ty + (depth + .065) * ny, ground + height - .14),
-                       (.3, .24, .31), rotation)
-    top = ground + height
-    circular(corbel, 0, 0, [(r - .04, top - .22), (r + .32, top - .09),
-                            (r + .78, top + .19), (r + .78, top + .44),
-                            (r + .18, top + .50)], angle=pi / 8)
-    circular(seat, 0, 0, [(r + .19, top + .48), (r + .38, top + .52),
-                          (r + .38, top + .76)], angle=pi / 8)
+        piers.beam((cx, cy, ground + .12), (cx, cy, corbel_base + .06), .28)
+    # Three .42-high corbel courses carry the stone gallery seat.
+    circular(corbel, 0, 0, [(r - .04, corbel_base), (r + .56, corbel_base),
+                            (r + .56, top - .62), (r + 1.09, top - .62),
+                            (r + 1.09, top - .20), (r + 1.65, top - .20),
+                            (r + 1.65, top + .22), (r + .88, top + .34)], angle=pi / 8)
+    circular(seat, 0, 0, [(r + .85, top + .26), (r + .88, top + .41),
+                          (r + .84, top + .76)], angle=pi / 8)
 
 
 def hongshan():
@@ -451,7 +449,7 @@ def hongshan():
     slab(tablet, -3.7, -10.22, 1.33, .66, 1.50, 1.78)
     tablet.box((-3.7, -10.22, 2.51), (.98, .42, 1.51))
     ground = 3.24
-    sizes = (5.85, 5.47, 5.12, 4.75, 4.37, 3.97, 3.51)
+    sizes = (5.85, 5.37, 4.88, 4.43, 3.97, 3.56, 3.12)
     heights = (4.59, 4.35, 4.07, 3.93, 3.71, 3.49, 3.33)
     for level, (r, height) in enumerate(zip(sizes, heights)):
         octagonal_tier(site, level, r, ground, height)
@@ -464,12 +462,15 @@ def hongshan():
               (.43, ground + 2.48), (.48, ground + 2.74), (.26, ground + 3.06),
               (.12, ground + 3.42), (.035, ground + 3.8)], angle=pi / 8)
 
-    gate_floor, main_floor, ancestor_floor = .15, .90, 1.50
+    gate_floor, main_floor, ancestor_floor = .85, 2.28, 3.82
     lower = site.part("宝通寺山门 · lower stone terrace", "stone")
     middle = site.part("大雄宝殿 · middle stone terrace", "stone")
     upper = site.part("祖师殿 · upper stone terrace", "stone")
     # Foundation bottoms follow the terrainTop samples converted to this model's local axes.
-    slab(lower, 0, -22.55, 13.1, 4.55, -3.85, gate_floor)
+    # Open a stair bay in the nose of the gate terrace and retain both grounded wings.
+    for x in (-4.435, 4.435):
+        slab(lower, x, -24.30, 4.23, 1.05, -3.85, gate_floor)
+    slab(lower, 0, -22.025, 13.1, 3.50, -3.85, gate_floor)
     slab(middle, 0, -16.95, 17.2, 5.05, -3.85, main_floor)
     base = [(-4.5, -13.19, -3.92), (4.5, -13.19, -3.727),
             (4.5, -9.77, -3.11), (-4.5, -9.77, -3.451)]
@@ -477,19 +478,19 @@ def hongshan():
                 [(0, 3, 1), (1, 3, 2), (4, 5, 6, 7),
                  (0, 1, 5, 4), (1, 2, 6, 5), (2, 3, 7, 6), (3, 0, 4, 7)])
     steps = site.part("宝通寺 · stone stairs between terraces", "stone")
-    slab(steps, 0, -24.9625, 4.64, .275, -.55, -.13)
-    slab(steps, 0, -19.875, 4.64, .80, -.55, gate_floor)
-    flight(steps, 0, -20.275, 4.64, .80, gate_floor, main_floor, 3)
-    slab(steps, 0, -13.8075, 4.22, 1.235, -.55, main_floor)
-    flight(steps, 0, -14.425, 4.22, 1.235, main_floor, ancestor_floor, 2)
-    # The pagoda stairs diverge to let the ancestral hall keep the axis.
+    slab(steps, 0, -24.30, 4.64, 1.05, -3.85, -.13)
+    flight(steps, 0, -25.10, 4.64, 1.325, -.13, gate_floor, 5)
+    slab(steps, 0, -19.875, 4.64, .80, -3.85, gate_floor)
+    flight(steps, 0, -21.02, 4.64, 1.545, gate_floor, main_floor, 5)
+    slab(steps, 0, -13.8075, 4.22, 1.235, -3.85, main_floor)
+    flight(steps, 0, -14.95, 4.22, 1.76, main_floor, ancestor_floor, 6)
+    # Side walks lead straight from the middle terrace to the tower landing.
     for x in (-5.5, 5.5):
-        slab(steps, x, -10.64, 2.1, 2.02, -.55, ancestor_floor)
-        flight(steps, x, -11.65, 2.1, 2.02, ancestor_floor, 2.21, 3)
+        slab(steps, x, -12.0275, 2.1, 4.795, -3.85, 2.21)
 
     hall(site, "宝通禅寺山门", 0, -22.55, 7.56, 2.18, gate_floor, 2.73, 3, "glaze",
          rise=1.36, kick=.45, wall=None, style="vermilion")
-    plaque(site, "宝通禅寺", 0, -23.70, 2.64, 2.66, .48)
+    plaque(site, "宝通禅寺", 0, -23.70, gate_floor + 2.49, 2.66, .48)
     hall(site, "大雄宝殿", 0, -16.95, 12.32, 3.67, main_floor, 3.95, 5, "roofGold",
          rise=2.06, kick=.70, wall="roofGold", style="vermilion")
     hall(site, "祖师殿", 0, -11.48, 6.26, 2.18, ancestor_floor, 2.69, 3, "ink",
@@ -498,14 +499,16 @@ def hongshan():
     lions = site.part("宝通寺 · paired stone lions and plinths", "stone")
     for x in (-4.9, 4.9):
         y = -23.63
-        slab(lions, x, y, 1.19, 1.35, gate_floor, .53)
-        slab(lions, x, y, 1.06, 1.19, .53, .72)
-        circular(lions, x, y + .10, [(.43, .71), (.44, .96), (.34, 1.35)], sy=1.17)
-        circular(lions, x, y - .21, [(.24, 1.25), (.37, 1.48), (.32, 1.72), (.21, 1.81)])
-        lions.box((x, y - .51, 1.49), (.41, .29, .29))
+        z = gate_floor
+        slab(lions, x, y, 1.19, 1.35, z, z + .38)
+        slab(lions, x, y, 1.06, 1.19, z + .38, z + .57)
+        circular(lions, x, y + .10, [(.43, z + .56), (.44, z + .81), (.34, z + 1.20)], sy=1.17)
+        circular(lions, x, y - .21, [(.24, z + 1.10), (.37, z + 1.33),
+                                    (.32, z + 1.57), (.21, z + 1.66)])
+        lions.box((x, y - .51, z + 1.34), (.41, .29, .29))
         for sign in (-1, 1):
-            lions.beam((x + .24 * sign, y, 1.29), (x + .26 * sign, y - .42, .82), .21)
-            lions.cylinder(x + .23 * sign, y - .17, 1.69, 1.89, .091, 6)
+            lions.beam((x + .24 * sign, y, z + 1.14), (x + .26 * sign, y - .42, z + .67), .21)
+            lions.cylinder(x + .23 * sign, y - .17, z + 1.54, z + 1.74, .091, 6)
     flanks = site.part("宝通寺 · yellow flank walls", "roofGold")
     caps = site.part("宝通寺 · coping tiles", "ink")
     for s in (-1, 1):
