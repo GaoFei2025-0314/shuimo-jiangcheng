@@ -204,6 +204,137 @@ test('near ridges have secondary peaks separated by saddles', async ({ page }) =
   expect(varied).toBeGreaterThan(total / 2);
 });
 
+test('near ridges have broad shoulders and rounded summits', async ({ page }) => {
+  await openMap(page);
+  const shape = await page.evaluate(() => {
+    const point = new THREE.Vector3();
+    let highestAspect = 0, sharpestTurn = 0, summits = 0;
+    for (const ridge of window.__dbg.scene.children.filter(node => node.userData.landscapeSurface?.group === '远山')) {
+      const columns = new Map(), positions = ridge.geometry.attributes.position;
+      for (let i = 0; i < positions.count; i++) {
+        point.fromBufferAttribute(positions, i).applyMatrix4(ridge.matrixWorld);
+        columns.set(point.x, Math.max(point.y, columns.get(point.x) ?? -Infinity));
+      }
+      const profile = [...columns].sort(([x], [nextX]) => x - nextX);
+      const heights = profile.map(([, y]) => y), base = Math.min(...heights), top = Math.max(...heights);
+      highestAspect = Math.max(highestAspect, (top - base) / (profile.at(-1)[0] - profile[0][0]));
+      // A broad hill can still hide a sawtooth along its crest. Measure the change of tangent
+      // across adjacent mesh columns at every summit in the upper half of its relief.
+      for (let i = 1; i < profile.length - 1; i++) {
+        const [x, y] = profile[i], [lx, ly] = profile[i - 1], [rx, ry] = profile[i + 1];
+        if (y <= (base + top) / 2 || y < ly || y <= ry) continue;
+        summits++;
+        const turn = Math.atan2(y - ly, x - lx) - Math.atan2(ry - y, rx - x);
+        sharpestTurn = Math.max(sharpestTurn, THREE.MathUtils.radToDeg(turn));
+      }
+    }
+    return { highestAspect, sharpestTurn, summits };
+  });
+  expect(shape.summits).toBeGreaterThan(0);
+  expect.soft(shape.sharpestTurn, 'summit change of tangent in degrees').toBeLessThan(25);
+  expect(shape.highestAspect, 'height / full ridge width').toBeLessThan(.22);
+});
+
+test('near ridges keep a pale ink wash below paper brightness in the tower view', async ({ page }) => {
+  await openMap(page);
+  await page.locator('#b-tower').click();
+  const ink = await page.evaluate(async () => {
+    await new Promise(done => requestAnimationFrame(() => requestAnimationFrame(done)));
+    const { camera, scene } = window.__dbg, renderer = window.__testRenderer;
+    const hills = new THREE.Scene();
+    for (const mesh of scene.children.filter(node => node.userData.landscapeSurface?.group === '远山')) {
+      hills.add(mesh.clone(false));
+    }
+    const target = new THREE.WebGLRenderTarget(720, 450), previous = renderer.getRenderTarget();
+    const bytes = new Uint8Array(target.width * target.height * 4);
+    try {
+      renderer.setRenderTarget(target);
+      renderer.render(hills, camera);
+      renderer.readRenderTargetPixels(target, 0, 0, target.width, target.height, bytes);
+    } finally {
+      renderer.setRenderTarget(previous);
+      target.dispose();
+    }
+    // Trace each visible skyline, then sample the first eight occupied pixels below it.
+    // This includes lit summits and their shoulders without confusing sky or foreground roofs for snow.
+    const paper = scene.fog.color.toArray().map(channel => Math.round(channel * 255));
+    const wash = [];
+    let abovePaper = 0;
+    for (let x = 0; x < target.width; x++) {
+      let samples = 0;
+      for (let y = target.height - 1; y >= 0 && samples < 8; y--) {
+        const at = (y * target.width + x) * 4;
+        if (!bytes[at + 3]) continue;
+        samples++;
+        // Blending into the clear target stores premultiplied colour. Show it on the
+        // painting's paper before measuring the light, just as the finished print does.
+        const uncovered = 1 - bytes[at + 3] / 255;
+        const colour = paper.map((channel, i) => bytes[at + i] + channel * uncovered);
+        if (colour.some((value, i) => value > paper[i] + 1)) abovePaper++;
+        wash.push(paper[1] - colour[1]);
+      }
+    }
+    wash.sort((a, b) => a - b);
+    return { count: wash.length, abovePaper, median: wash[Math.floor(wash.length / 2)] };
+  });
+  expect(ink.count).toBeGreaterThan(500);
+  expect(ink.abovePaper).toBe(0);
+  expect(ink.median, 'paper-to-summit difference in 8-bit green').toBeGreaterThanOrEqual(20);
+  expect(ink.median).toBeLessThan(80);
+});
+
+test('near ridge feet reveal the plain through a graduated wash', async ({ page }) => {
+  await openMap(page);
+  const through = await page.evaluate(() => {
+    const renderer = window.__testRenderer;
+    const ridges = window.__dbg.scene.children.filter(mesh => mesh.userData.landscapeSurface?.group === '远山');
+    const ridge = ridges.reduce((tallest, mesh) =>
+      new THREE.Box3().setFromObject(mesh).max.y > new THREE.Box3().setFromObject(tallest).max.y ? mesh : tallest);
+    const box = new THREE.Box3().setFromObject(ridge), peak = new THREE.Vector3(0, -Infinity, 0);
+    const point = new THREE.Vector3(), vertices = ridge.geometry.attributes.position;
+    for (let i = 0; i < vertices.count; i++) {
+      point.fromBufferAttribute(vertices, i).applyMatrix4(ridge.matrixWorld);
+      if (point.y > peak.y) peak.copy(point);
+    }
+    const hills = new THREE.Scene();
+    hills.add(ridge.clone(false));
+    const camera = new THREE.OrthographicCamera(-8, 8, peak.y, box.min.y, 1, 1600);
+    camera.position.set(peak.x, 0, box.max.z + 100);
+    camera.lookAt(peak.x, 0, peak.z);
+    const target = new THREE.WebGLRenderTarget(32, 128), previous = renderer.getRenderTarget();
+    function frame(gray) {
+      hills.background = new THREE.Color(gray, gray, gray);
+      renderer.render(hills, camera);
+      const pixels = new Uint8Array(target.width * target.height * 4);
+      renderer.readRenderTargetPixels(target, 0, 0, target.width, target.height, pixels);
+      return pixels;
+    }
+    try {
+      renderer.setRenderTarget(target);
+      const dark = frame(.4), light = frame(.8);
+      // A flat paper-coloured foot stays the same on both grounds. A translucent ink wash
+      // carries their actual colour difference, progressively less as the hillside rises.
+      return [.06, .28, .80].map(fraction => {
+        const row = Math.floor(fraction * target.height);
+        let difference = 0;
+        for (let y = row - 2; y <= row + 2; y++) for (let x = 0; x < target.width; x++) {
+          const g = (y * target.width + x) * 4 + 1;
+          difference += light[g] - dark[g];
+        }
+        return difference / (5 * target.width * (.8 - .4) * 255);
+      });
+    } finally {
+      renderer.setRenderTarget(previous);
+      target.dispose();
+    }
+  });
+  const [foot, shoulder, summit] = through;
+  expect.soft(foot, 'ground visible at the foot').toBeGreaterThan(.85);
+  expect.soft(shoulder, 'transition on the lower slope').toBeGreaterThan(.15);
+  expect.soft(shoulder).toBeLessThan(.80);
+  expect(summit, 'the upper ridge holds its ink').toBeLessThan(.07);
+});
+
 for (const [width, height] of [[1440,900], [1280,720], [390,844], [844,390]]) {
   test(`the sun fits the sky clear of visible controls at ${width}x${height}`, async ({ page }) => {
     await page.setViewportSize({ width, height });

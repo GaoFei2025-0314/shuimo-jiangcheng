@@ -538,12 +538,12 @@
         col=mix(col,mix(uFog,vec3(.76,.80,.78),.44),closeWall*daylight*(.78+.22*vSky));
       #endif
       #ifdef RIDGE_CLOUD
-        // 山腹略露皴色，山脚隐入云气。沿分水岭留一道断续的干笔。
-        float foothill = 1. - smoothstep(.02, .56, vRidge.x);
-        col = mix(col, uFog, .46 + .51 * foothill);
+        // 露出的山腹仍有墨色，山脚则让实际的平原或后一层山色透出。
+        float ridgeCover = smoothstep(.04, .62, vRidge.x);
+        col = mix(col, uFog, .16 + .34 * (1. - ridgeCover));
         float edge = 1. - smoothstep(.006, .018 + min(.09, fwidth(vRidge.y)), abs(vRidge.y));
-        float dry = smoothstep(.24, .72, vnoise(vW.xz * .14));
-        col = mix(col, uInk, .54 * edge * dry * smoothstep(.12, .52, vRidge.x));
+        float dry = smoothstep(.27, .72, vnoise(vW.xz * .055));
+        col = mix(col, uInk, .36 * edge * dry * smoothstep(.12, .52, vRidge.x));
       #endif
       float mist=smoothstep(uNear,uFar,vD);
       #if defined(ARCHITECTURE_AO) && !defined(CITY_DETAIL)
@@ -551,7 +551,11 @@
         mist*=1.-.21*uStreetLight*smoothstep(95.,180.,vD)*(1.-smoothstep(315.,440.,vD));
       #endif
       col = mix(col, uFog, mist);
-      gl_FragColor = vec4(col, 1.);
+      #ifdef RIDGE_CLOUD
+        gl_FragColor = vec4(col, ridgeCover);
+      #else
+        gl_FragColor = vec4(col, 1.);
+      #endif
     }`;
   function inkMat(tone, dbl, tint, fade, o) {
     o = o || {};

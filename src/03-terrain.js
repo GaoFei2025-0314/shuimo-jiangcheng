@@ -788,7 +788,7 @@
       const across = Math.hypot(x-a.p.x-t*dx,z-a.p.z-t*dz);
       clearance = Math.min(clearance, across-THREE.MathUtils.lerp(a.w,b.w,t));
     }
-    return THREE.MathUtils.smoothstep(clearance, 35, 210);
+    return THREE.MathUtils.smoothstep(clearance, 35, 280);
   }
 
   // 远山：层层淡出，烘托「烟波浩渺」
@@ -799,19 +799,21 @@
     return THREE.MathUtils.lerp(sample(i), sample(i + 1), f * f * (3 - 2 * f));
   }
   [
-    { z:  -980, tone: .24, n: 10, h: 132, w: 390 },
-    { z: -1360, tone: .44, n: 9,  h: 187, w: 520 },
-    { z:  1080, tone: .32, n: 9,  h: 149, w: 442 },
-    { z:  1520, tone: .52, n: 8,  h: 209, w: 559 }
+    { z:  -980, tone: .24, n: 10, h: 96,  w: 390 },
+    { z: -1360, tone: .44, n: 9,  h: 149, w: 520 },
+    { z:  1080, tone: .32, n: 9,  h: 111, w: 442 },
+    { z:  1520, tone: .52, n: 8,  h: 164, w: 559 }
   ].forEach(Lr => {
-    const mat = inkMat(.46 + Lr.tone * .24, false, ['#454b44', '#d9d9ce'], null, { foot: 1 });
+    const mat = inkMat(.34 + Lr.tone * .22, false, ['#606662', '#bcbdb7'], null, { foot: 1 });
+    mat.transparent = true;
+    mat.depthWrite = false;
     mat.defines = { RIDGE_CLOUD: 1 };
     mat.extensions.derivatives = true;
     mat.uniforms.uFar = ridgeFogFar;
     for (let i = 0; i < Lr.n; i++) {
       const x = (i - (Lr.n - 1) / 2) * Lr.w * .95 + (rnd() - .5) * 200 + 200;
-      const radius = Lr.w * (.6 + rnd() * .5), height = Lr.h * (.55 + rnd() * .7);
-      const z = Lr.z + (rnd() - .5) * 160, depth = Lr.w * .35;
+      const radius = Lr.w * (.88 + rnd() * .5), height = Lr.h * (.55 + rnd() * .7);
+      const z = Lr.z + (rnd() - .5) * 160, depth = Lr.w * .46;
       const geometry = new THREE.PlaneGeometry(2, 2, 56, 12);
       geometry.rotateX(-Math.PI / 2);
       const vertices = geometry.attributes.position;
@@ -819,11 +821,13 @@
         const along = vertices.getX(j), across = vertices.getZ(j);
         const worldX = x + along * radius;
         // 中间一行是蜿蜒的分水岭；山腹向两侧跌落，边沿在纸面下接平。
-        const spine = .26 * ridgeNoise((worldX + z) / 125);
+        const spine = .19 * ridgeNoise((worldX + z) / 210);
         const offsetZ = depth * (across + spine * (1 - Math.abs(across)));
         const worldZ = z + offsetZ, station = worldX + worldZ * .23;
-        const peaks = .94 + .37 * ridgeNoise(station / 96) + .22 * ridgeNoise(station / 47) + .09 * ridgeNoise(station / 22);
-        const flank = (1 - along * along) * Math.pow(1 - Math.abs(across), 1.3);
+        const folds = Math.cos(station / 62 + 1.2 * ridgeNoise(station / 300));
+        const peaks = .94 + .17 * ridgeNoise(station / 180) + .14 * folds;
+        const shoulder = 1 - THREE.MathUtils.smoothstep(Math.abs(along), .30, 1);
+        const flank = shoulder * (1 - across * across) ** 2;
         vertices.setXYZ(j, along * radius, flank * peaks * riverClearance(worldX, worldZ), offsetZ);
       }
       geometry.computeVertexNormals();
