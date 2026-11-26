@@ -12,7 +12,7 @@ from mesh import Part
 # https://www.crecg.com/web/xwzx61/zfgsdt39/2025021110090542360/index.html
 # Portal, lettering and railing details use the Hanyang tourism photo gallery.
 # https://hanyang.hmltec.com/index.php?c=show&id=227
-# The centre tower has an A-shaped longitudinal elevation. The side towers are straight.
+# The centre tower has an A-shaped longitudinal elevation. The side towers taper gently.
 # The contractor distinguishes the concrete lower frame from the steel upper tower.
 # https://www.crecg.com/web/xwzx61/zfgsdt39/2025021110084953628/index.html
 HALF_LENGTH = 100
@@ -20,12 +20,28 @@ SIDE_TOWER = 71.5
 ANCHOR = 91
 DECK = 7.70
 CABLE_X = 7.34
+GIRDER_X = 6.50
+GIRDER_BOTTOM = -1.66
 SADDLES = ((-ANCHOR, 6.45), (-SIDE_TOWER, 32.20), (0, 36.10),
            (SIDE_TOWER, 32.20), (ANCHOR, 6.45))
 
 
 def road_height(y):
     return DECK - max(0, abs(y) - SIDE_TOWER) * .095
+
+
+def cable_height(span, y):
+    (start, low), (stop, high) = SADDLES[span:span+2]
+    run = stop - start
+    sag = 22.75 if span in (1, 2) else .79
+    t = (y - start) / run
+    height = low + (high-low)*t - 4*sag*t*(1-t)
+    # Ease the approach to the saddles so adjacent spans share a horizontal tangent there.
+    for distance, slope, at_tower in ((y-start, (high-low-4*sag)/run, span > 0),
+                                      (stop-y, (low-high-4*sag)/run, span < 3)):
+        if at_tower and distance < 2.5:
+            height -= slope * distance * (1-distance/2.5)**2
+    return height
 
 
 def chamfered_ring(x, y, z, width, depth, cut):
@@ -41,13 +57,14 @@ def towers():
     saddles = Part("Yingwuzhou / main-cable saddles and bearing plates", "shadow")
     pale = Part("Yingwuzhou / saddle access platforms and rails", "plaster")
     metalwork = Part("Yingwuzhou / portal fascias and inspection platforms", "vermilion")
-    for y, top in SADDLES[1:-1]:
+    for tower, (y, top) in enumerate(SADDLES[1:-1], start=1):
         center_tower = y == 0
         depth = 16.5 if center_tower else 8.9
         loft(stone, [chamfered_ring(0, y, z, w, d, cut) for z, w, d, cut in
                      ((-3.2, 23.5, depth+1, 1.4), (-.12, 23.5, depth+1, 1.4),
                       (.44, 22.6, depth, 1.3), (.69, 22.6, depth, 1.3))])
-        landing = 7.05 if center_tower else 6.20
+        girder_bottom = road_height(y) + GIRDER_BOTTOM
+        landing = girder_bottom - .29
         crown_floor = top-(2.62 if center_tower else 2.08)
         for side in (-1, 1):
             x = side*CABLE_X
@@ -61,7 +78,7 @@ def towers():
                                   for z, xx, spread, w, d, cut in
                                   ((6.64, 8.10, 5.84, 2.87, 3.42, .26),
                                    (8.23, 8.08, 5.47, 2.71, 3.30, .25),
-                                   (crown_floor+.03, 7.36, .67, 2.45, 2.95, .23))])
+                                   (crown_floor+.03, 7.36, .67, 2.45, 2.30, .23))])
                     # The narrow splice collar marks the material junction at the roadway frame.
                     loft(metalwork, [chamfered_ring(side*8.10, y+direction*5.83, z,
                                                     2.98, 3.66, .28)
@@ -70,50 +87,49 @@ def towers():
                               ((crown_floor-.36, 2.55, 3.74, .24), (crown_floor, 2.53, 3.55, .24))])
             else:
                 loft(orange, [chamfered_ring(side*xx, y, z, w, d, cut) for z, xx, w, d, cut in
-                              ((.61, 8.03, 2.84, 3.15, .26), (DECK, 7.88, 2.68, 2.83, .24),
-                               (crown_floor, CABLE_X, 2.42, 2.41, .21))])
-            # The continuous cable rises from an open saddle between two crown cheeks.
-            crown_depth = 3.42 if center_tower else 2.38
-            pedestal_height = top-.46-crown_floor
-            orange.box((x, y, crown_floor + pedestal_height/2), (.92, .37, pedestal_height))
-            saddles.box((x, y, top-.36), (.95, .89, .21))
-            for dx in (-.40, .40):
-                saddles.box((x+dx, y, top-.13), (.15, 1.27, .42))
-            for dx in (-.91, .91):
-                cheek_height = top+.33-crown_floor
-                orange.box((x+dx, y, crown_floor+cheek_height/2), (.55, crown_depth, cheek_height))
-                metalwork.box((x+dx, y, top+.36), (.62, crown_depth+.08, .11))
-                for dy in (-.43, .43):
-                    saddles.beam((x+dx*.48, y+dy, top-.33),
-                                 (x+dx*.48, y+dy, top+.074), .11, .18)
-            # The maintenance rails flank the saddle and leave the cable approaches open.
+                              ((.61, 8.18, 3.16, 3.42, .31), (DECK, 7.97, 2.85, 3.01, .28),
+                               (crown_floor, CABLE_X, 2.24, 2.34, .25))])
+            # The cable axis at the saddle is shared with cables(). Both ends of the cover are open.
+            crown_depth = 2.78 if center_tower else 2.30
+            pedestal_height = top-.45-crown_floor
+            orange.box((x, y, crown_floor + pedestal_height/2), (1.04, .55, pedestal_height))
+            saddle_rings = []
+            for offset in (-.66, -.33, 0, .33, .66):
+                station = y + offset
+                seat = cable_height(tower - (offset < 0), station) - .22
+                saddle_rings.append([(x+dx, station, seat-dz) for dx, dz in
+                                     ((-.52, 0), (.52, 0), (.52, .28), (-.52, .28))])
+            loft(saddles, saddle_rings)
+            for dx in (-.78, .78):
+                cheek_height = top+.29-crown_floor
+                orange.box((x+dx, y, crown_floor+cheek_height/2), (.48, crown_depth, cheek_height))
+            metalwork.box((x, y, top+.415), (2.40, crown_depth, .25))
+            # The existing access rails flank the housing.
             for dx in (-1.17, 1.17):
                 pale.box((x+dx, y, top+.68), (.05, crown_depth-.14, .06))
                 for dy in (-crown_depth*.42, 0, crown_depth*.42):
                     pale.box((x+dx, y+dy, top+.51), (.057, .061, .35))
-            for direction in (-1, 1):
-                for dx in (-.90, .90):
-                    metalwork.beam((x+dx, y+direction*crown_depth*.48, top+.34),
-                                   (x+dx*.58, y+direction*(crown_depth*.48+.27), top-.24), .10)
             # Orange maintenance stages wrap the edge towers just beneath the road.
             if not center_tower:
-                foot = side*7.88
-                metalwork.box((foot, y, landing+.17), (3.38, 3.59, .16))
+                foot, platform = side*7.88, DECK-1.33
+                metalwork.box((foot, y, platform), (3.38, 3.59, .25))
                 for dx in (-1.61, 1.61):
-                    orange.box((foot+dx, y, landing+.64), (.08, 3.55, .08))
+                    orange.box((foot+dx, y, platform+.47), (.08, 3.55, .08))
                     for dy in (-1.75, 1.75):
-                        orange.box((foot+dx, y+dy, landing+.39), (.08, .09, .50))
+                        orange.box((foot+dx, y+dy, platform+.22), (.08, .09, .50))
                 for dy in (-1.75, 1.75):
-                    orange.box((foot, y+dy, landing+.64), (3.27, .08, .08))
+                    orange.box((foot, y+dy, platform+.47), (3.27, .08, .08))
+        # The centre portal spans both longitudinal legs, with bearings under the main beams.
+        beam_depth = 10.7 if center_tower else 3.46
         loft(orange, [chamfered_ring(0, y, z, w, d, cut) for z, w, d, cut in
-                      ((landing-1.43, 15.45, 2.93, .20),
-                       (landing-1.25, 15.91, 3.23, .20),
-                       (landing+.19, 15.91, 3.23, .20))])
-        for x in (-5.34, 5.34):
-            saddles.box((x, y, road_height(y)-1.17), (1.06, 1.63, .43))
+                      ((landing-1.64, 16.20, beam_depth-.55, .28),
+                       (landing-1.28, 16.58, beam_depth, .28),
+                       (landing, 16.58, beam_depth, .28))])
+        for side in (-1, 1):
+            saddles.box((side*GIRDER_X, y, (landing+girder_bottom)/2), (1.14, 1.72, .33))
         # Faceted haunches on the upper crossbeam leave the characteristic tall, open portal.
-        outline = [(-7.83, top-3.64), (-5.90, top-3.44), (-3.60, top-3.07),
-                   (0, top-2.57), (3.60, top-3.07), (5.90, top-3.44), (7.83, top-3.64),
+        outline = [(-7.83, top-3.78), (-5.90, top-3.51), (-3.60, top-3.03),
+                   (0, top-2.75), (3.60, top-3.03), (5.90, top-3.51), (7.83, top-3.78),
                    (7.83, top-1.12), (-7.83, top-1.12)]
         vertices = [(u, y+dy, z) for dy in (-1.03, 1.03) for u, z in outline]
         n = len(outline)
@@ -134,8 +150,8 @@ def towers():
             y = sign*span
             h = road_height(y)
             loft(stone, [chamfered_ring(0, y, z, w, d, c) for z, w, d, c in
-                         ((-2.9, width-1, 3.45, .36), (h-1.70, width-2.1, 2.16, .30),
-                          (h-1.17, width, 2.68, .39))])
+                         ((-2.9, width-1, 3.45, .36), (h+GIRDER_BOTTOM-.54, width-2.1, 2.16, .30),
+                          (h+GIRDER_BOTTOM+.02, width, 2.68, .39))])
         for x in (-CABLE_X, CABLE_X):
             y = sign*ANCHOR
             loft(stone, [chamfered_ring(x, y, z, w, d, c) for z, w, d, c in
@@ -153,18 +169,18 @@ def cables():
     maintenance = Part("Yingwuzhou / main-cable access handlines", "suspensionOrange")
     for x in (-CABLE_X, CABLE_X):
         path, hung, walks = [], [], []
-        for i, ((start, z0), (stop, z1)) in enumerate(zip(SADDLES, SADDLES[1:])):
+        for i, ((start, _), (stop, _)) in enumerate(zip(SADDLES, SADDLES[1:])):
             main = i in (1, 2)
             samples = 48 if main else 12
-            sag = 22.75 if main else .79
             supports = []
             for k in range(samples):
-                # Sample the same parabola between the original hanger stations.
-                subdivisions = 3 if main else 1
+                # Keep the hanger stations and sample the approach trims more closely.
+                near_saddle = (i == 0 and k >= samples-2) or (i == 3 and k < 2)
+                subdivisions = 3 if main or near_saddle else 1
                 for sub in range(subdivisions):
                     t = (k+sub/subdivisions)/samples
                     y = start + (stop-start)*t
-                    z = z0 + (z1-z0)*t - sag*4*t*(1-t)
+                    z = cable_height(i, y)
                     index = len(path)
                     path.append((y, z))
                     if main and sub == 0 and 0 < k < samples:
@@ -205,7 +221,7 @@ def cables():
                           for along, radius in ((-.24, .254), (-.18, .301), (.18, .301), (.24, .254))])
             sockets.box((x, y, z-.30), (.33, .43, .24))
             bottom = road_height(y)
-            # One common side plate carries both sockets down to the outside of the box girder.
+            # One common side plate carries both sockets into the wind nose, as on the bridge.
             sign = 1 if x > 0 else -1
             outboard = sign*(CABLE_X+.35)
             sockets.box((outboard, y, bottom-.20), (.24, .64, .52))
@@ -230,20 +246,43 @@ def cables():
                 polygon.use_smooth = True
 
 
+def deck_section(part, stations, profile):
+    """Sweep a counter-clockwise cross section with the bridge grade."""
+    loft(part, [[(x, y, road_height(y) + lift) for x, lift in reversed(profile)] for y in stations])
+
+
 def deck():
     paving = Part("Yingwuzhou / eight-lane road and orthotropic deck", "deck")
-    girders = Part("Yingwuzhou / steel box girder edges and cross girders", "suspensionOrange")
+    girders = Part("Yingwuzhou / open steel main beams, cross beams and wind noses", "suspensionOrange")
+    access = Part("Yingwuzhou / wind-nose inspection walks and guards", "vermilion")
     sidewalk = Part("Yingwuzhou / walks and dashed lane dividers", "plaster")
     fencing = Part("Yingwuzhou / orange pedestrian and median barriers", "suspensionOrange")
     lighting = Part("Yingwuzhou / hooked roadway lamp standards", "suspensionOrange")
     luminaires = Part("Yingwuzhou / oval luminaire lenses", "plaster")
     stations = (-HALF_LENGTH, -SIDE_TOWER, SIDE_TOWER, HALF_LENGTH)
     deck_ribbon(paving, 0, 15.47, stations, 0, .43, road_height)
-    deck_ribbon(girders, 0, 12.88, stations, -.38, .79, road_height)
     deck_ribbon(sidewalk, 0, .48, stations, .10, .16, road_height)
+    # Two open main beams with a wind nose outside each one. The floor between them is open underneath.
+    main = [(-.42, GIRDER_BOTTOM), (.42, GIRDER_BOTTOM), (.42, -1.40), (.15, -1.40),
+            (.15, -.67), (.43, -.67), (.43, -.38), (-.43, -.38), (-.43, -.67),
+            (-.15, -.67), (-.15, -1.40), (-.42, -1.40)]
+    nose = [(6.58, -.74), (7.37, -.65), (7.77, -.31), (7.77, -.05), (7.43, .02), (6.58, -.33)]
     for side in (-1, 1):
         x = side * 7.42
-        deck_ribbon(girders, x, .66, stations, -.11, .83, road_height)
+        deck_section(girders, (-97.2, -SIDE_TOWER, SIDE_TOWER, 97.2),
+                     [(side*GIRDER_X+dx, z) for dx, z in main])
+        for start, stop in ((-HALF_LENGTH, -97.2), (97.2, HALF_LENGTH)):
+            deck_ribbon(girders, side*GIRDER_X, .86, (start, stop), -.38, .79, road_height)
+        profile = [(side*px, z) for px, z in nose]
+        deck_section(girders, stations, profile if side > 0 else profile[::-1])
+        for start, stop in ((-68.5, -7.5), (7.5, 68.5)):
+            deck_ribbon(access, side*7.32, .78, (start, stop), -1.31, .26, road_height)
+            deck_ribbon(access, side*7.69, .26, (start, stop), -.58, .25, road_height)
+            for i in range(13):
+                y = start + (stop-start)*i/12
+                z = road_height(y)
+                access.box((side*7.69, y, z-.99), (.26, .26, .67))
+                girders.box((side*7.04, y, z-1.56), (1.27, .30, .25))
         deck_ribbon(sidewalk, side*7.15, .93, stations, .15, .21, road_height)
         for h in (.29, .99):
             deck_ribbon(fencing, side*7.63, .13, stations, h, .11, road_height)
@@ -266,11 +305,11 @@ def deck():
             luminaires.box((x-side*1.29, y, z+3.72), (.42, .19, .13))
     for y in range(-96, 97, 4):
         z = road_height(y)
-        girders.box((0, y, z-.79), (15.21, .28, .40))
+        girders.box((0, y, z-.90), (13.44, .31, 1.00))
     for y in range(-96, 97, 6):
         fencing.box((0, y, road_height(y)+.42), (.089, .105, .66))
     deck_ribbon(fencing, 0, .080, stations, .76, .09, road_height)
-    for part in (paving, girders, sidewalk, fencing, lighting, luminaires):
+    for part in (paving, girders, access, sidewalk, fencing, lighting, luminaires):
         part.finish()
 
 
