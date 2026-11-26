@@ -73,7 +73,7 @@ test('Tab visits only visible controls and Enter activates the focused destinati
   await expect(page.locator('#cardTitle')).toHaveText('武大 · 老斋舍');
 });
 
-test('three consecutive fast full-size still paints restore multisampling', async ({ page }) => {
+async function controlPaintTiming(page) {
   await page.setViewportSize({ width: 480, height: 360 });
   await page.emulateMedia({ reducedMotion: 'reduce' });
   await page.goto('/?debug');
@@ -106,8 +106,12 @@ test('three consecutive fast full-size still paints restore multisampling', asyn
     };
   });
   await page.emulateMedia({ reducedMotion: 'no-preference' });
-  const report = await page.evaluate(async () => {
-    await window.motionChanged;
+  await page.evaluate(() => window.motionChanged.then(() => true));
+}
+
+test('three consecutive fast full-size still paints restore multisampling', async ({ page }) => {
+  await controlPaintTiming(page);
+  const report = await page.evaluate(() => {
     window.samplePaint(16);
     window.samplePaint(16);
     const samples = [180, 180, 79, 79, 80, 79, 79, 79].map(window.samplePaint);
@@ -122,4 +126,33 @@ test('three consecutive fast full-size still paints restore multisampling', asyn
   expect(report.samples.map(s => s.slow)).toEqual([false, true, true, true, true, true, true, false]);
   expect(report.afterMotion.map(s => s.slow)).toEqual([true, true, true, false]);
   expect(report.readOnly).toBe(true);
+});
+
+test('ink print releases each depth texture on replacement and cleanup', async ({ page }) => {
+  await controlPaintTiming(page);
+  const releases = await page.evaluate(() => {
+    const renderer = window.__testRenderer, gl = renderer.getContext();
+    const setTarget = renderer.setRenderTarget.bind(renderer), remove = gl.deleteTexture.bind(gl);
+    const depths = new Map();
+    renderer.setRenderTarget = target => {
+      setTarget(target);
+      if (!target?.depthTexture) return;
+      const handle = renderer.properties.get(target.depthTexture).__webglTexture;
+      if (!handle) throw Error('The depth attachment has no allocated GPU texture');
+      if (!depths.has(handle)) depths.set(handle, { multisample: Boolean(target.isWebGLMultisampleRenderTarget), deleted: 0 });
+    };
+    gl.deleteTexture = texture => {
+      const depth = depths.get(texture);
+      if (depth) depth.deleted++;
+      remove(texture);
+    };
+    [16, 16, 180, 180, 79, 79, 79].forEach(window.samplePaint);
+    const beforeCleanup = [...depths.values()].map(d => d.deleted);
+    renderer.domElement.dispatchEvent(new Event('webglcontextlost', { cancelable: true }));
+    return { beforeCleanup, textures: [...depths.values()] };
+  });
+  expect(releases.beforeCleanup).toEqual([1, 1, 0]);
+  expect(releases.textures).toEqual([
+    { multisample: true, deleted: 1 }, { multisample: false, deleted: 1 }, { multisample: true, deleted: 1 }
+  ]);
 });

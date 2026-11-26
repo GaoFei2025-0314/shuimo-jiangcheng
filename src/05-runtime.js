@@ -839,11 +839,19 @@
     });
     const sheet=new THREE.PlaneGeometry(2,2), page=new THREE.Scene(), lens=new THREE.Camera();
     const print=new THREE.Mesh(sheet,material);print.frustumCulled=false;page.add(print);
-    app.cleanups.push(()=>{sheet.dispose();material.dispose();target.dispose();});
+    function disposeTarget() {
+      // r128 已登记的目标会级联 dispose，先摘下深度附件，确保只释放一次。
+      const depth = target.depthTexture;
+      target.depthTexture = null;
+      depth?.dispose();
+      target.dispose();
+    }
+    // renderer.dispose 会清空纹理句柄，先归还印版及其附件。
+    app.cleanups.unshift(() => { disposeTarget(); sheet.dispose(); material.dispose(); });
     return (street,aerial)=>{
       const multisample=renderer.capabilities.isWebGL2 && (reduce || !slowRaster);
       if (Boolean(target.isWebGLMultisampleRenderTarget)!==multisample) {
-        target.dispose();
+        disposeTarget();
         target=makeTarget(multisample);
         material.uniforms.drawing.value=target.texture;
         material.uniforms.depthMap.value=target.depthTexture;
