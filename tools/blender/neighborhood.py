@@ -42,6 +42,11 @@ def lane():
         _windows(joinery, [x - .75], -2.72, .05, .70, 1.72)
         _windows(joinery, [x + .43, x + .97], -2.72, .65, .40, .95)
         _windows(joinery, [x - .72, x + .66], 2.72, 1.1, .68, 1.05)
+        walls.box((x - .75, -2.77, 1.92), (1.02, .34, .26))
+    for y in (-2.77, 2.77):
+        roofs.box((0, y, 2.62), (9.54, .34, .26))
+    walls.box((2.72, .65, 3.98), (.48, .48, .84))
+    roofs.box((2.72, .65, 4.47), (.62, .62, .25))
     for part in (walls, roofs, joinery):
         part.finish()
 
@@ -50,7 +55,8 @@ def arcade():
     stone = Part("Riverfront trading house | pavilions and portico", "cityWall")
     caps = Part("Riverfront trading house | hipped pavilion roofs", "cityRoof")
     shade = Part("Riverfront trading house | gallery and window bays", "cityShade")
-    stone.box((0, .42, 2.8), (9.56, 5.04, 5.60))
+    stone.box((0, .66, 1.24), (9.56, 4.56, 2.48))
+    stone.box((0, .42, 4.04), (9.56, 5.04, 3.12))
     # Independent masonry bays leave a walkable gallery in front of the recessed wall.
     for x in (-2.30, 0, 2.30):
         radius, spring = .93, 1.25
@@ -60,11 +66,14 @@ def arcade():
             arch.append((x + radius * cos(angle), spring + radius * sin(angle)))
         arch.extend([(x + radius, 0), (x + 1.15, 0),
                      (x + 1.15, 2.48), (x - 1.15, 2.48)])
-        _section(stone, arch, -3.02, -2.54)
-    stone.box((0, -2.66, 2.53), (7.42, 1.18, .20))
-    _windows(shade, [-2.30, 0, 2.30], -2.11, .13, 1.16, 1.66)
+        _section(stone, arch, -3.02, -2.36)
+    stone.box((0, -2.46, 2.52), (7.42, 1.58, .28))
+    _windows(shade, [-2.30, 0, 2.30], -1.63, .13, 1.16, 1.66)
     _windows(shade, [-2.16, -.72, .72, 2.16], -2.11, 3.02, .72, 1.6)
-    caps.box((0, .34, 5.67), (9.72, 5.44, .18))
+    caps.box((0, .34, 5.63), (9.72, 5.44, .28))
+    stone.box((0, -2.16, 2.82), (6.68, .34, .28))
+    for y in (-1.94, 2.63):
+        stone.box((0, y, 5.98), (6.55, .26, .43))
     for x in (-4.02, 4.02):
         stone.box((x, -.12, 3.06), (1.70, 6.20, 6.12))
         stone.box((x, -.12, 6.18), (1.91, 6.46, .20))
@@ -93,8 +102,13 @@ def wharf():
         _windows(shade, [x], -2.61, .44, 2.65, 2.28)
         _windows(shade, [x], -2.61, eave + .18, 1.16, .40)
         _windows(shade, [x - .96, x + .96], 2.97, 1.62, .86, .90)
-    _section(tin, [(-3.54, 2.90), (-2.58, 3.16), (-2.58, 3.27), (-3.54, 3.01)],
+    _section(tin, [(-3.54, 2.83), (-2.58, 3.09), (-2.58, 3.34), (-3.54, 3.08)],
              -4.34, 4.34, True)
+    for x in (-4.08, 0, 4.08):
+        _section(brick, [(-3.37, 2.92), (-2.60, 2.22), (-2.60, 2.61)], x - .14, x + .14, True)
+    for x in (-4.48, 4.48):
+        shade.box((x, -3.27, .64), (.34, .34, .40))
+        shade.box((x, -3.27, .84), (.48, .48, .25))
     for part in (brick, tin, shade):
         part.finish()
 
@@ -109,7 +123,7 @@ def apartment():
     brick.box((2.04, .40, 8.70), (1.88, 3.62, 2.44))
     _windows(shade, [-3.22, 1.12, 3.29], -3.29, .34, 1.60, 1.54)
     _windows(shade, [-1.05], -3.29, .055, 1.47, 1.93)
-    brick.box((-1.05, -3.49, 2.11), (2.03, .69, .16))
+    brick.box((-1.05, -3.49, 2.11), (2.03, .69, .26))
     for y in (-2.57, 2.85):
         for z in (3.02, 4.55, 6.08):
             _windows(shade, [-2.92, -.92, 1.08, 3.08], y, z, 1.6, 1.03)
@@ -117,6 +131,14 @@ def apartment():
             brick.box((x, y, z - .06), (2.65, .72, .25))
     _windows(shade, [-2.46, -.46, 1.54], -2.05, 7.85, 1.34, .86)
     _windows(shade, [2.04], -1.42, 9.12, .75, .56)
+    for y in (-2.39, 2.67):
+        walls.box((0, y, 7.68), (8.95, .36, .28))
+    for x in (-4.31, 4.31):
+        walls.box((x, .14, 7.68), (.33, 4.70, .28))
+    walls.box((2.04, .49, 9.96), (2.12, 3.85, .26))
+    brick.box((-.86, -.88, 9.36), (1.28, 1.10, .67))
+    for x in (-2.77, 2.60):
+        walls.box((x, -2.78, 6.21), (2.59, .26, .36))
     for part in (walls, brick, shade):
         part.finish()
 
@@ -126,7 +148,7 @@ def highrise():
     trim = Part("Modern tower | setback bands and crown", "cityRoof")
     glass = Part("Modern tower | vertical window stacks", "cityShade")
     wall.box((0, 0, 1.35), (9.72, 6.8, 2.7))
-    trim.box((0, 0, 2.78), (9.90, 7.0, .22))
+    trim.box((0, 0, 2.75), (9.90, 7.0, .28))
     # Two clipped street corners make the tall narrow shaft legible from the oblique map camera.
     shaft = [(-3.32,-1.70), (-2.47,-2.55), (2.49,-2.55), (3.32,-1.72),
              (3.32,1.76), (2.55,2.53), (-2.50,2.53), (-3.32,1.71)]
@@ -145,6 +167,9 @@ def highrise():
             glass.solid(v, [(0,1,2,3) if x > 0 else (3,2,1,0)])
     for y in (-1.81, 2.11):
         _windows(glass, [-.96, .37, 1.62], y, 14.98, .64, 1.86)
+    for x in (-2.21, 2.21):
+        wall.box((x, -2.58, 8.65), (.30, .30, 11.54))
+    wall.box((-.95, .50, 17.65), (1.55, 1.36, .57))
     _windows(glass, [-3.15, -1.05, 1.05, 3.15], -3.41, .23, 1.33, 1.75)
     for part in (wall, trim, glass):
         part.finish()
@@ -165,9 +190,9 @@ def _podium(wall, trim, glass, width, depth, height, entry):
         bay = x + pitch / 2
         _windows(glass, [bay], face + .302, .39, pitch - .33, height - .92)
         _windows(glass, [bay], -face + .01, .65, pitch - .49, height - 1.13)
-        trim.box((bay, face + .14, height - .93), (pitch - .31, .17, .105))
-        trim.box((bay, face + .10, height / 2 - .13), (.075, .27, height - .67))
-    trim.box((entry, face - .20, height - .86), (2.04, .84, .15))
+        trim.box((bay, face + .15, height - .93), (pitch - .31, .34, .25))
+        trim.box((bay, face + .10, height / 2 - .13), (.25, .27, height - .67))
+    trim.box((entry, face - .20, height - .86), (2.04, .84, .26))
     trim.box((entry, face - .09, .23), (2.05, .58, .20))
     for sign in (-1, 1):
         x = sign * (width / 2 + .01)
@@ -196,12 +221,14 @@ def terrace_tower():
                 toward = -1 if y < 0 else 1
                 _windows(glass, [x - width * .23, x + width * .20], y + toward * .039,
                          lower + .55, width * .31, rise - .73)
-            # Freestanding lift core is the uninterrupted vertical element through the setbacks.
-        trim.box((x, .09, high - .045), (width + .14, depth + .13, .22))
+        trim.box((x, .09, high - .045), (width + .14, depth + .13, .26))
+    # The lift core and its return keep a continuous vertical line through the setbacks.
     wall.box((2.67, .87, 13.33), (1.45, 3.68, 19.72))
     _windows(glass, [2.68], -.98, 4.20, .58, 18.12)
+    trim.box((3.24, -1.00, 13.37), (.28, .30, 19.65))
     wall.box((1.48, .83, 25.13), (1.88, 1.95, .73))
-    trim.box((1.48, .83, 25.57), (2.10, 2.13, .24))
+    trim.box((1.48, .83, 25.57), (2.10, 2.13, .26))
+    wall.box((.73, .99, 25.95), (.58, .92, .52))
     for part in (wall, trim, glass):
         part.finish()
 
@@ -222,11 +249,13 @@ def slab_tower():
         a, b = x - width / 2 - .12, x + width / 2 + .12
         ha, hb = (top + .16, ridge) if sign < 0 else (ridge, top + .16)
         _section(trim, [(a, top - .08), (b, top - .08), (b, hb), (a, ha)], -2.40, 2.48)
+        wall.box((x - sign * .38, .26, top + 1.74), (1.08, 1.65, 1.16))
         for y in (-2.295, 2.375):
             for offset in (-width * .245, 0, width * .245):
                 _windows(glass, [x + offset], y, low + .46, width * .215, top - low - 1.02)
             for f in range(2, round((top - low) / 3.5), 2):
-                trim.box((x, y, low + f * 3.45), (width + .09, .22, .26))
+                trim.box((x, y, low + f * 3.45), (width + .09, .25, .26))
+            wall.box((x + sign * (width / 2 - .19), y, (low + top) / 2), (.26, .30, top - low))
         side = x + sign * (width / 2 + .018)
         for y in (-1.42, -.47, .48, 1.43):
             lo, hi, a, b = low + .48, top - .48, y - .34, y + .34
