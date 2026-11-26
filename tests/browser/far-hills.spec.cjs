@@ -225,3 +225,44 @@ test('the city lens changes with the flight to a landmark', async ({ page }) => 
   await expect.poll(() => page.evaluate(() => window.__dbg.camera.fov)).toBeLessThan(start.from - 5);
   await expect.poll(() => page.evaluate(() => window.__dbg.camera.fov)).toBeCloseTo(38, 1);
 });
+
+test('the map blooms in from the centre and leaves no mask behind', async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: 'no-preference' });
+  await page.addInitScript(() => {
+    const ready = new MutationObserver(() => {
+      if (!window.__ready) return;
+      const stage = document.getElementById('stage');
+      const animation = stage.getAnimations().find(a => a.animationName === 'inkBloom');
+      const style = getComputedStyle(stage);
+      window.__entryAtReady = { name: style.animationName, state: animation?.playState, masked: style.maskImage !== 'none' };
+      if (animation) {
+        const time = animation.currentTime;
+        animation.currentTime = 550;
+        const firstMask = style.maskImage;
+        animation.currentTime = 950;
+        window.__entryAtReady.expands = firstMask !== style.maskImage;
+        animation.currentTime = time;
+      }
+      ready.disconnect();
+    });
+    ready.observe(document, { attributes: true, subtree: true, attributeFilter: ['data-state'] });
+    document.addEventListener('animationend', e => {
+      if (e.target.id === 'stage' && e.animationName === 'inkBloom') window.__entryFinished = true;
+    });
+  });
+  await openMap(page);
+  expect(await page.evaluate(() => window.__entryAtReady)).toEqual({ name: 'inkBloom', state: 'running', masked: true, expands: true });
+  await expect.poll(() => page.evaluate(() => window.__entryFinished === true)).toBe(true);
+  const masks = await page.locator('#stage').evaluate(el => {
+    const style = getComputedStyle(el);
+    return [style.maskImage, style.webkitMaskImage];
+  });
+  expect(masks).toEqual(['none', 'none']);
+});
+
+test('reduced motion shows the finished map at once', async ({ page }) => {
+  await openMap(page);
+  await expect(page.locator('#stage')).toHaveCSS('animation-name', 'none');
+  await expect(page.locator('#stage')).toHaveCSS('mask-image', 'none');
+  expect(await page.locator('#far-hills').evaluate(el => el.getAnimations({ subtree: true }).length)).toBe(0);
+});
