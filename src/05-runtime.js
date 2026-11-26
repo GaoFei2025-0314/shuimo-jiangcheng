@@ -138,6 +138,18 @@
       const northUp = orbit({ x: 0, z: 0 }, 0, 1, 0, 18);
       return fittedView(northUp, portraitMapBounds, safeRect, W, H, mapFov(key), .98);
     }
+    if (key === 'home' && !layout.compact && safeRect.bottom < H) {
+      // 武昌东南街区前排的屋脚对齐导览安全线。沿画面竖轴平移，保留江天地平线。
+      const target = V().copy(base.target), pos = V().copy(base.pos).lerp(target, .04);
+      const back = pos.clone().sub(target).normalize();
+      const up = V(0, 1, 0).projectOnPlane(back).normalize();
+      const toFrontRow = gv(114.3594, 30.5080, LAND_Y).sub(pos);
+      const depth = -toFrontRow.dot(back);
+      const halfHeight = depth * Math.tan(THREE.MathUtils.degToRad(mapFov(key) / 2));
+      const safeY = (1 - 2 * safeRect.bottom / H) * halfHeight;
+      const lift = toFrontRow.dot(up) - safeY;
+      return { pos: pos.addScaledVector(up, lift), target: target.addScaledVector(up, lift) };
+    }
     // Look east across the full lake: its long axis fills the vertical page.
     const portraitLake = W < H && key === 'lake';
     if (portraitLake) base = orbit(lakeC, 3, 560, 266, 59);

@@ -26,6 +26,41 @@ for (const viewport of [{ width: 1440, height: 900 }, { width: 390, height: 844 
   });
 }
 
+test('Wuchang foreground streets reach the desktop overview guide', async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await page.goto('/?debug');
+  await page.waitForFunction(() => window.__ready && window.__dbg);
+  for (const [width, height] of [[1440, 900], [1280, 720]]) {
+    await page.setViewportSize({ width, height });
+    await page.locator('#b-home').click();
+    const gaps = await page.evaluate(async () => {
+      await new Promise(done => requestAnimationFrame(() => requestAnimationFrame(done)));
+      const { scene, camera, WUCHANG, inPoly } = window.__dbg;
+      const dockTop = document.querySelector('#dock').getBoundingClientRect().top;
+      const batches = new Set(), gaps = [];
+      const instance = new THREE.Matrix4(), foot = new THREE.Vector3();
+      // Wall, tile and other material parts share the same visible instance buffer.
+      for (const mesh of scene.children) {
+        if (!mesh.isInstancedMesh || !mesh.visible || !mesh.name.includes('City / ') || batches.has(mesh.instanceMatrix)) continue;
+        batches.add(mesh.instanceMatrix);
+        for (let i = 0; i < mesh.count; i++) {
+          mesh.getMatrixAt(i, instance);
+          foot.setFromMatrixPosition(instance).applyMatrix4(mesh.matrixWorld);
+          if (!inPoly(WUCHANG, foot.x, foot.z)) continue;
+          foot.project(camera);
+          if (Math.abs(foot.x) > 1 || Math.abs(foot.y) > 1 || Math.abs(foot.z) > 1) continue;
+          gaps.push(dockTop - (1 - foot.y) * innerHeight / 2);
+        }
+      }
+      return gaps.sort((a, b) => a - b).slice(0, 6);
+    });
+    // Keep the front row above the guide's hairline, with a whole group of houses close to it.
+    expect(gaps, width + 'px').toHaveLength(6);
+    expect.soft(gaps[0], width + 'px closest house').toBeGreaterThanOrEqual(8);
+    expect.soft(gaps[5], width + 'px sixth closest house').toBeLessThanOrEqual(height * .05);
+  }
+});
+
 test('Blender buildings sit on the land and both bridge approaches fit a narrow desktop', async ({ page }) => {
   await page.setViewportSize({ width: 768, height: 1024 });
   await page.emulateMedia({ reducedMotion: 'reduce' });
