@@ -363,9 +363,11 @@ def city_blocks(scene, captured, streets):
     labels = {"lane": "里分", "arcade": "沿江洋行", "wharf": "码头货仓",
               "apartment": "退台住宅", "highrise": "现代塔楼",
               "terrace_tower": "退台塔楼", "slab_tower": "板式高楼"}
-    for kind, lots in captured.items():
+    collections = {}
+    for variant, lots in captured.items():
+        kind = variant if variant in labels else variant.rsplit("_", 1)[0]
         before = set(scene.objects)
-        getattr(neighborhood, kind)()
+        neighborhood.BUILDERS[variant]()
         parts = sorted(set(scene.objects) - before, key=lambda obj: obj.name)
         bpy.ops.object.select_all(action='DESELECT')
         for part in parts:
@@ -373,17 +375,22 @@ def city_blocks(scene, captured, streets):
         bpy.context.view_layer.objects.active = parts[0]
         bpy.ops.object.join()
         template = parts[0]
-        dest = collection(streets, labels[kind])
+        if kind not in collections:
+            collections[kind] = collection(streets, labels[kind])
+        dest = collections[kind]
         relocate(template, dest)
-        template.data.name = labels[kind] + " · 共享网格"
+        label = labels[kind] if variant == kind else f'{labels[kind]} · {variant.rsplit("_", 1)[1]}型'
+        template.data.name = label + " · 共享网格"
+        buildings = []
         for i, matrix in enumerate(lots):
-            obj = bpy.data.objects.new(labels[kind], template.data) if i else template
+            obj = bpy.data.objects.new(label, template.data) if i else template
             if i:
                 dest.objects.link(obj)
-            obj.name = f"{labels[kind]} {i+1:03}"
+            obj.name = f"{label} {i+1:03}"
             obj.matrix_world = placement(matrix)
+            buildings.append(obj)
         if kind == "apartment":
-            apartment_daylight(dest.objects)
+            apartment_daylight(buildings)
 
 
 def paper_crown_points(part, points):
@@ -400,10 +407,13 @@ def paper_crown_points(part, points):
 
 
 def city_trees(captured, parent, paper_roots):
-    """Link editable trees to one colored mesh per species, using the web placements."""
+    """Link editable trees to one colored mesh per form, using the web placements."""
     names = {"pine": "松林", "broadleaf": "阔叶树", "willow": "岸柳", "cherry": "樱树"}
-    for species, batch in captured.items():
-        name = names[species]
+    collections = {}
+    for variant, batch in captured.items():
+        species = batch.get("species", variant)
+        label = names[species]
+        name = label if variant == species else f'{label} · {variant.rsplit("_", 1)[1]}型'
         data = bpy.data.meshes.new(name + " · 共享树型")
         coords, tris, colors, slots, smooth = [], [], [], [], []
         paper_points = None
@@ -442,7 +452,9 @@ def city_trees(captured, parent, paper_roots):
             near_coords[start:start + len(crown)] = crown
             paper_data.vertices.foreach_set("co", near_coords.ravel())
             paper_data.update()
-        dest = collection(parent, name)
+        if species not in collections:
+            collections[species] = collection(parent, label)
+        dest = collections[species]
         for i, matrix in enumerate(batch["matrices"], 1):
             root = (round(matrix[12], 3), round(matrix[14], 3))
             obj = bpy.data.objects.new(f"{name} {i:04}", paper_data if paper_data and root in paper_roots else data)

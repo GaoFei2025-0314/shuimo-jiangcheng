@@ -55,13 +55,13 @@ function capture() {
   }
   for (const node of scene.children) {
     if (node.isInstancedMesh && node.name.startsWith('City / ')) {
-      const kind = node.name.slice(7);
-      if (lots[kind]) continue; // All materials in a prototype use the same lot transforms.
-      lots[kind] = placements(node);
+      const variant = node.userData.cityVariant ?? node.name.slice(7);
+      if (lots[variant]) continue; // All materials in a prototype use the same lot transforms.
+      lots[variant] = placements(node);
     } else if (node.isInstancedMesh && node.userData.vegetation) {
-      const { species, part, material } = node.userData.vegetation;
-      const trees = vegetation[species] ||= { matrices: placements(node), parts: {} };
-      if (trees.matrices.length * 16 !== node.userData.authoredMatrices.length || trees.parts[part]) throw new Error('Inconsistent planting batch: '+species);
+      const { species, variant = species, part, material } = node.userData.vegetation;
+      const trees = vegetation[variant] ||= { species, matrices: placements(node), parts: {} };
+      if (trees.matrices.length * 16 !== node.userData.authoredMatrices.length || trees.parts[part]) throw new Error('Inconsistent planting batch: '+variant);
       trees.parts[part] = { ...geometryOf(node), material, colors: pack(node.geometry.getAttribute('color').array) };
       if (species === 'broadleaf' && part === 'foliage') {
         for (const key of ['crownCenter', 'leafCenter'])
@@ -147,7 +147,9 @@ function capture() {
       }
       return views;
     });
-    if (Object.keys(city.lots).length !== 7 || Object.keys(city.vegetation).length !== 4 || Object.keys(city.landmarks).length !== 15 || !city.landmarks.lake ||
+    const houseTypes = new Set(Object.keys(city.lots).map(key => key.replace(/_\d+$/, '')));
+    const treeSpecies = new Set(Object.values(city.vegetation).map(tree => tree.species));
+    if (houseTypes.size !== 7 || treeSpecies.size !== 4 || Object.keys(city.landmarks).length !== 15 || !city.landmarks.lake ||
         city.meshes.filter(m => m.material === 'Land').length !== 3)
       throw new Error('Missing landmarks, districts or banks. Rebuild dist/index.html before capture.');
     const parkKeys = city.parkAssets.map(asset => asset.key).sort();
