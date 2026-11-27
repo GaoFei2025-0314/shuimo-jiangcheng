@@ -54,3 +54,50 @@ test('neighbouring houses use different variants', async ({ page }) => {
     expect(duplicates, name).toBe(0);
   }
 });
+
+test('trees load from the baked vegetation', async ({ page }) => {
+  await ready(page);
+  const baked = await page.evaluate(() => {
+    const { children } = window.__testScene, variants = {};
+    const sprigs = children.filter(mesh => mesh.name.startsWith('两岸近树纸本枝叶 · '));
+    for (const mesh of children) {
+      const tree = mesh.userData.vegetation;
+      if (!mesh.isInstancedMesh || !tree) continue;
+      const { species, part, variant } = tree;
+      const parts = variants[variant ?? species] ||= { species, variant: variant ?? null, parts: {} };
+      const levels = [mesh.geometry, mesh.userData.midGeometry, mesh.userData.farGeometry];
+      parts.parts[part] = {
+        instances: mesh.userData.authoredMatrices.length / 16,
+        vertices: levels.map(geo => geo?.getAttribute('position').count ?? 0),
+        pigmentAndWind: levels.every(geo => {
+          const count = geo?.getAttribute('position').count;
+          return count > 0 && ['color', 'windResponse'].every(name => geo.getAttribute(name)?.count === count);
+        }),
+        sprayCenters: levels.slice(0, 2).every(geo => {
+          const count = geo?.getAttribute('position').count;
+          return count > 0 && ['crownCenter', 'leafCenter'].every(name =>
+            geo.getAttribute(name)?.count === count && geo.getAttribute(name).itemSize === 3);
+        })
+      };
+    }
+    return { variants, sprigs: sprigs.map(mesh => mesh.geometry.getAttribute('position').count) };
+  });
+  expect([...new Set(Object.values(baked.variants).map(tree => tree.species))].sort())
+    .toEqual(['broadleaf', 'cherry', 'pine', 'willow']);
+  for (const [key, tree] of Object.entries(baked.variants)) {
+    expect(tree.variant, key).toBe(key);
+    expect(Object.keys(tree.parts).sort(), key).toEqual(['foliage', 'wood']);
+    expect(tree.parts.wood.instances, key).toBe(tree.parts.foliage.instances);
+    for (const part of Object.values(tree.parts)) {
+      expect(part.instances, key).toBeGreaterThan(0);
+      expect(part.pigmentAndWind, key).toBe(true);
+      const [near, mid, far] = part.vertices;
+      expect(near, key).toBeGreaterThan(mid);
+      expect(mid, key).toBeGreaterThan(far);
+      expect(far, key).toBeGreaterThan(0);
+    }
+    expect(tree.parts.foliage.sprayCenters, key).toBe(true);
+  }
+  expect(baked.sprigs.length).toBeGreaterThan(0);
+  expect(baked.sprigs.every(count => count > 0)).toBe(true);
+});
