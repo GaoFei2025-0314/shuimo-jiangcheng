@@ -79,6 +79,10 @@
     #ifdef ARCHITECTURE_AO
       attribute float skyVisibility; varying float vSky;
     #endif
+    #ifdef ARCHITECTURE_WASH
+      uniform vec3 uFocus;
+      varying vec2 vFocusOffset;
+    #endif
     #ifdef CITY_DETAIL
       varying vec3 vCityPosition;
       varying vec3 vCityNormal;
@@ -116,6 +120,14 @@
         localNormal = basis * (normal / vec3(dot(basis[0], basis[0]), dot(basis[1], basis[1]), dot(basis[2], basis[2])));
       #endif
       vec4 w = modelMatrix * local;
+      #ifdef ARCHITECTURE_WASH
+        #ifdef USE_INSTANCING
+          vFocusOffset = w.xz - uFocus.xz;
+        #else
+          // Landmarks can share city materials. Keep their focus distance inside the solid band.
+          vFocusOffset = vec2(0.);
+        #endif
+      #endif
       mat3 worldBasis = mat3(modelMatrix);
       vec3 scaleSquared = vec3(dot(worldBasis[0], worldBasis[0]), dot(worldBasis[1], worldBasis[1]), dot(worldBasis[2], worldBasis[2]));
       vW = w.xyz; vN = normalize(worldBasis * (localNormal / scaleSquared));
@@ -146,7 +158,9 @@
         uniform float uArchShadow;
       #endif
       #ifdef ARCHITECTURE_WASH
-        uniform float uCityWash;
+        varying vec2 vFocusOffset;
+        uniform vec2 uFocusRange;
+        uniform float uCityWash, uFocusStrength;
       #endif
     #endif
     #ifdef GROUND_CONTACT
@@ -319,11 +333,24 @@
           float underside = smoothstep(.10, .85, -n.y);
           col = mix(col, uInk, uArchShadow * sheltered * (.70 + .30 * underside));
         #endif
+        #ifdef ARCHITECTURE_WASH
+          float focusWash = 0.;
+          if (uFocusStrength > 0.) {
+            float radius = length(vFocusOffset);
+            float t = clamp((radius - uFocusRange.x) / (uFocusRange.y - uFocusRange.x), 0., 1.);
+            if (t > 0. && t < 1.) {
+              // Break up the transition in world space while keeping both ends fixed.
+              t += (vnoise(vW.xz * .047) - .5) * .88 * t * (1. - t);
+            }
+            focusWash = smoothstep(0., 1., t) * uFocusStrength;
+          }
+        #endif
         #ifdef CITY_DETAIL
-          float cityNear = 1. - smoothstep(34., 105., distance(vW, uCam));
+          float focusDetail = 1. - focusWash;
+          float cityNear = (1. - smoothstep(34., 105., distance(vW, uCam))) * focusDetail;
           #ifdef CITY_JOINERY
             // Broad apartment panes catch a shallow daylight reflection before the deeper room.
-            bool paleApartment=uApartmentWindow>.5 && vD<175. && vCityPane.z>.01 && vCityPane.z<1.6 &&
+            bool paleApartment=focusDetail>.001 && uApartmentWindow>.5 && vD<175. && vCityPane.z>.01 && vCityPane.z<1.6 &&
               distance(vW.xz,vec2(-40.09,71.99))>=8.;
             if (paleApartment) {
               float facing=abs(dot(n,normalize(uCam-vW)));
@@ -346,7 +373,7 @@
               float bars=max(frame*.66,max(sash*.63,lintel*.37));
               glass=mix(glass,vec3(.405,.445,.417)*(.91+.09*upper),bars);
               glass*=mix(.86,1.,vSky);
-              float roomDetail=1.-smoothstep(96.,175.,vD);
+              float roomDetail=(1.-smoothstep(96.,175.,vD))*focusDetail;
               col=mix(col,glass,roomDetail*.94);
             } else
           #endif
@@ -494,7 +521,15 @@
           float brightness = dot(col, luminance);
           vec3 neutralPaper = mix(uFog, vec3(dot(uFog, luminance)), .72);
           vec3 wash = mix(vec3(brightness), neutralPaper, .55);
-          col = mix(col, wash, uCityWash * smoothstep(86., 425., vD));
+          float distanceWash = uCityWash * smoothstep(86., 425., vD);
+          #ifdef CITY_TILE
+            float backdropWash = focusWash * .74;
+          #else
+            float backdropWash = focusWash * .89;
+          #endif
+          // Keep the distance wash and spend only the extra wash on paper colour.
+          if (backdropWash > distanceWash) wash = mix(wash, uFog, 1. - distanceWash / backdropWash);
+          col = mix(col, wash, max(distanceWash, backdropWash));
           // Far quarters are painted rather than modelled: a dab of roof ink over walls
           // that sink into the paper, feet lost in mist, and drifting cloud bands that
           // leave whole blocks unpainted so the three towns read as clusters, not a grid.
