@@ -19,6 +19,11 @@
   const distantCityWash = { cityWall:.27, cityRoof:.68, cityBrick:.43, cityShade:.80 };
   const cityDetail = {cityWall:'CITY_WALL',cityRoof:'CITY_TILE',cityBrick:'CITY_BRICK',cityShade:'CITY_JOINERY'};
   const cityCloseFade = {value:new THREE.Vector2(6,14)};
+  const cityFocus = {
+    uFocus: {value:new THREE.Vector3()},
+    uFocusRange: {value:new THREE.Vector2()},
+    uFocusStrength: {value:0}
+  };
   const architectureMaterials = Object.fromEntries(Object.entries(architectureTints).map(([key, tint]) => {
     const material = inkMat(.04, true, tint);
     material.defines = { ARCHITECTURE_AO: 1 };
@@ -28,6 +33,7 @@
     }
     if (distantCityWash[key]) {
       material.uniforms.uFade = cityCloseFade;
+      Object.assign(material.uniforms, cityFocus);
       material.defines.ARCHITECTURE_WASH = 1;
       material.defines.CITY_DETAIL = 1;
       material.defines[cityDetail[key]] = 1;

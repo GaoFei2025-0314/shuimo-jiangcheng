@@ -1,5 +1,54 @@
 const { test, expect, ready } = require('./fixtures.cjs');
 
+test('city wash centres on the active landmark', async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await ready(page);
+  const readWash = () => page.evaluate(async () => {
+    await new Promise(done => requestAnimationFrame(() => requestAnimationFrame(done)));
+    const materials = [...new Set(window.__testScene.children
+      .filter(mesh => mesh.name.startsWith('City / '))
+      .map(mesh => mesh.material))];
+    const uniforms = materials.find(material => material.uniforms.uFocus)?.uniforms;
+    if (!uniforms) return null;
+    const { uFocus, uFocusRange, uFocusStrength } = uniforms;
+    const target = window.__testControls.target;
+    return {
+      shared: materials.every(({ uniforms }) => uniforms.uFocus === uFocus &&
+        uniforms.uFocusRange === uFocusRange && uniforms.uFocusStrength === uFocusStrength),
+      error: Math.hypot(uFocus.value.x - target.x, uFocus.value.z - target.z),
+      inner: uFocusRange.value.x,
+      outer: uFocusRange.value.y,
+      strength: uFocusStrength.value
+    };
+  });
+
+  for (const key of ['tower', 'hongshan', 'guiyuan']) {
+    await page.locator('#b-' + key).click();
+    const wash = await readWash();
+    expect(wash, key + ' has city wash uniforms').not.toBeNull();
+    expect(wash.shared, key).toBe(true);
+    expect(wash.error, key).toBeLessThan(.5);
+    expect(wash.strength, key).toBeGreaterThan(0);
+    expect(wash.outer, key).toBeLessThan(200);
+  }
+  // The outermost building extents are 747 and 741 world units from these targets.
+  for (const [key, cityRadius] of [['home', 747], ['core', 741]]) {
+    await page.locator('#b-' + key).click();
+    expect((await readWash()).inner, key).toBeGreaterThan(cityRadius);
+  }
+
+  await page.locator('#atlas-open').click();
+  await page.locator('#atlas-walk').click();
+  const walk = page.locator('#walk-view');
+  const streets = await walk.locator('optgroup[label="街巷近景"] option').evaluateAll(options =>
+    options.map(option => option.value));
+  expect(streets).toHaveLength(8);
+  for (const key of streets) {
+    await walk.selectOption(key);
+    expect((await readWash()).strength, key).toBe(0);
+  }
+});
+
 for (const viewport of [{ width: 1440, height: 900 }, { width: 390, height: 844 }]) {
   test(`opens on the core city while keeping the full overview reachable at ${viewport.width}`, async ({ page }) => {
     await page.setViewportSize(viewport);

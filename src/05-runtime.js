@@ -1059,6 +1059,14 @@
     }
 
     controls.update();
+    // Follow the target after OrbitControls has applied any damped pan.
+    const focusDistance = camera.position.distanceTo(controls.target);
+    const overview = THREE.MathUtils.smoothstep(focusDistance, 250, 430);
+    const focusInner = Math.max(26, focusDistance * .42) + overview * 600;
+    const focusOuter = focusInner + Math.max(68, focusDistance * .76);
+    cityFocus.uFocus.value.copy(controls.target);
+    cityFocus.uFocusRange.value.set(focusInner, focusOuter);
+    cityFocus.uFocusStrength.value = (walkSelect.hidden ? 1 - streetView : 0) * (1 - overview);
     // Reduced motion freezes the water, wind, boats and birds. Repaint the geometry on a
     // camera or layout change; keyboard focus and labels still update independently.
     if (sceneDirty) fitSunToSky(streetView);
