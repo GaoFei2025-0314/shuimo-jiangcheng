@@ -15,8 +15,11 @@
     --paper-deep: #d9d5c9;
     --ink: #1f1e1b;
     --ink-soft: #4a4842;
-    --ink-faint: #7d7a71;
+    --ink-faint: #6e6b63;
     --cinnabar: #b5432f;
+    --cinnabar-deep: #7e4434;
+    --hair: rgba(31,30,27,.28);
+    --wash: rgba(242,239,230,.94);
     --sun: #d8a596;
     --brush: "Ma Shan Zheng", "STKaiti", "KaiTi", "Kaiti SC", serif;
     --song: "Noto Serif SC", "Songti SC", "STSong", "SimSun", serif;
@@ -27,11 +30,29 @@
     font-family: var(--song); overflow: hidden;
   }
   #sun {
-    position: fixed; z-index: 0; left: 64%; top: 8%;
-    width: clamp(90px, 13vw, 190px); aspect-ratio: 1; border-radius: 50%;
-    background: radial-gradient(circle at 50% 50%, var(--sun) 0 52%, rgba(216,165,150,.55) 62%, rgba(216,165,150,0) 72%);
-    opacity: .72; pointer-events: none;
+    --sun-inset: 4vh;
+    position: fixed; z-index: 0; left: 64%; top: var(--sun-inset);
+    width: clamp(64px, 8vw, 104px); aspect-ratio: 1; border-radius: 50%;
+    background: radial-gradient(ellipse at 47% 43%, #cd9784 0%, #d7a48e 47%, rgba(211,147,126,.74) 57%, rgba(216,161,142,.30) 63%, transparent 70%);
+    filter: url(#sun-bleed);
+    transform-origin: 50% calc(0px - var(--sun-inset));
+    transform: translateY(var(--sun-shift, 0px)) scale(var(--sky-fit, 0)) scale(var(--sun-disc, 1));
+    opacity: calc(clamp(0, calc((var(--sky-fit, 0) - .12) * 2.4), .72) * var(--sun-presence,1)); pointer-events: none;
   }
+  @media (orientation: portrait) { #sun { width: 64px; } }
+  body::before {
+    content: ""; position: fixed; inset: 0; pointer-events: none;
+    background: linear-gradient(175deg, rgba(167,178,169,.21), transparent 39%),
+      url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='720' height='270'%3E%3Cfilter id='h'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.004 .039' numOctaves='3' seed='14' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 .59 0 0 0 0 .62 0 0 0 0 .56 1.25 0 0 0 -.60'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23h)'/%3E%3C/svg%3E");
+    opacity: .55;
+  }
+  #river-sky {
+    position: fixed; z-index: 0; inset: 0; pointer-events: none;
+    background-repeat: repeat-x; background-size: auto 100%; background-position: var(--sky-x,50%) 0;
+    opacity: var(--sky-wash,0); mask-image: linear-gradient(to bottom,black 0%,black 22%,transparent 78%);
+  }
+  #far-hills { position: fixed; inset: 0; z-index: 0; overflow: hidden; pointer-events: none; opacity: 0; }
+  .far-hill { position: absolute; inset: 0 0 auto; background-repeat: repeat-x; }
   #stage { position: fixed; inset: 0; z-index: 1; touch-action: none; }
   #stage canvas { display: block; width: 100%; height: 100%; }
   #stage.hot { cursor: pointer; }
@@ -69,12 +90,15 @@
   .mark .plate {
     display: flex; flex-direction: column; align-items: center;
     padding: 6px 4px 7px; background: var(--paper); color: inherit;
-    border: 1px solid var(--ink-faint); border-top: 3px solid var(--cinnabar);
+    border: 1px solid #a29e90; border-top: 3px solid var(--cinnabar);
     font-size: 15px; line-height: 1.22;
     transition: background .2s, color .2s, border-color .2s;
   }
   .mark .stem { width: 1px; height: 20px; background: var(--ink-faint); }
   .mark .dot { width: 5px; height: 5px; margin-top: -3px; border-radius: 50%; background: var(--cinnabar); }
+  .mark.quiet .plate { color: var(--ink-soft); border-color: #c3bdae; border-top-color: #aaa290; }
+  .mark.quiet .stem { background: #aaa595; }
+  .mark.quiet .dot { background: #918775; }
   .mark:hover .plate, .mark:focus-visible .plate {
     background: var(--cinnabar); color: var(--paper); border-color: var(--cinnabar);
   }
@@ -82,28 +106,83 @@
   .mark:focus-visible .plate { box-shadow: 0 0 0 2px var(--paper), 0 0 0 4px var(--cinnabar); }
 
   .ui { position: fixed; z-index: 5; }
+  /* 焦点：全页统一为朱砂细线，只在键盘操作时出现。 */
+  button:focus-visible, select:focus-visible, summary:focus-visible, #poem:focus-visible {
+    outline: 1.5px solid var(--cinnabar); outline-offset: 3px;
+  }
+  /* 墨痕：一道朱砂笔触，悬停半显，选中全显。 */
+  .ink-underline, #nav button { position: relative; }
+  .ink-underline::after, #nav button::after {
+    content: ""; position: absolute; left: var(--ink-inset, 10px); right: var(--ink-inset, 10px); bottom: 2px; height: 4px;
+    background: var(--cinnabar); opacity: 0; transform: scaleX(.2) skewX(-24deg); transform-origin: left;
+    border-radius: 60% 40% 70% 30% / 50%; pointer-events: none;
+    transition: opacity .35s, transform .5s cubic-bezier(.2,.8,.2,1);
+  }
+  .ink-underline:hover::after, #nav button:hover::after { opacity: .45; transform: scaleX(1) skewX(-24deg); }
+  .ink-underline[aria-pressed="true"]::after, .ink-underline[data-painting]::after,
+  #nav button[aria-pressed="true"]::after { opacity: .85; transform: scaleX(1) skewX(-24deg); }
+  /* 文字按钮：无框，靠字和墨痕区分。 */
+  .ink-text {
+    appearance: none; background: none; border: 0; border-radius: 0; cursor: pointer; white-space: nowrap;
+    font: 500 13px/1.3 var(--song); letter-spacing: .2em; color: var(--ink); padding: 7px 10px 9px;
+    text-shadow: 0 0 8px var(--paper), 0 0 3px var(--paper);
+  }
+  .ink-text:hover { color: var(--ink); }
+  .ink-text[aria-pressed="true"], .ink-text[data-painting] { color: var(--cinnabar); }
+  .ink-text:disabled { color: var(--ink-faint); }
+  .stamp {
+    display: inline-grid; place-items: center; flex: none; writing-mode: vertical-rl;
+    padding: 3px 2px; background: var(--cinnabar); color: var(--paper);
+    font: 400 13px/1 var(--brush); letter-spacing: 0; border-radius: 2px; transform: rotate(-3deg);
+    box-shadow: inset 0 0 0 1px var(--cinnabar), inset 0 0 0 2px rgba(242,239,230,.55);
+    opacity: .92; mix-blend-mode: multiply;
+  }
 
   /* 入场：先见山水，后见题跋 */
   @keyframes inkFade { from { opacity: 0 } to { opacity: 1 } }
   @keyframes inkRise { from { opacity: 0; transform: translateY(14px) } to { opacity: 1; transform: none } }
-  #stage  { animation: inkFade 1.5s ease both; }
+  @property --bloom { syntax: '<percentage>'; inherits: false; initial-value: 0%; }
+  @keyframes inkBloom {
+    from { --bloom: 0%; }
+    to { --bloom: 140%; }
+    from, to { --bloom-fibre: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='256' height='256'%3E%3Cfilter id='f'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.035 .12' numOctaves='3' seed='12' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 3 0 0 0 -1'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23f)'/%3E%3C/svg%3E"); }
+  }
+  @media (prefers-reduced-motion: no-preference) {
+    /* 内圈实墨，外圈的纸纤维乘上径向衰减，最后一帧撤下整张遮罩。 */
+    #stage {
+      --ink-mask:
+        radial-gradient(ellipse farthest-corner, black calc(var(--bloom) - 24%), transparent calc(var(--bloom) - 8%)),
+        var(--bloom-fibre),
+        radial-gradient(ellipse farthest-corner, black calc(var(--bloom) - 14%), transparent var(--bloom));
+      /* 纤维图只在动画期间有值；结束时整个图层列表自动恢复为 none。 */
+      -webkit-mask-image: var(--ink-mask);
+      mask-image: var(--ink-mask);
+      -webkit-mask-composite: source-over, source-in, source-over;
+      mask-composite: add, intersect, add;
+      mask-size: 100% 100%, 256px 256px, 100% 100%;
+    }
+    body[data-state="loading"] #stage, body[data-state="loading"] .far-hill { opacity: 0; }
+    body[data-state="ready"] #stage { animation: inkBloom 1.8s cubic-bezier(.2,.7,.2,1) .3s backwards; }
+    body[data-state="ready"] .far-hill { animation: inkFade 1.2s ease backwards; }
+  }
   #labels, #marks { animation: inkFade 1.4s ease 1.1s both; }
   #title  { animation: inkRise 1.1s cubic-bezier(.2,.7,.2,1) .45s both; }
   #poem   { animation: inkRise 1.1s cubic-bezier(.2,.7,.2,1) .85s both; }
   #dock   { animation: inkRise 1.1s cubic-bezier(.2,.7,.2,1) 1.25s both; }
   #sound  { animation: inkFade 1.1s ease 1.6s both; }
-  @media (prefers-reduced-motion: reduce) {
-    #stage, #labels, #marks, #title, #poem, #dock, #sound { animation: none; }
-    #labels b, .mark, .mark .plate, #nav button::after, #sound, #scaleBar, #tip { transition: none; }
-  }
 
   #title { left: max(16px, 3vw); top: max(16px, 4vh); }
+  #title::before {
+    content: ""; position: absolute; z-index: -1; pointer-events: none; inset: -12px -18px;
+    background: radial-gradient(ellipse at 42% 52%, rgba(242,239,230,.89) 24%, rgba(242,239,230,.65) 55%, transparent 77%);
+  }
   #title h1 {
     margin: 0; font: 400 clamp(38px, 6vw, 72px)/1 var(--brush); letter-spacing: .08em;
     text-shadow: 0 0 18px var(--paper), 0 0 6px var(--paper);
+    filter: url(#title-ink);
   }
   #title p {
-    margin: 10px 0 0; font-size: 12px; letter-spacing: .42em; color: var(--ink-soft);
+    margin: 10px 0 0; font-size: 12px; letter-spacing: .3em; color: var(--ink-soft);
     text-shadow: 0 0 8px var(--paper);
   }
 
@@ -113,14 +192,27 @@
     display: flex; flex-direction: row-reverse; align-items: flex-start; gap: .5em;
   }
   #poem p { margin: 0; display: flex; flex-direction: column; align-items: center; }
+  /* 首次切换视角后题诗退成淡墨，让出画面；悬停或聚焦时复现。 */
+  #poem p, #poem .seal, #poem::before { transition: opacity .9s ease; }
+  @media (min-width: 641px) and (min-height: 501px) {
+    body[data-poem-rest] #poem:not(:hover):not(:focus-within) :is(p, .seal) { opacity: .35; }
+    body[data-poem-rest] #poem:not(:hover):not(:focus-within)::before { opacity: .4; }
+  }
   #poem p span {
     font-family: var(--brush); font-size: clamp(19px, 2.3vw, 28px); line-height: 1.44;
-    color: var(--ink); text-shadow: 0 0 14px var(--paper), 0 0 5px var(--paper);
+    color: var(--ink); text-shadow: 0 0 2px var(--paper), 0 0 4px var(--paper), 0 0 8px var(--paper);
   }
   #poem p.meta { padding-top: .3em; }
   #poem p.meta span {
-    font-family: var(--song); font-size: clamp(11px, 1.15vw, 14px); line-height: 2.05;
-    color: var(--ink-soft); text-shadow: 0 0 8px var(--paper);
+    font-family: var(--song); font-size: clamp(12px, 1.22vw, 15px); font-weight: 600; line-height: 1.95;
+    color: var(--ink); text-shadow: 0 0 1px var(--paper), 0 0 3px var(--paper), 0 0 6px var(--paper);
+  }
+  #poem::before {
+    content: ""; position: absolute; z-index: -1; pointer-events: none; inset: -22px -22px -20px;
+    /* A transparent wash leaves the structure underneath legible. Ink edges carry the lettering. */
+    background: radial-gradient(ellipse 54% 55% at 52% 47%, rgba(242,239,230,.67) 14%,
+      rgba(242,239,230,.52) 48%, rgba(242,239,230,.25) 74%, transparent 98%);
+    filter: blur(6px);
   }
   #poem .seal { align-self: flex-end; margin-bottom: .15em; margin-right: .45em; }
   .seal {
@@ -139,11 +231,40 @@
     appearance: none; cursor: pointer; padding: 0; width: 34px; height: 34px;
     display: grid; place-items: center;
     font: 400 21px/1 var(--brush); color: var(--cinnabar);
-    background: transparent; border: 1.5px solid var(--cinnabar); border-radius: 2px;
+    background: var(--paper); border: 1.5px solid var(--cinnabar); border-radius: 2px;
     transform: rotate(-3deg); transition: background .3s, color .3s;
   }
   #sound[aria-pressed="true"] { background: var(--cinnabar); color: var(--paper); }
-  #sound:focus-visible { outline: 2px solid var(--ink); outline-offset: 3px; }
+
+  /* 右上角操作：一行文字按钮，「·」相隔。手机端收进「⋯」。 */
+  #map-actions { display: flex; align-items: center; top: max(16px, 3vh); right: calc(max(16px, 3.2vw) + 46px); }
+  #map-actions::before {
+    content: ""; position: absolute; z-index: -1; pointer-events: none; inset: -10px -14px;
+    background: radial-gradient(ellipse at 50% 50%, rgba(242,239,230,.82) 30%, rgba(242,239,230,.5) 62%, transparent 80%);
+  }
+  @media (min-width: 641px) and (min-height: 501px) {
+    body[data-bridge-detail] #sound { left: max(16px, 3vw); right: auto; }
+    body[data-bridge-detail] #map-actions { left: calc(max(16px, 3vw) + 46px); right: auto; }
+  }
+  #action-menu { display: flex; align-items: center; }
+  #action-menu .sep { color: var(--ink-faint); font-size: 13px; padding: 0 1px; }
+  #map-actions .ink-text { min-height: 34px; padding: 0 8px; --ink-inset: 8px; }
+  #more-toggle { font-size: 20px; letter-spacing: 0; }
+  #reset-view span { display: inline-block; color: var(--cinnabar); margin-right: 4px; letter-spacing: 0; transform: rotate(var(--north-angle, 0deg)); }
+  /* 街巷模式：视角下拉与文字按钮一致，只留一道发丝线。 */
+  #walk-view {
+    appearance: none; min-height: 34px; max-width: min(47vw,16em); cursor: pointer;
+    font: 500 14px/1 var(--song); letter-spacing: .08em; color: var(--ink);
+    padding: 0 1.6rem 0 .3rem; border: 0; border-bottom: 1px solid var(--hair); border-radius: 0;
+    background-color: transparent; text-shadow: 0 0 8px var(--paper);
+    background-image: linear-gradient(45deg,transparent 47%,var(--ink-soft) 50%,var(--ink-soft) 66%,transparent 69%),
+      linear-gradient(-45deg,transparent 47%,var(--ink-soft) 50%,var(--ink-soft) 66%,transparent 69%);
+    background-size: 6px 6px; background-repeat: no-repeat;
+    background-position: calc(100% - 13px) 52%,calc(100% - 9px) 52%;
+  }
+  #map-actions:has(#walk-view:not([hidden])) { right: max(16px,env(safe-area-inset-right)); gap: .4rem; }
+  #map-actions:has(#walk-view:not([hidden])) #reset-view,
+  #map-actions:has(#walk-view:not([hidden])) .sep { display: none; }
 
   /* 底部：说明、导览、罗盘与比例尺 */
   #dock {
@@ -151,49 +272,113 @@
     display: flex; flex-wrap: wrap; align-items: flex-end; gap: 14px 28px;
     pointer-events: none;
   }
-  #card { max-width: 360px; pointer-events: auto; padding: 12px 16px 12px 0; min-height: 80px; }
+  /* 纸色卷轴：上缘一道发丝线，下方实底，地图里的道路不再从说明文字下穿过。 */
+  #dock::before {
+    content: ""; position: absolute; z-index: -1; pointer-events: none;
+    inset: -34px -5vw -5vh;
+    background:
+      linear-gradient(to right, transparent 4%, rgba(31,30,27,.16) 22%, rgba(31,30,27,.16) 78%, transparent 96%) 0 26px / 100% 1px no-repeat,
+      linear-gradient(to bottom, transparent, rgba(242,239,230,.6) 14px, var(--wash) 27px, var(--paper) 80px);
+  }
+  #card { flex: 0 1 auto; max-width: 350px; pointer-events: auto; padding: 12px 16px 12px 0; min-height: 80px; }
   .card-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
   .panel-toggle { display: none; }
+  #atlas-open { margin-left: auto; color: var(--cinnabar); letter-spacing: .14em; padding-right: 2px; }
+  #atlas-open .arrow { display: inline-block; margin-left: .3em; letter-spacing: 0; transition: transform .3s; }
+  #atlas-open:hover .arrow { transform: translateX(3px); }
   #card h2 {
     margin: 0 0 6px; font: 400 clamp(25px, 2.8vw, 33px)/1.1 var(--brush); letter-spacing: .12em;
     text-shadow: 0 0 12px var(--paper);
   }
+  #card h2::after {
+    content: ""; display: block; width: 40px; height: 1px; margin-top: 7px;
+    background: linear-gradient(to right, var(--ink-faint), transparent);
+  }
   #card p {
-    margin: 0; font-size: 13px; line-height: 1.85; color: var(--ink-soft); letter-spacing: .06em;
+    margin: 0; font-size: 14px; line-height: 1.8; color: var(--ink-soft); letter-spacing: .04em;
     text-shadow: 0 0 10px var(--paper), 0 0 4px var(--paper);
   }
+
+  /* 建筑图录：册页装裱。绢边、发丝线、朱砂印，控件只留字。 */
+  #atlas { width: min(800px, 93vw); max-height: 94vh; max-height: 94dvh; padding: 0;
+    color: var(--ink); background: var(--paper); border: 10px solid #e6e0d2; border-radius: 0;
+    box-sizing: border-box; box-shadow: inset 0 0 0 1px var(--hair), 0 18px 60px rgba(46,38,28,.30); }
+  #atlas::backdrop { background: rgba(38,36,31,.55); }
+  #atlas header, #atlas footer { display: flex; align-items: center; gap: 4px 6px; padding: 12px 16px; }
+  #atlas header { justify-content: space-between; padding-bottom: 6px; }
+  #atlas .album-title { display: flex; align-items: center; gap: 12px; }
+  #atlas .album-title .stamp { font-size: 12px; }
+  #atlas h2 { margin: 0; font: 400 25px/1.2 var(--brush); letter-spacing: .12em; }
+  #atlas-close { font-size: 24px; line-height: 1; letter-spacing: 0; padding: 4px 8px 6px; color: var(--ink-soft); }
+  #atlas-close:hover { color: var(--cinnabar); }
+  #atlas .atlas-stage { position: relative; margin: 0 16px; }
+  #atlas img { display: block; width: 100%; height: min(52vh, 560px); height: min(52dvh, 560px);
+    object-fit: contain; background: var(--paper); }
+  .atlas-page {
+    position: absolute; top: 50%; transform: translateY(-50%); width: 44px; height: 64px; padding: 0;
+    font: 400 34px/1 var(--song); letter-spacing: 0; color: var(--ink-faint);
+  }
+  .atlas-page:hover { color: var(--cinnabar); }
+  #atlas-prev { left: -8px; } #atlas-next { right: -8px; }
+  #atlas-caption {
+    display: flex; align-items: flex-end; gap: 14px; margin: 8px 16px 0; padding-top: 10px;
+    border-top: 1px solid var(--hair);
+  }
+  #atlas-caption p {
+    flex: 1; min-width: 0; margin: 0 0 4px; font: 400 13px/1.7 var(--song); letter-spacing: .04em; color: var(--ink-soft);
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+  }
+  #atlas:focus { outline: none; }
+  #atlas footer { flex-wrap: wrap; padding-top: 8px; }
+  #atlas-note { margin: 6px 16px 0; color: var(--ink); font: 400 13px/1.45 var(--song); }
+  #atlas-site {
+    appearance: none; max-width: 100%; min-height: 34px; cursor: pointer;
+    flex: none; font: 400 22px/1.3 var(--brush); letter-spacing: .1em; color: var(--ink);
+    padding: 2px 1.7rem 4px .1rem; border: 0; border-bottom: 1px solid var(--hair); border-radius: 0;
+    background-color: transparent;
+    background-image: linear-gradient(45deg,transparent 47%,var(--ink-soft) 50%,var(--ink-soft) 66%,transparent 69%),
+      linear-gradient(-45deg,transparent 47%,var(--ink-soft) 50%,var(--ink-soft) 66%,transparent 69%);
+    background-size: 6px 6px; background-repeat: no-repeat;
+    background-position: calc(100% - 13px) 55%,calc(100% - 9px) 55%;
+  }
+  #atlas footer .ink-text { letter-spacing: .12em; }
+  #atlas-locate { margin-left: auto; color: var(--cinnabar); }
+  @media(max-width: 550px) {
+    .card-heading { column-gap: 6px; }
+    #atlas-open, #atlas footer button, #atlas-site, #atlas-close { min-height: 44px; }
+    #atlas { border-width: 6px; }
+    #atlas img { height: auto; max-height: 46vh; max-height: 46dvh; }
+    #atlas header, #atlas footer { padding: 10px; }
+    #atlas .atlas-stage, #atlas-caption { margin-inline: 10px; }
+    #atlas-caption { flex-wrap: wrap; gap: 4px 12px; }
+    #atlas footer .ink-text { padding: 8px 6px; letter-spacing: .06em; }
+    .atlas-page { width: 36px; }
+  }
+
+  /* 底部导览：宋体平铺，只有当前所在处用书法。行首压三镇小印。 */
   #nav {
-    display: flex; gap: 4px 16px; pointer-events: auto; padding-bottom: 12px; flex-wrap: wrap;
-    max-width: min(700px, 56vw);
+    /* 占满说明卡与罗盘之间的余宽；常见桌面宽度下罗盘比例尺与导览同行。 */
+    flex: 1 1 470px; min-width: 0; display: flex; gap: 2px 16px; pointer-events: auto; padding-bottom: 12px; flex-wrap: wrap;
+    max-width: 760px;
   }
-  #nav .grp { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px; }
-  #nav .gl {
-    font-size: 11px; letter-spacing: .3em; color: var(--ink-faint); padding: 0 2px 0 4px;
-    text-shadow: 0 0 8px var(--paper);
-  }
+  #nav .grp { display: flex; flex-wrap: wrap; align-items: center; gap: 0 1px; }
+  #nav .gl { margin-right: 5px; }
   #nav button {
     appearance: none; background: none; border: 0; cursor: pointer;
-    font: 400 19px/1 var(--brush); letter-spacing: .16em; color: var(--ink-soft);
-    padding: 7px 10px 9px; position: relative;
+    font: 500 17px/1 var(--song); letter-spacing: .12em; color: var(--ink-soft);
+    padding: 8px 8px 10px; --ink-inset: 8px;
     text-shadow: 0 0 10px var(--paper);
   }
-  #nav button::after {
-    content: ""; position: absolute; left: 10px; right: 10px; bottom: 2px; height: 5px;
-    background: var(--ink); opacity: 0; transform: scaleX(.2) skewX(-24deg); transform-origin: left;
-    border-radius: 60% 40% 70% 30% / 50%;
-    transition: opacity .35s, transform .5s cubic-bezier(.2,.8,.2,1);
-  }
-  #nav button:hover, #nav button[aria-pressed="true"] { color: var(--ink); }
-  #nav button[aria-pressed="true"]::after { opacity: .85; transform: scaleX(1) skewX(-24deg); }
-  #nav button:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+  #nav button:hover { color: var(--ink); }
+  #nav button[aria-pressed="true"] { color: var(--ink); font-family: var(--brush); font-weight: 400; }
 
   #tools {
-    margin-left: auto; padding-bottom: 14px; display: flex; align-items: flex-end; gap: 30px;
+    flex: none; margin-left: auto; padding-bottom: 14px; display: flex; align-items: flex-end; gap: 30px;
     color: var(--ink-faint);
   }
   #rose { width: 52px; height: 52px; flex: none; }
   #rose .dial { transform-origin: 26px 26px; }
-  #scale { text-align: right; font-size: 11px; letter-spacing: .28em; text-shadow: 0 0 8px var(--paper); }
+  #scale { width: 136px; text-align: right; font-size: 11px; letter-spacing: .28em; text-shadow: 0 0 8px var(--paper); }
   #scaleBar {
     height: 6px; border: 1px solid currentColor; border-top: 0; margin: 5px 0 5px auto;
     width: 96px; min-width: 54px; transition: width .25s;
@@ -201,11 +386,10 @@
   #hint { font-size: 11px; letter-spacing: .26em; text-shadow: 0 0 8px var(--paper); }
   #credit {
     flex-basis: 100%; margin-top: -10px; text-align: right; pointer-events: auto;
-    font-size: 10px; letter-spacing: .08em; color: var(--ink-faint); opacity: .75; text-shadow: 0 0 6px var(--paper);
+    font-size: 10px; letter-spacing: .08em; color: var(--ink-faint); text-shadow: 0 0 6px var(--paper);
   }
   #credit summary { list-style: none; cursor: pointer; }
   #credit summary::-webkit-details-marker { display: none; }
-  #credit summary:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
   #credit p {
     margin: 4px 0 0 auto; max-width: 520px; line-height: 1.5; letter-spacing: 0; text-align: left;
   }
@@ -225,11 +409,14 @@
   [hidden] { display: none !important; }
 
   @media (max-width: 1180px) {
-    #nav { max-width: min(560px, max(440px, calc(100vw - 470px))); }
-    #nav button { font-size: 17px; padding: 6px 8px 8px; }
+    #nav { flex-basis: 380px; max-width: min(600px, max(460px, calc(100vw - 450px))); gap: 2px 12px; }
+    #nav button { font-size: 16px; padding: 7px 7px 9px; --ink-inset: 7px; }
+  }
+  /* 再窄时说明卡、导览与罗盘挤不进一行：罗盘比例尺让位，不另起一行。 */
+  @media (max-width: 1100px) {
+    #tools { display: none; }
   }
   @media (max-width: 860px) {
-    #tools { display: none; }
     #nav { max-width: 100%; }
   }
   @media (max-width: 640px), (max-height: 500px) {
@@ -237,14 +424,27 @@
     #title h1 { font-size: 32px; }
     #title p { margin-top: 8px; letter-spacing: .16em; font-size: 10px; }
     #sound { width: 44px; height: 44px; top: max(12px, env(safe-area-inset-top)); right: max(16px, env(safe-area-inset-right)); }
-    .panel-toggle { display: inline-grid; place-items: center; appearance: none; cursor: pointer;
-      min-width: 44px; min-height: 44px; padding: 0 8px; font: 16px/1 var(--brush);
-      color: var(--ink-soft); background: var(--paper); border: 1px solid var(--ink-faint); border-radius: 2px; }
-    .panel-toggle[aria-expanded="true"] { color: var(--cinnabar); border-color: var(--cinnabar); }
-    .panel-toggle:focus-visible { outline: 2px solid var(--ink); outline-offset: 3px; }
-    #poem-toggle { top: max(12px, env(safe-area-inset-top)); right: calc(max(16px, env(safe-area-inset-right)) + 56px); }
+    .panel-toggle { display: inline-grid; place-items: center; min-width: 44px; min-height: 44px; padding: 0 8px;
+      font-size: 14px; letter-spacing: .14em; color: var(--ink-soft); }
+    .panel-toggle[aria-expanded="true"] { color: var(--cinnabar); }
+    #map-actions { top: max(12px, env(safe-area-inset-top)); right: calc(max(16px, env(safe-area-inset-right)) + 52px); }
+    #map-actions .ink-text, #walk-view { min-height: 44px; }
+    #more-toggle { font-size: 22px; letter-spacing: 0; padding: 0 6px 6px; }
+    /* 「⋯」展开为纸色竖条：题跋、回全城、观画，各占一行。 */
+    #action-menu { display: none; }
+    #map-actions[data-open] #action-menu {
+      display: flex; flex-direction: column; align-items: stretch; position: absolute; top: calc(100% + 4px); right: -52px;
+      min-width: 9em; padding: 6px 0; background: var(--wash);
+      box-shadow: inset 0 1px 0 var(--hair), 0 10px 24px rgba(46,38,28,.16);
+    }
+    #map-actions[data-open] #action-menu .ink-text { display: flex; align-items: center; justify-content: flex-end; padding: 0 18px; font-size: 14px; }
+    #map-actions[data-open] #action-menu .sep { display: none; }
+    #poem-toggle { display: flex; }
+    /* 观画与街巷模式：直接给出退出按钮，不藏进菜单。 */
+    #map-actions:has([data-painting]) { right: max(16px, env(safe-area-inset-right)); }
+    #map-actions:has([data-painting]) #action-menu { display: flex; }
     #poem { top: calc(max(12px, env(safe-area-inset-top)) + 60px); right: max(16px, env(safe-area-inset-right));
-      max-width: calc(100% - 64px); padding: 12px; gap: .3em; background: var(--paper); border: 1px solid var(--ink-faint);
+      max-width: calc(100% - 64px); padding: 12px; gap: .3em; background: var(--wash); box-shadow: inset 0 0 0 1px var(--hair);
       max-height: min(45dvh, max(64px, calc(100dvh - 320px))); overflow: auto; overscroll-behavior: contain; }
     #poem p span { font-size: 19px; }
     #dock { left: max(16px, env(safe-area-inset-left)); right: max(16px, env(safe-area-inset-right));
@@ -252,11 +452,16 @@
       padding-top: 8px; background: linear-gradient(transparent, var(--paper) 24px); }
     #card { max-width: none; min-height: 0; padding: 0; }
     #card h2 { margin: 0; font-size: 25px; }
-    #card p { margin-top: 8px; font-size: 12px; max-height: min(45dvh, max(64px, calc(100dvh - 320px)));
+    #card h2::after { display: none; }
+    #card p { margin-top: 8px; font-size: 13px; line-height: 1.8; max-height: min(45dvh, max(64px, calc(100dvh - 320px)));
       overflow-y: auto; overscroll-behavior: contain; }
-    #nav { max-width: 100%; min-width: 0; flex-wrap: nowrap; overflow-x: auto; overscroll-behavior-x: contain;
-      padding: 0 0 4px; scrollbar-width: thin; touch-action: pan-x; }
-    #nav button { flex: 0 0 auto; min-height: 44px; font-size: 17px; padding: 8px; }
+    #nav { flex: none; max-width: 100%; min-width: 0; flex-wrap: nowrap; overflow-x: auto; overscroll-behavior-x: contain;
+      padding: 0 0 4px; scrollbar-width: thin; touch-action: pan-x;
+      mask-image: linear-gradient(to right, transparent, black var(--fade-left, 0px), black calc(100% - var(--fade-right, 0px)), transparent); }
+    #nav.more-left { --fade-left: 19px; }
+    #nav.more-right { --fade-right: 22px; }
+    #nav button { flex: 0 0 auto; min-height: 44px; font-size: 16px; padding: 8px; }
+    #nav button:focus-visible { outline-offset: -3px; }
     #nav .grp { flex: none; flex-wrap: nowrap; }
     #credit { flex-basis: auto; margin-top: 0; }
     #tools { display: none; }
@@ -267,9 +472,41 @@
     .mark .plate { font-size: 13px; padding: 5px 3px 6px; }
     .mark .stem { height: 14px; }
   }
+  @media (min-width: 641px) and (max-height: 500px) {
+    #dock { flex-direction: row; flex-wrap: wrap; align-items: flex-end; gap: 5px 12px; }
+    #dock::before { inset-block-start: -14px; }
+    #card { flex: 0 0 auto; max-width: min(45%, 340px); }
+    #card h2 { font-size: 21px; }
+    #atlas-open { min-height: 44px; }
+    #nav { flex: 1 1 180px; }
+    #hint { margin-right: auto; }
+    #credit { margin-left: auto; }
+    #credit[open] { flex-basis: 100%; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    #stage, #labels, #marks, #title, #poem, #dock, #sound { animation: none; }
+    #labels b, .mark, .mark .plate, #nav button::after, .ink-underline::after, #sound, #scaleBar, #tip,
+    #poem p, #poem .seal, #poem::before { transition: none; }
+  }
 </style>
 
+<svg width="0" height="0" aria-hidden="true" style="position:absolute"><defs>
+  <!-- 题名的墨边：笔画边缘轻微洇开、带飞白。 -->
+  <filter id="title-ink" x="-4%" y="-10%" width="108%" height="120%">
+    <feTurbulence type="fractalNoise" baseFrequency=".9 .55" numOctaves="2" seed="3" result="fibre"/>
+    <feDisplacementMap in="SourceGraphic" in2="fibre" scale="2.6" xChannelSelector="R" yChannelSelector="G" result="bled"/>
+    <feTurbulence type="fractalNoise" baseFrequency=".05 .9" numOctaves="2" seed="11" result="dry"/>
+    <feColorMatrix in="dry" type="matrix" values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 -2.4 2.15" result="dryMask"/>
+    <feComposite in="bled" in2="dryMask" operator="in"/>
+  </filter>
+  <filter id="sun-bleed" x="-8%" y="-8%" width="116%" height="116%">
+    <feTurbulence baseFrequency=".047 .08" numOctaves="3" seed="7" type="fractalNoise" result="grain"/>
+    <feDisplacementMap in="SourceGraphic" in2="grain" scale="5" xChannelSelector="R" yChannelSelector="G"/>
+  </filter>
+</defs></svg>
+<div id="river-sky" aria-hidden="true"></div>
 <div id="sun" aria-hidden="true"></div>
+<div id="far-hills" aria-hidden="true"></div>
 <div id="stage" aria-busy="true" role="img" aria-label="水墨风格的武汉三维地图：长江与汉江交汇，汉口、汉阳、武昌三镇，黄鹤楼、长江大桥、晴川阁、龟山电视塔、江汉关、武大樱园、汉口水塔、红楼、洪山宝塔、湖北省博物馆、鹦鹉洲长江大桥、归元禅寺、古琴台与东湖"></div>
 <div id="grain" aria-hidden="true"></div>
 <div id="vignette" aria-hidden="true"></div>
@@ -281,7 +518,7 @@
   <p>武汉 · 两江四岸 · 依实境方位</p>
 </header>
 
-<aside id="poem" class="ui" aria-label="崔颢《黄鹤楼》：晴川历历汉阳树，芳草萋萋鹦鹉洲。日暮乡关何处是，烟波江上使人愁。">
+<aside id="poem" class="ui" tabindex="0" aria-label="崔颢《黄鹤楼》：晴川历历汉阳树，芳草萋萋鹦鹉洲。日暮乡关何处是，烟波江上使人愁。">
   <p class="meta" aria-hidden="true"><span>崔</span><span>颢</span><span>·</span><span>黄</span><span>鹤</span><span>楼</span></p>
   <p aria-hidden="true"><span>晴</span><span>川</span><span>历</span><span>历</span><span>汉</span><span>阳</span><span>树</span></p>
   <p aria-hidden="true"><span>芳</span><span>草</span><span>萋</span><span>萋</span><span>鹦</span><span>鹉</span><span>洲</span></p>
@@ -290,23 +527,52 @@
   <div class="seal" aria-hidden="true"><span>江</span><span>城</span></div>
 </aside>
 
-<button type="button" id="poem-toggle" class="ui panel-toggle" disabled aria-controls="poem" aria-expanded="false">题跋</button>
 <button type="button" id="sound" disabled class="ui" aria-pressed="false" aria-label="背景音乐" title="背景音乐">乐</button>
+
+<div id="map-actions" class="ui">
+  <select id="walk-view" aria-label="选择江岸街巷视角" disabled hidden></select>
+  <button type="button" id="more-toggle" class="panel-toggle ink-text" disabled aria-label="更多" aria-controls="action-menu" aria-expanded="false">⋯</button>
+  <div id="action-menu">
+    <button type="button" id="poem-toggle" class="panel-toggle ink-text ink-underline" disabled aria-controls="poem" aria-expanded="false">题跋</button>
+    <button type="button" id="reset-view" class="ink-text ink-underline" disabled><span aria-hidden="true">↑</span>回全城</button>
+    <span class="sep" aria-hidden="true">·</span>
+    <button type="button" id="painting-toggle" class="ink-text ink-underline" disabled>观画</button>
+  </div>
+</div>
+
+<dialog id="atlas" aria-labelledby="atlas-title" tabindex="-1">
+  <header><div class="album-title"><span class="stamp" aria-hidden="true">江城</span><h2 id="atlas-title">建筑图录</h2></div><button id="atlas-close" class="ink-text" type="button" aria-label="关闭建筑图录" autofocus>×</button></header>
+  <div class="atlas-stage">
+    <img id="atlas-plate" alt="">
+    <button id="atlas-prev" class="atlas-page ink-text" type="button" aria-label="上一处景点">‹</button>
+    <button id="atlas-next" class="atlas-page ink-text" type="button" aria-label="下一处景点">›</button>
+  </div>
+  <div id="atlas-caption"><select id="atlas-site" aria-label="选择景点"></select><p id="atlas-caption-text"></p></div>
+  <p id="atlas-note" hidden>武昌桥头的蓝底金字铭牌为本图游览增设。</p>
+  <footer>
+    <button id="atlas-detail" class="ink-text ink-underline" type="button" aria-pressed="false" hidden>细部</button>
+    <button id="atlas-craft" class="ink-text ink-underline" type="button" aria-pressed="false" hidden>构件特写</button>
+    <button id="atlas-name" class="ink-text ink-underline" type="button" aria-pressed="false" hidden>看桥名</button>
+    <button id="atlas-walk" class="ink-text ink-underline" type="button">游两岸街巷</button>
+    <button id="atlas-locate" class="ink-text ink-underline" type="button">在地图中查看</button>
+  </footer>
+</dialog>
 
 <div id="dock" class="ui">
   <div id="card" aria-live="polite">
-    <div class="card-heading"><h2 id="cardTitle">龟蛇锁大江</h2><button type="button" id="details-toggle" class="panel-toggle" disabled aria-controls="cardText" aria-expanded="false">详情</button></div>
+    <div class="card-heading"><h2 id="cardTitle">龟蛇锁大江</h2><button type="button" id="atlas-open" class="ink-text ink-underline" aria-haspopup="dialog" disabled>建筑图录<span class="arrow" aria-hidden="true">→</span></button><button type="button" id="details-toggle" class="panel-toggle ink-text ink-underline" disabled aria-controls="cardText" aria-expanded="false">详情</button></div>
     <p id="cardText">龟蛇隔江对峙：蛇山踞武昌，上有黄鹤楼；龟山在汉阳，顶立电视塔。大桥自蛇山头跨向龟山东麓。</p>
   </div>
   <nav id="nav" aria-label="视角">
     <div class="grp">
+      <span class="gl stamp" aria-hidden="true">总览</span>
       <button type="button" id="b-home" disabled data-view="home" aria-pressed="false">全城</button>
       <button type="button" id="b-core" disabled data-view="core" aria-pressed="true">两江</button>
-      <button type="button" id="b-bridge" disabled data-view="bridge" aria-pressed="false">大桥</button>
-      <button type="button" id="b-yingwuzhou" disabled data-view="yingwuzhou" aria-pressed="false">鹦鹉洲</button>
+      <button type="button" id="b-bridge" disabled data-view="bridge" aria-pressed="false">长江大桥</button>
+      <button type="button" id="b-yingwuzhou" disabled data-view="yingwuzhou" aria-pressed="false">鹦鹉洲大桥</button>
     </div>
     <div class="grp" role="group" aria-label="武昌">
-      <span class="gl" aria-hidden="true">武昌</span>
+      <span class="gl stamp" aria-hidden="true">武昌</span>
       <button type="button" id="b-tower" disabled data-view="tower" aria-pressed="false">黄鹤楼</button>
       <button type="button" id="b-honglou" disabled data-view="honglou" aria-pressed="false">红楼</button>
       <button type="button" id="b-hongshan" disabled data-view="hongshan" aria-pressed="false">宝通寺</button>
@@ -315,14 +581,14 @@
       <button type="button" id="b-lake" disabled data-view="lake" aria-pressed="false">东湖</button>
     </div>
     <div class="grp" role="group" aria-label="汉阳">
-      <span class="gl" aria-hidden="true">汉阳</span>
+      <span class="gl stamp" aria-hidden="true">汉阳</span>
       <button type="button" id="b-qc" disabled data-view="qc" aria-pressed="false">晴川阁</button>
       <button type="button" id="b-tv" disabled data-view="tv" aria-pressed="false">电视塔</button>
       <button type="button" id="b-guiyuan" disabled data-view="guiyuan" aria-pressed="false">归元寺</button>
       <button type="button" id="b-qintai" disabled data-view="qintai" aria-pressed="false">古琴台</button>
     </div>
     <div class="grp" role="group" aria-label="汉口">
-      <span class="gl" aria-hidden="true">汉口</span>
+      <span class="gl stamp" aria-hidden="true">汉口</span>
       <button type="button" id="b-customs" disabled data-view="customs" aria-pressed="false">江汉关</button>
       <button type="button" id="b-watertower" disabled data-view="watertower" aria-pressed="false">水塔</button>
     </div>

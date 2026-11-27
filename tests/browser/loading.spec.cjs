@@ -1,4 +1,4 @@
-const { test, expect, ready, scripts } = require('./fixtures.cjs');
+const { test, expect, ready, scripts, STARTUP } = require('./fixtures.cjs');
 
 for (const filename of Object.keys(scripts)) {
   test(`a failed ${filename} shows a recoverable error`, async ({ page }) => {
@@ -12,7 +12,7 @@ for (const filename of Object.keys(scripts)) {
     expect(errors).toEqual([]);
     await page.unroute(`**/${filename}`);
     await page.getByRole('button', { name: '重新加载' }).click();
-    await expect.poll(() => page.evaluate(() => window.__ready === true)).toBe(true);
+    await expect.poll(() => page.evaluate(() => window.__ready === true), STARTUP).toBe(true);
     await expect(page.locator('canvas')).toHaveCount(1);
   });
 }
@@ -23,8 +23,9 @@ test('navigation stays disabled while dependencies load', async ({ page }) => {
   await page.route('**/gsap.min.js', async route => { await gate; await route.fallback(); });
   await page.goto('/', { waitUntil: 'commit' });
   await expect(page.locator('#nav button:enabled')).toHaveCount(0);
+  await expect(page.locator('#more-toggle')).toBeDisabled();
   release();
-  await expect.poll(() => page.evaluate(() => window.__ready === true)).toBe(true);
+  await expect.poll(() => page.evaluate(() => window.__ready === true), STARTUP).toBe(true);
   await expect(page.locator('#nav button:enabled')).toHaveCount(16);
 });
 

@@ -6,10 +6,16 @@ const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 
 const root = path.resolve(__dirname, '..');
+
+test('architecture data stays under 6.5 MB', () => {
+  assert.ok(fs.statSync(path.join(root, 'src/architecture.gen.js')).size <= 6_815_744);
+});
+
 function fixture(t) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'jiangcheng-build-'));
   t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
   fs.cpSync(path.join(root, 'src'), path.join(dir, 'src'), { recursive: true });
+  fs.cpSync(path.join(root, 'assets'), path.join(dir, 'assets'), {recursive:true});
   fs.copyFileSync(path.join(root, 'build.sh'), path.join(dir, 'build.sh'));
   fs.mkdirSync(path.join(dir, 'bin'));
   for (const cmd of ['mkdir', 'mktemp', 'rm', 'dirname', 'cat', 'cp', 'mv', 'sed']) {
@@ -75,4 +81,43 @@ test('a failing minifier falls back to checked uncompressed output', t => {
   assert.equal(result.status, 0, result.stderr);
   assert.match(result.stdout, /未压缩/);
   assert.match(fs.readFileSync(path.join(dir, 'dist/index.html'), 'utf8'), /水墨江城/);
+});
+
+test('exported bridges and west garden models retain valid triangles on the web coordinate grid', () => {
+  const source = fs.readFileSync(path.join(root, 'src/architecture.gen.js'), 'utf8');
+  const models = require('node:vm').runInNewContext(source + '\nARCHITECTURE');
+  assert.ok(models.yingwuzhou.suspensionOrange[3], 'round main cables retain their authored shading');
+  const materialCounts = { bridge: 5, yingwuzhou: 5, park_paifang: 8, park_stupa: 3, park_cranes: 5, park_pavilion: 6 };
+  for (const [name, minimum] of Object.entries(materialCounts)) {
+    const batches = Object.entries(models[name]);
+    assert.ok(batches.length >= minimum, name);
+    for (const [material, [coordinates, triangles, visibility, smooth]] of batches) {
+      const points = Buffer.from(coordinates, 'base64'), index = Buffer.from(triangles, 'base64');
+      const count = points.length / 6, seen = new Set();
+      assert.equal(Buffer.from(visibility, 'base64').length, count);
+      assert.equal(index.length % 6, 0);
+      if (smooth) {
+        const ranges = Buffer.from(smooth, 'base64');
+        assert.equal(ranges.length % 8, 0);
+        let previousEnd = 0;
+        for (let i=0; i<ranges.length; i+=8) {
+          const start = ranges.readUInt32LE(i), end = ranges.readUInt32LE(i+4);
+          assert.ok(start >= previousEnd && start < end && end <= index.length/2);
+          assert.equal(start % 3, 0);
+          assert.equal(end % 3, 0);
+          previousEnd = end;
+        }
+      }
+      for (let k = 0; k < index.length; k += 6) {
+        const ids = [0, 2, 4].map(delta => index.readUInt16LE(k + delta));
+        assert.ok(ids.every(i => i < count), name + '/' + material);
+        const [a, b, c] = ids.map(i => [0, 2, 4].map(j => points.readInt16LE(i * 6 + j)));
+        const u = b.map((n, i) => n - a[i]), v = c.map((n, i) => n - a[i]);
+        assert.ok(u.some((n, i) => n * v[(i + 1) % 3] !== u[(i + 1) % 3] * v[i]), 'zero-area face');
+        const key = ids.sort((x, y) => x - y).join(',');
+        assert.ok(!seen.has(key), 'coincident triangle');
+        seen.add(key);
+      }
+    }
+  }
 });

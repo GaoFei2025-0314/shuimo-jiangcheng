@@ -9,7 +9,7 @@
       document.getElementById('stage').setAttribute('aria-busy', 'false');
       document.getElementById('loadMessage').textContent = message;
       document.getElementById('retry').hidden = false;
-      document.querySelectorAll('#nav button, #sound, .mark, .panel-toggle').forEach(b => { b.disabled = true; });
+      document.querySelectorAll('#nav button, #map-actions button, #walk-view, #sound, #atlas-open, .mark, .panel-toggle').forEach(b => { b.disabled = true; });
       this.cleanups.forEach(stop => { try { stop(); } catch (_) { /* 尽力释放，仍保留恢复入口 */ } });
       if (document.activeElement && document.activeElement.disabled) document.getElementById('retry').focus();
     },
@@ -19,7 +19,7 @@
       window.__ready = true;
       document.body.dataset.state = 'ready';
       document.getElementById('stage').setAttribute('aria-busy', 'false');
-      document.querySelectorAll('#nav button, #sound, .panel-toggle').forEach(b => { b.disabled = false; });
+      document.querySelectorAll('#nav button, #map-actions button, #walk-view, #sound, #atlas-open, .panel-toggle').forEach(b => { b.disabled = false; });
     }
   };
   window.__ready = false;

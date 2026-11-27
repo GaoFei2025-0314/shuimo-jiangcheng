@@ -15,10 +15,25 @@ MINJS_OUT="$TMPDIR_BUILD/bundle.min.js"
 
 {
   printf '(function () {\n'
-  cat src/00-boot.js
+  # Keep the baked geometry outside the scene initializer so WebKit can compile each builder independently.
+  node <<'NODE'
+const fs = require('node:fs');
+const images = {
+  laneMaterialImage: 'lane-materials',
+  laneWindowImage: 'lane-windows',
+  laneEarthImage: 'lane-earth',
+  laneFoliageImage: 'lane-foliage',
+  laneMossImage: 'lane-moss',
+  riverSkyImage: 'river-sky'
+};
+for (const [name, file] of Object.entries(images)) {
+  const data = fs.readFileSync('assets/' + file + '.webp').toString('base64');
+  console.log('const ' + name + '=' + JSON.stringify('data:image/webp;base64,' + data) + ';');
+}
+NODE
+  cat src/00-boot.js src/geodata.gen.js src/architecture.gen.js src/architecture-plates.gen.js
   printf '\nasync function initialize() {\nawait loadDependencies();\nif (app.state !== "loading") return;\n'
-  # geodata.gen.js 定义 const GEO，须在所有用到它的文件（03-terrain.js、05-overlays.js 等）之前
-  cat src/geodata.gen.js src/01-core.js src/02-landmarks.js src/03-terrain.js src/04-scene.js src/05-layout.js src/05-overlays.js src/05-runtime.js src/06-audio.js
+  cat src/01-core.js src/02-landmarks.js src/03-terrain.js src/04-bridge-roads.js src/04-districts.js src/04-scene.js src/04-landmark-grounds.js src/04-tower-park.js src/04-planting.js src/05-layout.js src/05-overlays.js src/05-far-hills.js src/05-runtime.js src/06-audio.js
   printf '\napp.ready();\n}\ninitialize().catch(error => { console.error("Map initialization failed:", error); app.fail("三维场景未能初始化，请检查浏览器图形加速后重新加载。"); });\n})();\n'
 } > "$JS"
 
@@ -34,7 +49,7 @@ if [ -x node_modules/.bin/terser ]; then
 elif command -v terser >/dev/null 2>&1; then
   TERSER="$(command -v terser)"
 fi
-if [ -n "$TERSER" ] && "$TERSER" "$JS" -c -m -o "$MINJS_OUT" >/dev/null 2>&1 \
+if [ -n "$TERSER" ] && "$TERSER" "$JS" -c inline=false,reduce_funcs=false -m -o "$MINJS_OUT" >/dev/null 2>&1 \
    && node --check "$MINJS_OUT" >/dev/null 2>&1; then
   MINJS="$MINJS_OUT"
   MODE="语法检查通过，已用 terser 压缩"

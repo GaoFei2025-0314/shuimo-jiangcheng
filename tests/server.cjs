@@ -2,7 +2,8 @@ const http = require('node:http');
 const { readFile } = require('node:fs/promises');
 const path = require('node:path');
 http.createServer(async (req, res) => {
-  if (req.url !== '/' && req.url !== '/index.html') { res.writeHead(404).end(); return; }
+  const { pathname } = new URL(req.url, 'http://127.0.0.1');
+  if (pathname !== '/' && pathname !== '/index.html') { res.writeHead(404).end(); return; }
   try {
     const html = await readFile(path.join(__dirname, '../dist/index.html'));
     res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' }).end(html);

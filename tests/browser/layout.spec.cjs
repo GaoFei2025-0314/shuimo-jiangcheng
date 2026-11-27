@@ -8,9 +8,23 @@ async function subjectBounds(page, key) {
   return page.evaluate(key => {
     const scene = window.__testScene, camera = window.__testCamera;
     scene.updateMatrixWorld(true); camera.updateMatrixWorld(true);
-    const boxes = scene.children.filter(o => o.userData.focus && (key === 'home' ? o.userData.focus !== 'lake' : key === 'core' ? ['tower', 'bridge', 'qc', 'tv'].includes(o.userData.focus) : o.userData.focus === key))
-      .map(o => new THREE.Box3().setFromObject(o));
+    const subjects = scene.children.filter(o => o.userData.focus && (key === 'home' ? o.userData.focus !== 'lake' : key === 'core' ? ['tower', 'bridge', 'qc', 'tv'].includes(o.userData.focus) : o.userData.focus === key));
     const points = [];
+    const crossing = subjects.find(o => o.userData.focus === 'bridge');
+    if (crossing) {
+      // Its diagonal world-axis bounding box contains empty space on both sides of the river.
+      // Project the actual deck, trusses and approach vertices to check the occupied pixels.
+      const projected = new THREE.Box2(), v = new THREE.Vector3();
+      for (const part of crossing.children) {
+        const positions = part.geometry.attributes.position;
+        for (let i = 0; i < positions.count; i++)
+          projected.expandByPoint(v.fromBufferAttribute(positions, i).applyMatrix4(part.matrixWorld).project(camera));
+      }
+      for (const p of [projected.min, projected.max]) {
+        points.push({ x: (p.x + 1) / 2 * innerWidth, y: (1 - p.y) / 2 * innerHeight });
+      }
+    }
+    const boxes = subjects.filter(o => o !== crossing).map(o => new THREE.Box3().setFromObject(o));
     for (const bounds of boxes) for (const x of [bounds.min.x, bounds.max.x]) for (const y of [bounds.min.y, bounds.max.y]) for (const z of [bounds.min.z, bounds.max.z]) {
       const p = new THREE.Vector3(x, y, z).project(camera);
       points.push({ x: (p.x + 1) / 2 * innerWidth, y: (1 - p.y) / 2 * innerHeight });
@@ -30,7 +44,8 @@ for (const [width, height] of [[390, 844], [360, 640], [844, 390]]) {
     await ready(page);
     await expect(page.locator('#poem')).toBeHidden();
     await expect(page.locator('#cardText')).toBeHidden();
-    await expect(page.locator('#poem-toggle')).toBeVisible();
+    await expect(page.locator('#more-toggle')).toBeVisible();
+    await expect(page.locator('#poem-toggle')).toBeHidden();
     for (const key of ['home', 'core', 'tower', 'bridge', 'qc', 'tv', 'customs', 'wuda', 'lake',
       'yingwuzhou', 'honglou', 'hongshan', 'museum', 'guiyuan', 'qintai', 'watertower']) {
       await page.locator(`#b-${key}`).click();
@@ -40,19 +55,72 @@ for (const [width, height] of [[390, 844], [360, 640], [844, 390]]) {
       }).toBe(true);
       if (['home', 'tower', 'lake'].includes(key)) await page.screenshot({ path: path.join(shots, `${info.project.name}-${width}x${height}-${key}.png`) });
     }
-    const heights = await page.locator('#nav button, #sound, .panel-toggle').evaluateAll(els => els.map(e => e.getBoundingClientRect().height));
+    await page.locator('#more-toggle').click();
+    const heights = await page.locator('#nav button, #sound, .panel-toggle, #action-menu button')
+      .evaluateAll(els => els.filter(e => e.checkVisibility()).map(e => e.getBoundingClientRect().height));
+    expect(heights.length).toBeGreaterThan(20);
+    await page.keyboard.press('Escape');
     expect(heights.every(h => h >= 44)).toBe(true);
     await expect(page.locator('#nav')).toHaveCSS('flex-wrap', 'nowrap');
   });
 }
 
+test('the portrait East Lake view gives its shoreline room and separates the banks in depth', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await page.goto('/?debug');
+  await page.waitForFunction(() => window.__ready && window.__dbg);
+  await page.locator('#b-lake').click();
+  // Let the reduced-motion render apply the new lens and camera world matrix.
+  await page.evaluate(() => new Promise(done => requestAnimationFrame(() => requestAnimationFrame(done))));
+  const result = await page.evaluate(() => {
+    const { camera, LAKES, LAND_Y } = window.__dbg;
+    const gl = window.__testRenderer.getContext();
+    const levels = 2 ** gl.getParameter(gl.DEPTH_BITS) - 1;
+    const pixels = new THREE.Box2();
+    let separation = Infinity;
+    for (const [x,z] of LAKES[0]) {
+      const shore = new THREE.Vector3(x, 0, z);
+      const water = shore.clone().project(camera);
+      pixels.expandByPoint(new THREE.Vector2(water.x, water.y));
+      // Sample the bank and water on the same sightline, measured in depth buffer steps.
+      const bank = shore.lerp(camera.position, LAND_Y / camera.position.y).project(camera);
+      separation = Math.min(separation, (water.z - bank.z) * .5 * levels);
+    }
+    const safeHeight = document.querySelector('#dock').getBoundingClientRect().top
+                     - document.querySelector('#title').getBoundingClientRect().bottom;
+    return { fill: (pixels.max.y-pixels.min.y)*innerHeight/(2*safeHeight), separation };
+  });
+  expect(result.fill).toBeGreaterThan(.36);
+  expect(result.separation).toBeGreaterThan(4);
+  await expect(page.getByRole('button', { name: '移至行吟阁' })).toBeVisible();
+  await expect(page.getByRole('button', { name: '移至楚天台' })).toBeVisible();
+});
+
 test('compact text panels are mutually exclusive, bounded and keyboard operable', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.emulateMedia({ reducedMotion: 'reduce' });
   await ready(page);
+  const nav = page.locator('#nav');
+  await expect(nav).toHaveClass(/more-right/);
+  await nav.evaluate(el => { el.scrollLeft = el.scrollWidth; });
+  await expect(nav).not.toHaveClass(/more-right/);
+  await expect(nav).toHaveClass(/more-left/);
+  await nav.evaluate(el => { el.scrollLeft = 0; });
+  const towerBounds = await subjectBounds(page, 'tower');
+  const redHouseLabel = await page.locator('#marks button[aria-label="移至红楼"]').boundingBox();
+  if (redHouseLabel) {
+    const towerX = (towerBounds.left + towerBounds.right) / 2, towerY = (towerBounds.top + towerBounds.bottom) / 2;
+    expect(towerX < redHouseLabel.x || towerX > redHouseLabel.x + redHouseLabel.width ||
+      towerY < redHouseLabel.y || towerY > redHouseLabel.y + redHouseLabel.height).toBe(true);
+  }
+  await page.locator('#more-toggle').focus();
+  await page.keyboard.press('Enter');
+  await expect(page.locator('#more-toggle')).toHaveAttribute('aria-expanded', 'true');
   await page.locator('#poem-toggle').focus();
   await page.keyboard.press('Enter');
   await expect(page.locator('#poem')).toBeVisible();
+  await expect(page.locator('#action-menu')).toBeHidden();
   await expect(page.locator('#poem-toggle')).toHaveAttribute('aria-expanded', 'true');
   await page.locator('#details-toggle').click();
   await expect(page.locator('#poem')).toBeHidden();
@@ -62,6 +130,36 @@ test('compact text panels are mutually exclusive, bounded and keyboard operable'
   await page.keyboard.press('Escape');
   await expect(page.locator('#cardText')).toBeHidden();
   await expect(page.locator('#details-toggle')).toBeFocused();
+});
+
+test('landscape controls leave the drawing room and restore keyboard navigation', async ({ page }) => {
+  await page.setViewportSize({ width: 844, height: 390 });
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await ready(page);
+  const dock = page.locator('#dock'), toggle = page.getByRole('button', { name: '观画', exact: true });
+  const overview = page.locator('#reset-view');
+  const occupiedHeight = await dock.evaluate(el => innerHeight - el.getBoundingClientRect().top);
+  expect(occupiedHeight).toBeLessThanOrEqual(97);
+  await expect(page.locator('#hint')).toContainText('轻触景点');
+  await expect.poll(() => overview.evaluate(el => el.style.getPropertyValue('--north-angle'))).toMatch(/deg$/);
+  await page.getByRole('button', { name: '黄鹤楼', exact: true }).focus();
+  await page.keyboard.press('Enter');
+  await expect(page.locator('#b-tower')).toHaveAttribute('aria-pressed', 'true');
+  await page.locator('#more-toggle').click();
+  await toggle.focus();
+  await page.keyboard.press('Enter');
+  const restore = page.getByRole('button', { name: '退出观画' });
+  await expect(restore).toBeFocused();
+  for (const selector of ['#marks', '#labels', '#poem', '#nav']) await expect(page.locator(selector)).toBeHidden();
+  await expect(overview).toBeVisible();
+  await overview.click();
+  await page.keyboard.press('Escape');
+  await expect(page.locator('#more-toggle')).toBeFocused();
+  await expect(page.locator('#nav')).toBeVisible();
+  await expect(page.locator('#b-home')).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.locator('#marks')).toBeVisible();
+  await page.getByRole('button', { name: '详情' }).click();
+  await expect(page.locator('#cardText')).toBeVisible();
 });
 
 test('resizing after a manual orbit preserves camera position and target', async ({ page }) => {
@@ -92,3 +190,192 @@ for (const [width, height] of [[1440, 900], [1280, 720]]) {
     }
   });
 }
+
+test('the compact action menu opens from the ellipsis, closes on Escape and outside taps', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await ready(page);
+  const more = page.locator('#more-toggle'), menu = page.locator('#action-menu');
+  await expect(menu).toBeHidden();
+  await more.click();
+  await expect(more).toHaveAttribute('aria-expanded', 'true');
+  for (const id of ['#poem-toggle', '#reset-view', '#painting-toggle']) await expect(page.locator(id)).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(menu).toBeHidden();
+  await expect(more).toBeFocused();
+  await more.click();
+  await page.mouse.click(195, 420);
+  await expect(menu).toBeHidden();
+  // Tabbing past the last item folds the menu away instead of leaving it over the map.
+  await more.focus();
+  await page.keyboard.press('Enter');
+  await page.locator('#painting-toggle').focus();
+  await page.keyboard.press('Tab');
+  await expect(menu).toBeHidden();
+  // Choosing an item by keyboard closes the menu and hands focus back to the ellipsis.
+  await more.focus();
+  await page.keyboard.press('Enter');
+  await page.locator('#poem-toggle').focus();
+  await page.keyboard.press('Enter');
+  await expect(page.locator('#poem')).toBeVisible();
+  await expect(more).toBeFocused();
+  await page.keyboard.press('Escape');
+  await more.click();
+  await page.locator('#painting-toggle').click();
+  await expect(page.getByRole('button', { name: '退出观画' })).toBeVisible();
+  await expect(more).toBeHidden();
+  await page.keyboard.press('Escape');
+  await expect(more).toBeVisible();
+  await expect(menu).toBeHidden();
+});
+
+test('compact nav keeps the whole focus ring inside its scroll strip', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await ready(page);
+  // After a key press, focus counts as keyboard focus (WebKit does not Tab to buttons by default).
+  await page.keyboard.press('Shift');
+  await page.locator('#b-core').focus();
+  expect(await page.locator('#b-core').evaluate(el => el.matches(':focus-visible'))).toBe(true);
+  const ring = await page.locator('#b-core').evaluate(el => {
+    const style = getComputedStyle(el), box = el.getBoundingClientRect(), nav = el.closest('#nav').getBoundingClientRect();
+    const reach = parseFloat(style.outlineWidth) + parseFloat(style.outlineOffset);
+    return { top: box.top - reach, bottom: box.bottom + reach, navTop: nav.top, navBottom: nav.bottom };
+  });
+  expect(ring.top).toBeGreaterThanOrEqual(ring.navTop);
+  expect(ring.bottom).toBeLessThanOrEqual(ring.navBottom);
+});
+
+for (const width of [1440, 1280, 1216, 1181, 1120, 1101, 1000]) {
+  test(`the compass and scale stay on the card's line or step aside at ${width}px`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 900 });
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    await ready(page);
+    const { visible, toolsBottom, cardBottom } = await page.evaluate(() => {
+      const tools = document.getElementById('tools');
+      return { visible: tools.getClientRects().length > 0,
+        toolsBottom: tools.getBoundingClientRect().bottom, cardBottom: document.getElementById('card').getBoundingClientRect().bottom };
+    });
+    if (visible) expect(toolsBottom).toBeLessThanOrEqual(cardBottom + 1);
+  });
+}
+
+test('the resting poem returns for keyboard readers', async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await ready(page);
+  await page.locator('#b-tower').click();
+  const line = page.locator('#poem p').nth(1);
+  await expect(line).toHaveCSS('opacity', '0.35');
+  await page.locator('#poem').focus();
+  await expect(page.locator('#poem')).toBeFocused();
+  await expect(line).toHaveCSS('opacity', '1');
+});
+
+for (const [width, height] of [[1440, 900], [1280, 720], [390, 844], [844, 390]]) {
+  test(`home and core ground extends into the fog before the far clip at ${width}x${height}`, async ({ page }) => {
+    await page.setViewportSize({ width, height });
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    await ready(page);
+    for (const key of ['home', 'core']) {
+      await page.locator('#b-' + key).click();
+      const ranges = await page.evaluate(async () => {
+        await new Promise(done => requestAnimationFrame(() => requestAnimationFrame(done)));
+        const scene = window.__testScene, camera = window.__testCamera;
+        const water = scene.children.find(mesh => mesh.material?.uniforms?.uFlow);
+        const towns = scene.children.filter(mesh => mesh.geometry?.type === 'ExtrudeGeometry');
+        const relief = scene.children.filter(mesh => ['三镇河岸', '远山', '山林'].includes(mesh.userData.landscapeSurface?.group));
+        const point = new THREE.Vector3();
+        let furthest = 0;
+        for (const mesh of [water, ...towns, ...relief]) {
+          mesh.geometry.computeBoundingBox();
+          const { min, max } = mesh.geometry.boundingBox;
+          for (const x of [min.x, max.x]) for (const y of [min.y, max.y]) for (const z of [min.z, max.z]) {
+            point.set(x, y, z).applyMatrix4(mesh.matrixWorld);
+            furthest = Math.max(furthest, camera.position.distanceTo(point));
+          }
+        }
+        // At full fog depth the level ground must still cover both sides of the frame.
+        // Moving only the far clip leaves the surveyed rectangle floating in the sky.
+        const fogFar = water.material.uniforms.uFar.value;
+        const base = new THREE.Box3().setFromObject(water);
+        const atFog = [-1, 0, 1].map(x => {
+          const ray = new THREE.Raycaster();
+          ray.setFromCamera(new THREE.Vector2(x, 0), camera);
+          const forward = camera.getWorldDirection(new THREE.Vector3());
+          const right = new THREE.Vector3().setFromMatrixColumn(camera.matrixWorld, 0);
+          const lateral = fogFar * ray.ray.direction.dot(right) / ray.ray.direction.dot(forward);
+          const floorDepth = (fogFar + camera.position.y * forward.y) / Math.hypot(forward.x, forward.z);
+          const sample = forward.setY(0).normalize().multiplyScalar(floorDepth)
+            .addScaledVector(right, lateral).add(camera.position);
+          return base.containsPoint(sample.setY(base.getCenter(point).y));
+        });
+        return { towns: towns.length, relief: relief.length, furthest, far: camera.far, fogFar, atFog };
+      });
+      expect(ranges.towns).toBeGreaterThanOrEqual(3);
+      expect(ranges.relief).toBeGreaterThan(0);
+      expect.soft(ranges.furthest, key + ' terrain corners').toBeLessThan(ranges.far);
+      expect.soft(ranges.fogFar, key + ' full fog depth').toBeLessThanOrEqual(ranges.far);
+      expect.soft(ranges.atFog, key + ' ground across the mist').toEqual([true, true, true]);
+    }
+  });
+}
+
+test('the painted mountain feet dissolve into the ground fog', async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await ready(page);
+  const bands = page.locator('#far-hills .far-hill');
+  await expect.poll(() => bands.evaluateAll(nodes => nodes.filter(el => el.style.backgroundImage).length)).toBe(3);
+  const bottomAlpha = await bands.evaluateAll(async nodes => Promise.all(nodes.map(async el => {
+    const image = new Image();
+    image.src = el.style.backgroundImage.match(/blob:[^")]+/)[0];
+    await image.decode();
+    const canvas = document.createElement('canvas'), ctx = canvas.getContext('2d');
+    ctx.drawImage(image, 0, image.height - 1, 1, 1, 0, 0, 1, 1);
+    return ctx.getImageData(0, 0, 1, 1).data[3];
+  })));
+  expect(bottomAlpha).toEqual([0, 0, 0]);
+});
+
+test('river ink fades across both upstream water atlas boundaries', async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await ready(page);
+  const reaches = await page.evaluate(() => {
+    const renderer = window.__testRenderer;
+    const water = window.__testScene.children.find(mesh => mesh.material?.uniforms?.uFlow);
+    const sheet = new THREE.Scene();
+    sheet.add(water.clone(false));
+    const target = new THREE.WebGLRenderTarget(5, 5), previous = renderer.getRenderTarget();
+    const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 1, 160);
+    camera.up.set(0, 0, -1);
+    const pixels = new Uint8Array(5 * 5 * 4);
+    function green([x, z]) {
+      camera.position.set(x, 80, z);
+      camera.lookAt(x, 0, z);
+      renderer.render(sheet, camera);
+      renderer.readRenderTargetPixels(target, 0, 0, 5, 5, pixels);
+      let sum = 0;
+      for (let i = 1; i < pixels.length; i += 4) sum += pixels[i];
+      return sum / 25;
+    }
+    // Follow the measured channels from two units outside to two units inside the atlas,
+    // then continue along their centrelines, where the original water wash must remain.
+    const channels = {
+      Yangtze: [[-794,902], [-791,898], [-784,888], [-775,876], [-758,856], [-738,836]],
+      Han: [[-1002,-482], [-998,-484], [-988,-489], [-976,-492], [-956,-493], [-936,-483]]
+    };
+    try {
+      renderer.setRenderTarget(target);
+      return Object.fromEntries(Object.entries(channels).map(([river, points]) => [river, points.map(green)]));
+    } finally {
+      renderer.setRenderTarget(previous);
+      target.dispose();
+    }
+  });
+  for (const [river, [plain, edge, ...inside]] of Object.entries(reaches)) {
+    const pigment = plain - inside.at(-1);
+    expect.soft(Math.abs(plain - edge), river + ' colour jump across the atlas boundary').toBeLessThan(5);
+    expect.soft(pigment, river + ' ink within the painted reach').toBeGreaterThan(16);
+    expect.soft(inside.some(value => plain - value > pigment * .08 && plain - value < pigment * .9),
+      river + ' intermediate wash between plain and river').toBe(true);
+  }
+});

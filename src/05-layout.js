@@ -1,17 +1,53 @@
-  /* 紧凑布局只管理题跋与可用画幅；场景坐标和建筑模型保持不变。 */
-  function createMapLayout(invalidate) {
+  /* 导览与观画共用画幅计算。 */
+  function createMapLayout(invalidate, onLeavePainting) {
     const media = window.matchMedia('(max-width: 640px), (max-height: 500px)');
     const poem = document.getElementById('poem'), text = document.getElementById('cardText');
     const poemButton = document.getElementById('poem-toggle'), detailsButton = document.getElementById('details-toggle');
-    const elements = ['title', 'poem', 'sound', 'poem-toggle', 'dock'].map(id => document.getElementById(id));
-    let panel = null;
+    const elements = ['title', 'poem', 'sound', 'map-actions', 'dock'].map(id => document.getElementById(id));
+    const paintingButton = document.getElementById('painting-toggle');
+    const actions = document.getElementById('map-actions'), moreButton = document.getElementById('more-toggle');
+    const paintingExtras = ['title', 'sound', 'poem-toggle', 'more-toggle', 'dock', 'marks', 'labels', 'tip']
+      .map(id => document.getElementById(id));
+    const sceneryOverlays = ['title', 'labels', 'marks'].map(id => document.getElementById(id));
+    let panel = null, painting = false, bridgeDetail = false, menu = false;
+    // 手机端右上角只留「⋯」与「乐」：题跋、回全城、观画收在纸色竖条里。
+    function setMenu(open) {
+      menu = open && media.matches && !painting;
+      actions.toggleAttribute('data-open', menu);
+      moreButton.setAttribute('aria-expanded', String(menu));
+    }
+    moreButton.addEventListener('click', () => setMenu(!menu));
+    const actionMenu = document.getElementById('action-menu');
+    actionMenu.addEventListener('click', event => {
+      if (!event.target.closest('button')) return;
+      const focused = document.activeElement;
+      setMenu(false);
+      // 收起后菜单项已隐藏，焦点交还「⋯」；观画模式下按钮仍在原处，焦点不动。
+      if (actionMenu.contains(focused) && !focused.getClientRects().length) moreButton.focus({ preventScroll: true });
+    });
+    function closeOutside(event) { if (menu && !actions.contains(event.target)) setMenu(false); }
+    // 键盘 Tab 出菜单时一并收起；relatedTarget 为空（如 Safari 点击按钮不取焦点）时不动。
+    actions.addEventListener('focusout', event => {
+      if (menu && event.relatedTarget && !actions.contains(event.relatedTarget)) setMenu(false);
+    });
+    document.addEventListener('pointerdown', closeOutside);
+    app.cleanups.push(() => document.removeEventListener('pointerdown', closeOutside));
+    const nav = document.getElementById('nav');
+    function updateNavEdges() {
+      nav.classList.toggle('more-left', nav.scrollLeft > 1);
+      nav.classList.toggle('more-right', nav.scrollLeft + nav.clientWidth < nav.scrollWidth - 1);
+    }
+    nav.addEventListener('scroll', updateNavEdges, { passive: true });
+    app.cleanups.push(() => nav.removeEventListener('scroll', updateNavEdges));
     function updatePanels() {
-      poem.hidden = media.matches && panel !== 'poem';
+      document.body.toggleAttribute('data-bridge-detail', bridgeDetail && !painting);
+      poem.hidden = painting || (media.matches ? panel !== 'poem' : bridgeDetail);
+      sceneryOverlays.forEach(el => { el.hidden = painting || bridgeDetail; });
       text.hidden = media.matches && panel !== 'details';
       poemButton.setAttribute('aria-expanded', String(media.matches && panel === 'poem'));
       detailsButton.setAttribute('aria-expanded', String(media.matches && panel === 'details'));
       document.getElementById('hint').textContent = media.matches
-        ? '单指旋转　双指缩放或平移　点击景点'
+        ? '单指旋转 · 双指缩放 · 轻触景点 · 滑动导览'
         : '拖拽旋转　滚轮缩放　点击景点';
       invalidate();
     }
@@ -19,16 +55,34 @@
       panel = panel === name ? null : name;
       updatePanels();
     }
+    function setPainting(enabled,focusButton=true) {
+      if (painting && !enabled) onLeavePainting();
+      painting = enabled;
+      panel = null;
+      setMenu(false);
+      paintingButton.textContent = enabled ? '退出观画' : '观画';
+      paintingButton.toggleAttribute('data-painting', enabled);
+      paintingExtras.forEach(el => { el.hidden = enabled; });
+      // 手机端退出观画后「观画」回到收起的菜单里，焦点交给「⋯」。
+      if (focusButton) (media.matches && !enabled ? moreButton : paintingButton).focus({ preventScroll: true });
+      updatePanels();
+      if (!enabled) nav.querySelector('[aria-pressed="true"]')?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+    }
+    paintingButton.addEventListener('click', () => setPainting(!painting));
     poemButton.addEventListener('click', () => toggle('poem'));
     detailsButton.addEventListener('click', () => toggle('details'));
     document.addEventListener('keydown', event => {
-      if (event.key !== 'Escape' || !media.matches || !panel) return;
-      const button = panel === 'poem' ? poemButton : detailsButton;
+      if (event.key !== 'Escape' || document.getElementById('atlas').open) return;
+      if (menu) { setMenu(false); moreButton.focus({ preventScroll: true }); return; }
+      if (painting) { setPainting(false); return; }
+      if (!media.matches || !panel) return;
+      const button = panel === 'poem' ? moreButton : detailsButton;
       panel = null; updatePanels(); button.focus({ preventScroll: true });
     });
     media.addEventListener('change', () => {
       panel = null;
-      if (!media.matches && [poemButton, detailsButton].includes(document.activeElement)) {
+      setMenu(false);
+      if (!media.matches && [poemButton, detailsButton, moreButton].includes(document.activeElement)) {
         document.querySelector('#nav [aria-pressed="true"]').focus({ preventScroll: true });
       }
       updatePanels();
@@ -46,8 +100,16 @@
     app.cleanups.push(() => observer.disconnect());
     updatePanels();
     return {
+      setPainting,
+      setBridgeDetail(enabled) {
+        if (bridgeDetail === enabled) return;
+        bridgeDetail = enabled;
+        panel = null;
+        updatePanels();
+      },
       get compact() { return media.matches; },
       measure(width, height) {
+        updateNavEdges();
         const blocks = elements.filter(el => !el.hidden)
           .map(el => {
             const r = el.getBoundingClientRect();
@@ -63,7 +125,7 @@
         if (media.matches) {
           blocks.forEach(({ id, rect }) => {
             if (id === 'dock') bottom = Math.min(bottom, rect.top - 8);
-            else top = Math.max(top, rect.bottom + 8);
+            else if (id !== 'map-actions') top = Math.max(top, rect.bottom + 8);
           });
         } else {
           blocks.forEach(({ id, rect }) => {
@@ -78,7 +140,7 @@
 
   // 在原观察方向上将各建筑八角放进画幅，四边各留 10%。
   // 多建筑分别计算，避免把远处高塔的高度套到近处建筑上，徒增留白。
-  function fittedView(base, bounds, rect, width, height, fov) {
+  function fittedView(base, bounds, rect, width, height, fov, fill = .8) {
     const back = new THREE.Vector3().copy(base.pos).sub(base.target).normalize();
     const right = new THREE.Vector3().crossVectors(new THREE.Vector3(0, 1, 0), back).normalize();
     const up = new THREE.Vector3().crossVectors(back, right);
@@ -86,8 +148,8 @@
     const union = new THREE.Box3(); boxes.forEach(box => union.union(box));
     const target = union.getCenter(new THREE.Vector3());
     const tanY = Math.tan(fov * Math.PI / 360);
-    const tanX = tanY * width / height * (rect.right - rect.left) / width * .8;
-    const tanSafeY = tanY * (rect.bottom - rect.top) / height * .8;
+    const tanX = tanY * width / height * (rect.right - rect.left) / width * fill;
+    const tanSafeY = tanY * (rect.bottom - rect.top) / height * fill;
     let distance = 22;
     for (const box of boxes) for (const x of [box.min.x, box.max.x]) for (const y of [box.min.y, box.max.y]) for (const z of [box.min.z, box.max.z]) {
       const v = new THREE.Vector3(x, y, z).sub(target);

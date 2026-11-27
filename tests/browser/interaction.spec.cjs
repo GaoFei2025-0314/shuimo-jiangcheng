@@ -6,7 +6,7 @@ async function motion(page) {
     window.__testScene.traverse(o => {
       if (o.material && o.material.uniforms && o.material.uniforms.uTime) times.push(o.material.uniforms.uTime.value);
     });
-    return { times, camera: window.__testCamera.position.toArray(), target: window.__testControls.target.toArray(),
+    return { times, frames: window.__testRenderer.info.render.frame, camera: window.__testCamera.position.toArray(), target: window.__testControls.target.toArray(),
       tweens: gsap.getTweensOf([window.__testCamera.position, window.__testControls.target]).length };
   });
 }
@@ -14,14 +14,71 @@ async function motion(page) {
 test('reduced motion switches instantly and freezes automatic scenery', async ({ page }) => {
   await page.emulateMedia({ reducedMotion: 'reduce' });
   await ready(page);
+  const entryFrames = await page.evaluate(() => window.__testRenderer.info.render.frame);
   await page.getByRole('button', { name: '黄鹤楼', exact: true }).click();
   await expect(page.locator('#cardTitle')).toHaveText('黄鹤楼');
+  await expect.poll(() => page.evaluate(() => window.__testRenderer.info.render.frame)).toBeGreaterThan(entryFrames);
+  const underline = await page.locator('#nav [aria-pressed="true"]').evaluate(button =>
+    getComputedStyle(button, '::after').transitionDuration);
+  expect(underline).toBe('0s');
   const first = await motion(page);
   expect(first.tweens).toBe(0);
   await page.waitForTimeout(150);
   const next = await motion(page);
   next.camera.forEach((value, i) => expect(value).toBeCloseTo(first.camera[i], 8));
   expect(next.times).toEqual(first.times);
+  expect(next.frames).toBe(first.frames);
+});
+
+test('river strokes drift gently while planting sways at a fixed city camera', async ({ page }) => {
+  await page.setViewportSize({ width: 1080, height: 720 });
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await ready(page);
+  const changed = await page.evaluate(() => {
+    const scene = window.__testScene, renderer = window.__testRenderer, camera = window.__testCamera;
+    const water = scene.children.find(node => node.material?.uniforms?.uBoats).material;
+    const planting = new Set();
+    scene.traverse(node => { if (node.material?.userData?.windVegetation) planting.add(node.material); });
+    // At a fixed camera, compare a brief glance with a longer look at the water.
+    const target = new THREE.WebGLRenderTarget(540, 360);
+    const previous = renderer.getRenderTarget();
+    function frame() {
+      const pixels = new Uint8Array(target.width * target.height * 4);
+      renderer.render(scene, camera);
+      renderer.readRenderTargetPixels(target, 0, 0, target.width, target.height, pixels);
+      return pixels;
+    }
+    function changedPixels(materials, seconds) {
+      const saved = materials.map(m => m.uniforms.uTime);
+      try {
+        for (const m of materials) m.uniforms.uTime = { value: 0 };
+        const start = frame();
+        for (const m of materials) m.uniforms.uTime.value = seconds;
+        const end = frame();
+        let count = 0;
+        for (let i = 0; i < end.length; i += 4) {
+          if (Math.abs(start[i + 1] - end[i + 1]) >= 12) count++;
+        }
+        return count;
+      } finally {
+        materials.forEach((m, i) => { m.uniforms.uTime = saved[i]; });
+      }
+    }
+    try {
+      renderer.setRenderTarget(target);
+      return {
+        riverGlance: changedPixels([water], 1.6),
+        riverDrift: changedPixels([water], 9.6),
+        planting: changedPixels([...planting], 1.6)
+      };
+    } finally {
+      renderer.setRenderTarget(previous);
+      target.dispose();
+    }
+  });
+  expect(changed.riverGlance).toBeLessThan(150);
+  expect(changed.riverDrift).toBeGreaterThan(300);
+  expect(changed.planting).toBeGreaterThan(60);
 });
 
 test('changing the system motion preference stops a running flight', async ({ page }) => {
@@ -94,4 +151,46 @@ test('all sixteen navigation destinations and music toggle remain usable', async
   await expect(page.locator('#sound')).toHaveAttribute('aria-pressed', 'true');
   await page.locator('#sound').click();
   await expect(page.locator('#sound')).toHaveAttribute('aria-pressed', 'false');
+});
+
+test('the architectural atlas opens shareable riverbank walks and district overlooks and restores navigation', async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await ready(page);
+  const walk = page.getByRole('combobox', { name: '选择江岸街巷视角' });
+  await expect(walk).toBeHidden();
+  await page.locator('#atlas-open').click();
+  await page.locator('#atlas-walk').click();
+  await expect(walk).toBeFocused();
+  await expect(walk.locator('optgroup[label="街巷近景"] option')).toHaveCount(8);
+  await expect(walk.locator('optgroup[label="小城沙盘斜俯视"] option')).toHaveCount(2);
+  await expect(page).toHaveURL(/#walk=hy-in$/);
+  await walk.selectOption('wc-above');
+  await expect.poll(() => page.evaluate(() => window.__testCamera.position.y)).toBeGreaterThan(40);
+  await walk.selectOption('wc-out');
+  await expect(page).toHaveURL(/#walk=wc-out$/);
+  await expect(page.locator('#dock')).toBeHidden();
+  const position = () => page.evaluate(() => window.__testCamera.position.toArray());
+  const before = await position();
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect.poll(position).toEqual(before);
+  const bounds = await walk.boundingBox();
+  expect(bounds.x).toBeGreaterThanOrEqual(0);
+  expect(bounds.x + bounds.width).toBeLessThanOrEqual(390);
+  await page.keyboard.press('Escape');
+  await expect(walk).toBeHidden();
+  await expect(page.locator('#dock')).toBeVisible();
+  await expect(page).not.toHaveURL(/#walk=/);
+  await expect.poll(() => page.evaluate(() => window.__testCamera.position.y)).toBeGreaterThan(30);
+});
+
+test('a shared walk opens at street height and an unknown hash leaves the map usable', async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await page.goto('/#walk=hy-out');
+  const selector = page.locator('#walk-view');
+  await expect(selector).toHaveValue('hy-out');
+  await expect(selector).toBeVisible();
+  await expect.poll(() => page.evaluate(() => window.__testCamera?.position.y)).toBeLessThan(6);
+  await page.evaluate(() => { location.hash = 'walk=unknown'; });
+  await expect(selector).toBeHidden();
+  await expect(page.locator('#nav')).toBeVisible();
 });

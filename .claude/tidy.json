@@ -1,0 +1,17 @@
+{
+  "layout": {
+    "src/": "单文件地图的 HTML、着色器、场景代码与内嵌几何数据",
+    "assets/": "网站图标、街巷水墨材质、窗景、樟叶和江天薄雾",
+    "tools/": "生成地理数据、建造 Blender 模型和渲染的离线工具",
+    "tests/": "构建、地图交互、截图与浏览器回归工具",
+    "docs/": "设计资料、历史视觉样板与验收记录",
+    "dist/": "构建生成的单文件地图",
+    "output/": "本地地形数据、可编辑工程、渲染和浏览器检查结果"
+  },
+  "rootAllow": ["build.sh"],
+  "keepLocal": {
+    "output/architecture/*.blend": "可在 Blender 中直接打开、编辑和渲染的建筑与城市工程",
+    "output/architecture/*.png": "通过 Blender 相机渲染的建筑和城市预览",
+    "output/architecture/*.jpg": "建筑图录与前后版本的场景对照图"
+  }
+}

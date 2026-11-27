@@ -1,20 +1,30 @@
 const { test, expect, ready } = require('./fixtures.cjs');
 
-async function collisions(page) {
-  return page.evaluate(() => {
+async function collisions(page, duringAnimation = false) {
+  return page.evaluate(async moving => {
     const rect = e => ({ name: e.textContent, ...e.getBoundingClientRect().toJSON() });
     const visible = e => !e.hidden && getComputedStyle(e).visibility !== 'hidden' && Number(getComputedStyle(e).opacity) > .01 && e.getBoundingClientRect().width > 0;
-    const marks = [...document.querySelectorAll('.mark')].filter(visible).map(rect);
-    const ui = [...document.querySelectorAll('#title, #poem, #sound, #poem-toggle, #dock')].filter(visible).map(rect);
-    const labels = [...document.querySelectorAll('#labels b')].filter(visible).map(rect);
     const overlap = (a, b) => a.left < b.right + 7.8 && a.right + 7.8 > b.left && a.top < b.bottom + 7.8 && a.bottom + 7.8 > b.top;
     const errors = [];
-    marks.forEach((m, i) => {
-      if (m.left < 8 || m.right > innerWidth - 8 || m.top < 8 || m.bottom > innerHeight - 8) errors.push(`${m.name} outside viewport`);
-      [...marks.slice(i + 1), ...ui, ...labels].filter(r => overlap(m, r)).forEach(r => errors.push(`${m.name} overlaps ${r.name}`));
-    });
+    const samples = moving ? 8 : 1;
+    for (let i = 0; i < samples; i++) {
+      if (i) await new Promise(resolve => setTimeout(resolve, 100));
+      const marks = [...document.querySelectorAll('.mark')].filter(visible).map(rect);
+      const ui = [...document.querySelectorAll('#title, #poem, #sound, #poem-toggle, #dock')].filter(visible).map(rect);
+      const labels = [...document.querySelectorAll('#labels b')].filter(visible).map(rect);
+      marks.forEach((m, index) => {
+        if (m.left < 8 || m.right > innerWidth - 8 || m.top < 8 || m.bottom > innerHeight - 8) errors.push(`${m.name} outside viewport`);
+        [...marks.slice(index + 1), ...ui, ...labels].filter(r => overlap(m, r)).forEach(r => errors.push(`${m.name} overlaps ${r.name}`));
+      });
+      if (moving) {
+        for (const m of document.querySelectorAll('.mark:enabled')) {
+          if (Number(getComputedStyle(m).opacity) <= .35 || Number(getComputedStyle(m.parentElement).opacity) <= .01)
+            errors.push(`${m.textContent} is enabled while fading`);
+        }
+      }
+    }
     return errors;
-  });
+  }, duringAnimation);
 }
 
 for (const [width, height] of [[1440, 900], [1280, 720], [390, 844], [360, 640], [844, 390]]) {
@@ -28,6 +38,7 @@ for (const [width, height] of [[1440, 900], [1280, 720], [390, 844], [360, 640],
       await expect.poll(() => collisions(page)).toEqual([]);
     }
     if (width <= 640 || height <= 500) {
+      await page.locator('#more-toggle').click();
       await page.locator('#poem-toggle').click();
       await expect.poll(() => collisions(page)).toEqual([]);
       await page.locator('#details-toggle').click();
@@ -79,11 +90,7 @@ test('entry animations and their cancellation keep marks clear of moving UI', as
   await page.setViewportSize({ width: 844, height: 390 });
   await page.emulateMedia({ reducedMotion: 'no-preference' });
   await ready(page);
-  for (let i = 0; i < 8; i++) {
-    expect(await collisions(page)).toEqual([]);
-    expect(await page.locator('.mark:enabled').evaluateAll(marks => marks.every(m => Number(getComputedStyle(m).opacity) > .35 && Number(getComputedStyle(m.parentElement).opacity) > .01))).toBe(true);
-    await page.waitForTimeout(100);
-  }
+  expect(await collisions(page, true)).toEqual([]);
   await page.emulateMedia({ reducedMotion: 'reduce' });
   await expect.poll(() => collisions(page)).toEqual([]);
 });
@@ -92,12 +99,31 @@ test('second-tier landmarks stay out of the city view and appear on approach', a
   await page.emulateMedia({ reducedMotion: 'reduce' });
   await ready(page);
   await page.locator('#b-home').click();
-  const tier2 = ['洪山宝塔', '汉口水塔', '省博物馆', '红楼', '鹦鹉洲大桥', '归元寺', '古琴台'].map(n => '移至' + n);
+  const tier2 = ['行吟阁', '洪山宝塔', '汉口水塔', '省博物馆', '红楼', '鹦鹉洲大桥', '归元寺', '古琴台'].map(n => '移至' + n);
   const shown = () => page.locator('.mark').evaluateAll(marks => marks
     .filter(m => getComputedStyle(m).visibility === 'visible').map(m => m.getAttribute('aria-label')));
-  await expect(page.locator('.mark')).toHaveCount(14);
+  await expect(page.locator('.mark')).toHaveCount(15);
   await expect.poll(async () => { const s = await shown(); return s.length > 0 && s.every(n => !tier2.includes(n)); }).toBe(true);
   await page.locator('#b-core').click();
   await expect.poll(async () => (await shown()).some(n => tier2.includes(n))).toBe(true);
   await expect.poll(() => collisions(page)).toEqual([]);
+});
+
+test('river inscriptions stay sparse and Red Chamber owns its close view', async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await ready(page);
+  await expect(page.locator('.mark:visible').first()).toBeVisible();
+  expect(await page.locator('.mark:visible').count()).toBeLessThanOrEqual(4);
+  await page.locator('#b-honglou').click();
+  const span = await page.evaluate(() => {
+    const house = window.__testScene.children.find(node => node.userData.modelKey === 'honglou');
+    const box = new THREE.Box3().setFromObject(house), xs = [];
+    for (const x of [box.min.x, box.max.x]) for (const y of [box.min.y, box.max.y]) for (const z of [box.min.z, box.max.z]) {
+      xs.push(new THREE.Vector3(x,y,z).project(window.__testCamera).x);
+    }
+    return (Math.max(...xs) - Math.min(...xs)) / 2;
+  });
+  expect(span).toBeGreaterThan(.26);
+  expect(span).toBeLessThan(.75);
+  await expect(page.getByRole('button', { name:'移至黄鹤楼', exact:true })).toBeHidden();
 });
