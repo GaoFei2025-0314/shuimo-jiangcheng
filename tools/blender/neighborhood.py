@@ -1,4 +1,5 @@
 """Low-poly building types for the three towns. Each street frontage faces -Y."""
+from functools import partial
 from math import cos, hypot, pi, sin
 
 from mesh import Part
@@ -153,38 +154,106 @@ def lane():
         part.finish()
 
 
-def arcade():
-    stone = Part("Riverfront trading house | pavilions and portico", "cityWall")
-    caps = Part("Riverfront trading house | hipped pavilion roofs", "cityRoof")
-    shade = Part("Riverfront trading house | gallery and window bays", "cityShade")
-    stone.box((0, .90, 1.24), (9.56, 4.08, 2.48))
-    stone.box((0, .42, 4.04), (9.56, 5.04, 3.12))
-    # Independent masonry bays leave a walkable gallery in front of the recessed wall.
-    for x in (-2.30, 0, 2.30):
-        radius, spring = .93, 1.25
-        arch = [(x - 1.15, 0), (x - radius, 0)]
+def _gable(wall, roof, left, peak, right, start, end, eave, ridge, along_x=False):
+    """A tiled roof with masonry closing both gables."""
+    _section(wall, [(left + .09, eave - .20), (right - .09, eave - .20), (peak, ridge - .11)],
+             start + .17, end - .17, along_x)
+    _section(roof, [(left, eave - .12), (peak, ridge - .14), (right, eave - .12),
+                    (right, eave + .03), (peak, ridge + .04), (left, eave + .03)],
+             start, end, along_x)
+
+
+def lane_pair():
+    wall = Part("Lane houses | two street gables", "cityBrick")
+    roof = Part("Lane houses | paired end-on tiled roofs", "cityRoof")
+    pane = Part("Lane houses | two doors and narrow sashes", "cityShade")
+    for x, eave, ridge in ((-2.40, 2.70, 4.51), (2.40, 2.53, 4.18)):
+        wall.box((x, 0, eave / 2), (4.74, 5.42, eave))
+        _gable(wall, roof, x - 2.44, x - .19, x + 2.44, -3.15, 3.14, eave, ridge)
+        _windows(pane, [x - .07], -2.73, .05, .80, 1.80)
+        _windows(pane, [x - 1.25, x + 1.29], -2.73, .75, .51, 1.02)
+        _windows(pane, [x - .08], -2.991, eave + .33, .58, .54)
+        _windows(pane, [x - 1.06, x + 1.06], 2.72, .88, .67, 1.18)
+        roof.box((x, -2.90, 2.24), (3.96, .63, .13))
+        wall.box((x - .07, -2.76, .12), (1.12, .20, .24))
+    for part in (wall, roof, pane):
+        part.finish()
+
+
+def lane_annex():
+    wall = Part("Lane houses | two bays and a low service annex", "cityBrick")
+    roof = Part("Lane houses | offset ridge and dropped end", "cityRoof")
+    pane = Part("Lane houses | shaded sashes and service door", "cityShade")
+    wall.box((-1.48, 0, 1.40), (6.59, 5.42, 2.80))
+    wall.box((3.31, 0, 1.20), (2.98, 5.42, 2.40))
+    _gable(wall, roof, -3.17, .29, 3.16, -4.92, 1.98, 2.77, 4.67, True)
+    _gable(wall, roof, -2.97, .19, 3.00, 1.78, 4.90, 2.36, 3.66, True)
+    # A raised firebreak is visible where the lower roof meets the main house.
+    _section(wall, [(-2.80,2.64),(2.80,2.64),(2.80,3.20),(1.11,4.07),
+                    (1.11,4.53),(-.49,4.78),(-.49,4.35),(-2.80,3.53)], 1.59, 1.84, True)
+    for x in (-3.14, -.21, 3.31):
+        _windows(pane, [x - .58], -2.72, .05, .73, 1.72)
+        _windows(pane, [x + .58], -2.72, .86, .74, 1.00)
+        _windows(pane, [x], 2.72, .93, .84, 1.07)
+    wall.box((-3.08, .84, 4.32), (.56, .51, .77))
+    roof.box((-3.08, .84, 4.76), (.72, .67, .16))
+    for part in (wall, roof, pane):
+        part.finish()
+
+
+def arcade(style=0):
+    stone = Part("Riverfront trading house | masonry openings", "cityWall")
+    caps = Part("Riverfront trading house | cornice and roof", "cityRoof")
+    shade = Part("Riverfront trading house | recessed gallery and sashes", "cityShade")
+    left, right, bays, arch_width, upper_bays = [
+        (-3.39, 3.39, 3, .83, 4),
+        (-4.66, 4.66, 4, .81, 5),
+        (-1.77, 4.66, 2, 1.19, 3),
+    ][style]
+    pitch = (right - left) / bays
+    stone.box((0, .89, 1.24), (9.56, 4.08, 2.48))
+    for bay in range(bays):
+        a = left + bay * pitch
+        x = a + pitch / 2
+        spring, head = (1.30, .80) if style != 2 else (1.20, .90)
+        arch = [(a, 0), (x - arch_width, 0)]
         for i in range(7):
             angle = pi - i * pi / 6
-            arch.append((x + radius * cos(angle), spring + radius * sin(angle)))
-        arch.extend([(x + radius, 0), (x + 1.15, 0),
-                     (x + 1.15, 2.48), (x - 1.15, 2.48)])
-        _section(stone, arch, -3.09, -2.43)
-    stone.box((0, -2.22, 2.56), (7.42, 2.20, .38))
-    _windows(shade, [-2.30, 0, 2.30], -1.15, .13, 1.30, 1.80)
-    _windows(shade, [-2.16, -.72, .72, 2.16], -2.11, 3.02, .72, 1.6)
-    caps.box((0, .26, 5.72), (9.72, 6.06, .46))
-    stone.box((0, -2.20, 2.87), (6.68, .55, .38))
-    for y in (-1.94, 2.63):
-        stone.box((0, y, 5.98), (6.55, .26, .43))
-    for x in (-4.02, 4.02):
-        stone.box((x, -.12, 3.06), (1.70, 6.20, 6.12))
-        stone.box((x, -.12, 6.28), (2.06, 7.23, .40))
-        # Ridge shorter than the pavilion: the front and back slope inward.
-        points = [(x-.99,-3.72,6.46), (x+.99,-3.72,6.46), (x+.99,3.48,6.46),
-                  (x-.99,3.48,6.46), (x,-2.18,7.59), (x,1.94,7.59)]
-        caps.solid(points, [(3,2,1,0), (0,1,4), (1,2,5,4), (2,3,5), (3,0,4,5)])
-        _windows(shade, [x], -3.23, 2.95, .76, 1.76)
-    _windows(shade, [-2.7, -1.35, 0, 1.35, 2.7], 2.95, 3.04, .64, 1.54)
+            arch.append((x + arch_width * cos(angle), spring + head * sin(angle)))
+        arch.extend([(x + arch_width, 0), (a + pitch, 0), (a + pitch, 2.48), (a, 2.48)])
+        _section(stone, arch, -3.11, -2.54)
+        _windows(shade, [x], -1.16, .14, arch_width * 1.48, 1.73)
+    width, middle = right - left, (right + left) / 2
+    face, rear = -2.62, 2.93
+    outline = [(left, face), (right, face), (right, rear), (left, rear)]
+    _recessed_shaft(stone, shade, outline, (upper_bays, 0, upper_bays, 0),
+                    .38, 3.11, 4.74, [(3.16, 4.67)])
+    stone.box((middle, .15, 2.795), (width, 5.55, .63))
+    stone.box((middle, .15, 5.09), (width, 5.55, .70))
+    caps.box((middle, -.02, 2.55), (width + .11, 6.49, .18))
+    stone.box((middle, -2.68, 3.04), (width + .07, .29, .18))
+    caps.box((middle, .03, 5.56), (width + .27, 6.01, .28))
+    _parapet(stone, middle, .03, width + .09, 5.83, 5.65)
+    if style == 0:
+        for x in (-4.06, 4.06):
+            stone.box((x, -.03, 3.07), (1.48, 6.15, 6.14))
+            stone.box((x, -.02, 6.16), (1.87, 6.82, .24))
+            points = [(x-.94,-3.49,6.26), (x+.94,-3.49,6.26), (x+.94,3.45,6.26),
+                      (x-.94,3.45,6.26), (x,-1.93,7.56), (x,1.89,7.56)]
+            caps.solid(points, [(3,2,1,0), (0,1,4), (1,2,5,4), (2,3,5), (3,0,4,5)])
+            _windows(shade, [x], -3.12, 3.19, .55, 1.55)
+    elif style == 1:
+        # A stepped sign wall breaks the continuous roof terrace without raising it a full storey.
+        _section(stone, [(-2.22,5.80),(2.22,5.80),(2.22,6.28),(1.43,6.28),
+                         (1.43,6.66),(.56,6.66),(.56,6.94),(-.56,6.94),
+                         (-.56,6.66),(-1.43,6.66),(-1.43,6.28),(-2.22,6.28)], -3.01,-2.62)
+        caps.box((0, -2.82, 6.97), (1.24, .51, .15))
+    else:
+        stone.box((-3.23, -.01, 3.10), (2.91, 6.09, 6.20))
+        _gable(stone, caps, -4.86, -3.63, -1.65, -3.36, 3.27, 6.13, 7.48)
+        _windows(shade, [-3.43], -3.07, 3.09, 1.07, 1.83)
+        _windows(shade, [-3.43], -3.07, .14, 1.29, 1.94)
+        stone.box((-1.86, .53, 6.44), (.26, 1.37, .82))
     for part in (stone, caps, shade):
         part.finish()
 
@@ -218,6 +287,26 @@ def wharf():
         part.finish()
 
 
+def wharf_warehouse():
+    brick = Part("Wharf store | wide warehouse with a loading wing", "cityBrick")
+    tin = Part("Wharf store | one broad gable and a lean-to", "cityRoof")
+    pane = Part("Wharf store | tall cargo doors and attic slits", "cityShade")
+    brick.box((0, -.02, .22), (9.75, 7.10, .44))
+    brick.box((-.93, .18, 2.02), (7.57, 5.56, 3.16))
+    _gable(brick, tin, -4.82, -.75, 3.03, -2.84, 3.15, 3.54, 5.63)
+    brick.box((3.77, .15, 1.68), (1.93, 5.5, 2.48))
+    _section(tin, [(2.70,3.20),(4.92,2.75),(4.92,2.91),(2.70,3.42)], -3.05, 3.11)
+    _section(tin, [(-4.10,2.81),(-2.51,3.16),(-2.51,3.31),(-4.10,2.99)],
+             -4.50, 1.91, True)
+    _windows(pane, [-2.67, .61], -2.61, .44, 2.35, 2.36)
+    _windows(pane, [-1.54, -.76, .02], -2.695, 3.77, .36, .51)
+    _windows(pane, [3.75], -2.61, .47, 1.17, 1.92)
+    _windows(pane, [-3.12, -1.08, .96, 3.73], 2.97, 1.42, .77, .89)
+    tin.box((-.75, .32, 5.74), (.88, 2.16, .43))
+    for part in (brick, tin, pane):
+        part.finish()
+
+
 def apartment():
     walls = Part("Apartment block | masonry piers, roof terraces and service deck", "cityWall")
     brick = Part("Apartment block | solid balconies and stair enclosure", "cityBrick")
@@ -248,6 +337,44 @@ def apartment():
         part.finish()
 
 
+def apartment_terraces(style):
+    wall = Part("Apartment block | street shops and recessed upper storeys", "cityWall")
+    brick = Part("Apartment block | offset balconies and coping", "cityBrick")
+    roof = Part("Apartment block | terrace or pitched service roof", "cityRoof")
+    pane = Part("Apartment block | shopfront and apartment sashes", "cityShade")
+    _shopfront(wall, roof, pane, 9.74, 6.56, 2.68,
+               [(-3.23,1.63),(1.10,1.69),(3.27,1.58)], -1.05)
+    storeys = 7.72 if style == 1 else 8.21
+    width, depth, x, y = (8.96, 5.39, .02, .16) if style == 1 else (8.72, 5.31, -.12, .18)
+    wall.box((x, y, (2.68 + storeys) / 2), (width, depth, storeys - 2.68))
+    _parapet(wall, x, y, width, depth, storeys)
+    for direction in (-1, 1):
+        front = y + direction * depth / 2
+        for z in (3.01, 4.58, 6.19):
+            panes = [-2.90,-.94,1.02,2.98] if style == 1 else [-2.85,-.18,2.51]
+            _windows(pane, panes, front + direction * .012, z, 1.24 if style == 1 else 1.57, 1.27)
+            if style == 1:
+                # The banner-like balcony moves to the opposite side of the second storey.
+                _balcony(brick, -.66 + (z > 4.8) * 1.36, 6.82, front, z - .29)
+            elif z > 4:
+                _balcony(brick, -1.67 if direction < 0 else 1.21, 4.63, front, z - .32)
+        for column in (-3.97, 3.97):
+            wall.box((column, front, 5.05), (.40, .34, 4.73))
+    if style == 1:
+        wall.box((1.09, .61, 8.70), (5.88, 3.80, 1.96))
+        _parapet(brick, 1.09, .61, 5.88, 3.80, 9.68)
+        _windows(pane, [-.70, 1.05, 2.80], -1.30, 8.35, .85, .86)
+        roof.box((2.52, .84, 10.35), (1.96, 1.64, .27))
+        wall.box((2.52, .84, 10.13), (1.76, 1.45, .46))
+    else:
+        wall.box((-1.25, .27, 8.55), (5.74, 4.07, .71))
+        _gable(wall, roof, -1.95, .67, 2.43, -4.21, 1.71, 8.88, 10.55, True)
+        _windows(pane, [-2.96, -1.08, .70], -1.78, 8.42, .76, .38)
+        roof.box((2.69, .91, 8.84), (1.29, 1.37, 1.26))
+    for part in (wall, brick, roof, pane):
+        part.finish()
+
+
 def highrise():
     wall = Part("Modern tower | chamfered podium and shaft", "cityWall")
     trim = Part("Modern tower | shop canopy and rooftop plant", "cityRoof")
@@ -266,6 +393,28 @@ def highrise():
     wall.box((1.05, .42, 15.79), (2.24, 2.58, 2.30))
     _water_tank(trim, 1.06, .47, 16.94)
     for part in (wall, trim, glass):
+        part.finish()
+
+
+def highrise_spine():
+    wall = Part("Modern tower | window grooves and projecting stair spine", "cityWall")
+    trim = Part("Modern tower | podium canopy and stepped cap", "cityRoof")
+    pane = Part("Modern tower | glazed offices, stairs and shop bays", "cityShade")
+    _shopfront(wall, trim, pane, 9.72, 6.80, 2.70,
+               [(-3.03,1.65),(-.93,1.51),(1.27,1.69),(3.32,1.59)])
+    wall.box((0, 0, 2.77), (9.72, 6.80, .22))
+    outline = [(-3.61,-2.03),(-2.99,-2.48),(2.63,-2.48),(3.12,-1.93),
+               (3.12,2.29),(-3.61,2.29)]
+    _recessed_shaft(wall, pane, outline, (0, 3, 0, 2, 3, 0), .52, 2.88, 14.93,
+                    [(3.34,7.06),(7.54,11.13),(11.66,14.62)])
+    wall.prism(outline, 14.93, 15.19)
+    _parapet(wall, -.20, -.05, 6.03, 4.50, 15.19)
+    wall.box((-2.77, .97, 10.69), (1.74, 3.46, 15.63))
+    _windows(pane, [-2.78], -.77, 4.12, .48, 12.55)
+    trim.box((-2.77, .97, 18.56), (1.86, 3.58, .22))
+    wall.box((.40, -.22, 15.94), (3.89, 3.41, 1.49))
+    trim.box((.40, -.22, 16.72), (4.14, 3.65, .24))
+    for part in (wall, trim, pane):
         part.finish()
 
 
@@ -296,7 +445,7 @@ def _podium(wall, trim, glass, width, depth, height, entry):
                         [(0, 1, 2, 3) if sign > 0 else (3, 2, 1, 0)])
 
 
-def terrace_tower():
+def terrace_tower(style=0):
     """Residential terraces with wrapped balconies and a narrow stair spine."""
     wall = Part("Terrace tower | stepped residential wings", "cityWall")
     trim = Part("Terrace tower | cast terrace bands and stair crown", "cityBrick")
@@ -304,8 +453,11 @@ def terrace_tower():
     _podium(wall, trim, glass, 10.20, 6.98, 3.48, -1.13)
     terrace_levels = [(3.49, 10.08, 7.28, 5.56, -.51), (10.08, 16.14, 6.19, 4.86, -.05),
                       (16.14, 21.41, 5.11, 4.18, .42), (21.41, 24.82, 3.85, 3.44, .84)]
+    if style == 1:
+        terrace_levels = [(3.49,12.10,7.54,5.58,.34), (12.10,17.50,6.50,4.81,-.26),
+                          (17.50,24.78,4.25,3.46,-1.18)]
     for low, high, width, depth, x in terrace_levels:
-        center_y = .09
+        center_y = .53 if style == 1 and low > 12 else .09
         wall.box((x, center_y, (low + high) / 2), (width - .94, depth - 1.10, high - low))
         for direction in (-1, 1):
             y = center_y + direction * (depth / 2 - .29)
@@ -321,17 +473,23 @@ def terrace_tower():
                          lower + .53, width * .30, rise - .62)
         trim.box((x, center_y, high - .17), (width + .14, depth + .13, .38))
     # The lift core and its return keep a continuous vertical line through the setbacks.
-    wall.box((2.67, .87, 13.33), (1.45, 3.68, 19.72))
-    _windows(glass, [2.68], -.98, 4.20, .58, 18.12)
-    trim.box((3.24, -1.00, 13.37), (.28, .30, 19.65))
-    wall.box((1.48, .83, 25.13), (1.88, 1.95, .73))
-    trim.box((1.48, .83, 25.57), (2.10, 2.13, .26))
-    wall.box((.73, .99, 25.95), (.58, .92, .52))
+    if style == 0:
+        wall.box((2.67, .87, 13.33), (1.45, 3.68, 19.72))
+        _windows(glass, [2.68], -.98, 4.20, .58, 18.12)
+        trim.box((3.24, -1.00, 13.37), (.28, .30, 19.65))
+        wall.box((1.48, .83, 25.13), (1.88, 1.95, .73))
+        trim.box((1.48, .83, 25.57), (2.10, 2.13, .26))
+        wall.box((.73, .99, 25.95), (.58, .92, .52))
+    else:
+        wall.box((-2.00, 1.00, 14.63), (1.44, 3.85, 22.30))
+        _windows(glass, [-2.15], -.94, 4.52, .55, 18.97)
+        trim.box((-1.83, .83, 25.87), (2.61, 3.96, .36))
+        _parapet(wall, -.51, .52, 2.10, 2.73, 24.82)
     for part in (wall, trim, glass):
         part.finish()
 
 
-def slab_tower():
+def slab_tower(style=0):
     """Office slab with a glazed reveal and unequal sloping roof shoulders."""
     wall = Part("Slab tower | office slabs and corner piers", "cityWall")
     trim = Part("Slab tower | rooftop plant, sloping caps and transfer belt", "cityRoof")
@@ -340,9 +498,11 @@ def slab_tower():
     # The gallery recess separates the slabs all the way to the top of the lower shoulder.
     trim.box((0, .14, 4.22), (9.35, 6.68, .27))
     glass.box((.03, .35, 12.93), (1.51, 3.17, 17.25))
-    for x, width, top, ridge, sign in ((-2.05, 3.46, 28.5, 30.92, -1),
-                                       (2.12, 3.54, 21.0, 23.44, 1)):
-        low, center_y, depth = 4.28, .04, 4.64
+    slabs = [(-2.05, .04, 3.46, 28.50, 30.92, -1), (2.12, .04, 3.54, 21.00, 23.44, 1)]
+    if style == 1:
+        slabs = [(-2.06, -.43, 3.36, 22.24, 24.40, 1), (1.94, .77, 3.59, 28.65, 30.63, -1)]
+    for x, center_y, width, top, ridge, sign in slabs:
+        low, depth = 4.28, 4.64
         a, b = x - width / 2, x + width / 2
         front, back = center_y - depth / 2, center_y + depth / 2
         outline = [(a, front), (b, front), (b, back), (a, back)]
@@ -351,12 +511,33 @@ def slab_tower():
         wall.box((x, center_y, top - .135), (width, depth, .27))
         _parapet(wall, x, center_y, width, depth, top)
         # The sloped plant-room caps leave a flat service deck facing the street.
-        wall.box((x, 1.36, top + .52), (width - .46, 1.65, 1.04))
-        ha, hb = (top + 1.03, ridge) if sign < 0 else (ridge, top + 1.03)
-        _section(trim, [(a, top + .98), (b, top + .98), (b, hb), (a, ha)], .44, 2.37)
+        if style == 0:
+            wall.box((x, 1.36, top + .52), (width - .46, 1.65, 1.04))
+            ha, hb = (top + 1.03, ridge) if sign < 0 else (ridge, top + 1.03)
+            _section(trim, [(a, top + .98), (b, top + .98), (b, hb), (a, ha)], .44, 2.37)
+        else:
+            wall.box((x, center_y + .52, top + .73), (width - .46, 2.99, 1.46))
+            wall.box((x + sign * .42, center_y + .91, (top + ridge) / 2), (1.43, 1.54, ridge - top))
+            trim.box((x, center_y + .52, top + 1.42), (width - .26, 3.11, .21))
         for sill, _ in levels[1:]:
             trim.box((x, center_y, sill - .24), (width + .13, depth + .17, .34))
-    wall.box((2.12, -.85, 22.10), (2.02, 2.50, 2.20))
-    _water_tank(trim, -2.05, -1.10, 28.50)
+    if style == 0:
+        wall.box((2.12, -.85, 22.10), (2.02, 2.50, 2.20))
+        _water_tank(trim, -2.05, -1.10, 28.50)
+    else:
+        _water_tank(trim, 2.27, -.64, 28.65)
     for part in (wall, trim, glass):
         part.finish()
+
+
+BUILDERS = {builder.__name__: builder for builder in
+            (lane, arcade, wharf, apartment, highrise, terrace_tower, slab_tower)}
+BUILDERS.update({
+    "lane_2": lane_pair, "lane_3": lane_annex,
+    "arcade_2": partial(arcade, 1), "arcade_3": partial(arcade, 2),
+    "wharf_2": wharf_warehouse,
+    "apartment_2": partial(apartment_terraces, 1), "apartment_3": partial(apartment_terraces, 2),
+    "highrise_2": highrise_spine,
+    "terrace_tower_2": partial(terrace_tower, 1),
+    "slab_tower_2": partial(slab_tower, 1),
+})

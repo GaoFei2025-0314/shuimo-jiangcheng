@@ -86,7 +86,7 @@
     }
     return values;
   }
-  function architectureParts(name) {
+  function architectureParts(name, kind = name) {
     return Object.entries(ARCHITECTURE[name]).map(([key, [vertices, faces, light, smooth]]) => {
       const coordinates = Float32Array.from(decodeWords(vertices, Int16Array), n => n / 128);
       const indexed = new THREE.BufferGeometry();
@@ -114,7 +114,7 @@
         }
       }
       let material = architectureMaterials[key];
-      if (name==='apartment' && key==='cityShade') material = apartmentWindow;
+      if (kind==='apartment' && key==='cityShade') material = apartmentWindow;
       if ((name==='bridge' || name==='yingwuzhou') && bridgeFinishes[key]) material = bridgeFinishes[key];
       return { geometry, material };
     });

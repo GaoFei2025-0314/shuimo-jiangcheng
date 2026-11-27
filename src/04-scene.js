@@ -3536,7 +3536,7 @@
     function addHouseBatch(kind, variant, matrices) {
       const footprint = new THREE.Box2();
       const corner = new THREE.Vector2();
-      for (const { geometry, material } of architectureParts(variant)) {
+      for (const { geometry, material } of architectureParts(variant, kind)) {
         const positions = geometry.attributes.position;
         for (let i = 0; i < positions.count; i++) {
           if (positions.getY(i) < .43) footprint.expandByPoint(corner.set(positions.getX(i), positions.getZ(i)));

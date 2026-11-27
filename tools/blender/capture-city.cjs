@@ -55,9 +55,9 @@ function capture() {
   }
   for (const node of scene.children) {
     if (node.isInstancedMesh && node.name.startsWith('City / ')) {
-      const kind = node.name.slice(7);
-      if (lots[kind]) continue; // All materials in a prototype use the same lot transforms.
-      lots[kind] = placements(node);
+      const variant = node.userData.cityVariant ?? node.name.slice(7);
+      if (lots[variant]) continue; // All materials in a prototype use the same lot transforms.
+      lots[variant] = placements(node);
     } else if (node.isInstancedMesh && node.userData.vegetation) {
       const { species, part, material } = node.userData.vegetation;
       const trees = vegetation[species] ||= { matrices: placements(node), parts: {} };
@@ -147,7 +147,8 @@ function capture() {
       }
       return views;
     });
-    if (Object.keys(city.lots).length !== 7 || Object.keys(city.vegetation).length !== 4 || Object.keys(city.landmarks).length !== 15 || !city.landmarks.lake ||
+    const houseTypes = new Set(Object.keys(city.lots).map(key => key.replace(/_\d+$/, '')));
+    if (houseTypes.size !== 7 || Object.keys(city.vegetation).length !== 4 || Object.keys(city.landmarks).length !== 15 || !city.landmarks.lake ||
         city.meshes.filter(m => m.material === 'Land').length !== 3)
       throw new Error('Missing landmarks, districts or banks. Rebuild dist/index.html before capture.');
     const parkKeys = city.parkAssets.map(asset => asset.key).sort();

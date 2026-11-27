@@ -2,6 +2,7 @@
 import base64
 import importlib
 import json
+import os
 import struct
 import tempfile
 import sys
@@ -13,7 +14,7 @@ from mathutils.bvhtree import BVHTree
 
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parents[1]
-OUTPUT = ROOT / "output" / "architecture"
+OUTPUT = Path(os.environ.get("WUHAN_STUDIO_OUTPUT", ROOT / "output" / "architecture"))
 sys.dont_write_bytecode = True
 sys.path.insert(0, str(HERE))
 import mesh
@@ -200,8 +201,7 @@ def bake_model(name, create):
 def build():
     OUTPUT.mkdir(parents=True, exist_ok=True)
     models = dict(landmarks.BUILDERS)
-    for name in ("lane", "arcade", "wharf", "apartment", "highrise", "terrace_tower", "slab_tower"):
-        models[name] = getattr(neighborhood, name)
+    models.update(neighborhood.BUILDERS)
     models.update(tower_park.BUILDERS)
     web, plates = {}, {}
     for name, create in models.items():

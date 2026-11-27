@@ -363,9 +363,10 @@ def city_blocks(scene, captured, streets):
     labels = {"lane": "里分", "arcade": "沿江洋行", "wharf": "码头货仓",
               "apartment": "退台住宅", "highrise": "现代塔楼",
               "terrace_tower": "退台塔楼", "slab_tower": "板式高楼"}
-    for kind, lots in captured.items():
+    for variant, lots in captured.items():
+        kind = variant if variant in labels else variant.rsplit("_", 1)[0]
         before = set(scene.objects)
-        getattr(neighborhood, kind)()
+        neighborhood.BUILDERS[variant]()
         parts = sorted(set(scene.objects) - before, key=lambda obj: obj.name)
         bpy.ops.object.select_all(action='DESELECT')
         for part in parts:
@@ -373,17 +374,20 @@ def city_blocks(scene, captured, streets):
         bpy.context.view_layer.objects.active = parts[0]
         bpy.ops.object.join()
         template = parts[0]
-        dest = collection(streets, labels[kind])
+        dest = streets.children.get(labels[kind]) or collection(streets, labels[kind])
         relocate(template, dest)
-        template.data.name = labels[kind] + " · 共享网格"
+        label = labels[kind] if variant == kind else f'{labels[kind]} · {variant.rsplit("_", 1)[1]}型'
+        template.data.name = label + " · 共享网格"
+        buildings = []
         for i, matrix in enumerate(lots):
-            obj = bpy.data.objects.new(labels[kind], template.data) if i else template
+            obj = bpy.data.objects.new(label, template.data) if i else template
             if i:
                 dest.objects.link(obj)
-            obj.name = f"{labels[kind]} {i+1:03}"
+            obj.name = f"{label} {i+1:03}"
             obj.matrix_world = placement(matrix)
+            buildings.append(obj)
         if kind == "apartment":
-            apartment_daylight(dest.objects)
+            apartment_daylight(buildings)
 
 
 def paper_crown_points(part, points):
