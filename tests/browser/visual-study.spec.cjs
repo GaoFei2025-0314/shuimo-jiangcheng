@@ -407,7 +407,7 @@ test('street trees and tower groups follow the same ground and corridors as the 
       if (!placements) continue;
       const tree = node.userData.vegetation;
       if (tree?.part === 'wood') {
-        trees[tree.species] = placements.length / 16;
+        trees[tree.species] = (trees[tree.species] ?? 0) + placements.length / 16;
         for (let i = 0; i < placements.length; i += 16) {
           const x = placements[i+12], y = placements[i+13], z = placements[i+14], ground = plantingSurface(x,z);
           maxRootGap = Math.max(maxRootGap, ground == null ? Infinity : Math.abs(y-ground));

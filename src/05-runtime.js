@@ -698,7 +698,7 @@
     const { detailSize, detailDepth } = node.userData;
     if (detailSize || detailDepth) registerProjectedDetail(node);
     if (!node.isInstancedMesh) continue;
-    const key = node.userData.vegetation?.species || node.userData.cityVariant;
+    const key = node.userData.vegetation?.variant || node.userData.cityVariant;
     if (!key) continue;
     if (!instanceGroups.has(key)) instanceGroups.set(key, { meshes: [], bounds: new THREE.Box3() });
     const group = instanceGroups.get(key);
@@ -706,6 +706,20 @@
     node.geometry.computeBoundingBox();
     group.bounds.union(node.geometry.boundingBox);
   }
+  function detailBatch(parts, attribute, label, capacity) {
+    const meshes = parts.map(part => {
+      const mesh = new THREE.InstancedMesh(part.userData[attribute], part.material, capacity);
+      mesh.name = label + part.name;
+      mesh.matrixAutoUpdate = false;
+      mesh.matrix.copy(part.matrix);
+      scene.add(mesh);
+      return mesh;
+    });
+    const buffer = meshes[0].instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    for (const mesh of meshes) mesh.instanceMatrix = buffer;
+    return { meshes, buffer, count: 0 };
+  }
+  const distantTrees = new Map();
   for (const group of instanceGroups.values()) {
     const first = group.meshes[0], localSphere = group.bounds.getBoundingSphere(new THREE.Sphere());
     group.source = first.instanceMatrix.array.slice();
@@ -717,25 +731,25 @@
       group.spheres.push(localSphere.clone().applyMatrix4(transform.premultiply(first.matrixWorld)));
     }
     group.batches = [{ meshes: group.meshes, buffer: group.buffer, count: 0 }];
-    for (const [attribute, label] of [['midGeometry', 'Mid-distance '], ['farGeometry', 'Distant ']]) {
-      if (!first.userData[attribute]) continue;
-      const distant = group.meshes.map(part => {
-        const mesh = new THREE.InstancedMesh(part.userData[attribute], part.material, first.count);
-        mesh.name = label + part.name;
-        mesh.matrixAutoUpdate = false;
-        mesh.matrix.copy(part.matrix);
-        scene.add(mesh);
-        return mesh;
-      });
-      const buffer = distant[0].instanceMatrix.setUsage(THREE.DynamicDrawUsage);
-      for (const mesh of distant) mesh.instanceMatrix = buffer;
-      group.batches.push({ meshes: distant, buffer, count: 0 });
+    if (first.userData.midGeometry) {
+      group.batches.push(detailBatch(group.meshes, 'midGeometry', 'Mid-distance ', first.count));
+      const { species } = first.userData.vegetation;
+      if (!distantTrees.has(species)) distantTrees.set(species, []);
+      distantTrees.get(species).push(group);
     }
     for (const part of group.meshes) {
       part.userData.authoredMatrices = group.source;
       part.instanceMatrix = group.buffer;
     }
   }
+  // At this size, a species shares its distant wash and trunk. The street shadow
+  // still uses the far geometry stored on each individual variant's authored mesh.
+  for (const groups of distantTrees.values()) {
+    const capacity = groups.reduce((total, group) => total + group.spheres.length, 0);
+    const batch = detailBatch(groups[0].meshes, 'farGeometry', 'Distant ', capacity);
+    for (const group of groups) group.batches.push(batch);
+  }
+  const landscapeBatches = new Set([...instanceGroups.values()].flatMap(group => group.batches));
   let previousHeight = 0;
   function updateLandscapeVisibility() {
     camera.updateMatrixWorld();
@@ -755,8 +769,8 @@
       const depth = viewDepth(sphere.center) - sphere.radius;
       node.visible = depth <= (detailDepth ?? detailSize * pixelsPerUnit / 2);
     }
+    for (const batch of landscapeBatches) batch.count = 0;
     for (const { batches, spheres, source } of instanceGroups.values()) {
-      for (const batch of batches) batch.count = 0;
       for (let i = 0; i < spheres.length; i++) {
         const sphere = spheres[i];
         if (!viewVolume.intersectsSphere(sphere)) continue;
@@ -767,11 +781,11 @@
         const offset = batch.count++ * 16;
         for (let k = 0; k < 16; k++) batch.buffer.array[offset + k] = source[i * 16 + k];
       }
-      for (const { meshes, buffer, count } of batches) {
-        buffer.updateRange.count = count * 16;
-        if (count) buffer.needsUpdate = true;
-        for (const part of meshes) { part.count = count; part.visible = count > 0; }
-      }
+    }
+    for (const { meshes, buffer, count } of landscapeBatches) {
+      buffer.updateRange.count = count * 16;
+      if (count) buffer.needsUpdate = true;
+      for (const part of meshes) { part.count = count; part.visible = count > 0; }
     }
   }
   // Print every view onto one sheet of paper. The street wash keeps its broken folds;

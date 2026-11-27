@@ -101,3 +101,32 @@ test('trees load from the baked vegetation', async ({ page }) => {
   expect(baked.sprigs.length).toBeGreaterThan(0);
   expect(baked.sprigs.every(count => count > 0)).toBe(true);
 });
+
+test('each tree species grows in three variants', async ({ page }) => {
+  await ready(page);
+  const species = await page.evaluate(() => {
+    const species = {};
+    for (const mesh of window.__testScene.children) {
+      const tree = mesh.userData.vegetation;
+      if (!mesh.isInstancedMesh || tree?.part !== 'wood') continue;
+      const { authoredMatrices } = mesh.userData;
+      const placements = species[tree.species] ||= [];
+      for (let i = 0; i < authoredMatrices.length; i += 16) {
+        placements.push({ x: authoredMatrices[i + 12], z: authoredMatrices[i + 14], variant: tree.variant });
+      }
+    }
+    return species;
+  });
+  expect(Object.fromEntries(Object.entries(species).map(([name, placements]) =>
+    [name, new Set(placements.map(p => p.variant)).size]))).toEqual({
+    broadleaf: 3, cherry: 3, pine: 3, willow: 3
+  });
+  let total = 0, repeated = 0;
+  for (const placements of Object.values(species)) {
+    const pairs = neighbouringPairs(placements, 9);
+    total += pairs.total;
+    repeated += pairs.repeated;
+  }
+  expect(total).toBeGreaterThan(400);
+  expect(repeated / total).toBeLessThan(.08);
+});

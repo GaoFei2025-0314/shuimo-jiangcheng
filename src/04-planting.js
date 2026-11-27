@@ -53,7 +53,8 @@
       cherry: { material: 'plantCherry', radius: 2.80, wind: .92 }
     };
     await Promise.all(Object.entries(treeTypes).map(async ([species, model]) => {
-      Object.assign(model, await unpackTree(VEGETATION[species][0], model.wind), { instances: [] });
+      model.variants = await Promise.all(VEGETATION[species].map(data => unpackTree(data, model.wind)));
+      model.instances = [];
     }));
 
     const shadow = new THREE.Box3();
@@ -89,6 +90,7 @@
 
     const roots = [[-1, 0], [1, 0], [0, -1], [0, 1]];
     const transform = new THREE.Object3D();
+    const plantedVariants = new WeakMap();
     function plant(species, x, z, spread, height, rng) {
       const model = treeTypes[species], radius = model.radius * spread;
       const [cx, cz] = cell(x, z);
@@ -102,9 +104,14 @@
           occupied(x, z, radius * .81 + .42) ||
           roadCells.get(keyAt(cx, cz))?.some(road => distanceTo(x, z, road.a, road.b) < road.width / 2 + radius * .65 + .48))
         return false;
-      for (let i = cx - 1; i <= cx + 1; i++) for (let j = cz - 1; j <= cz + 1; j++)
-        if (trunks.get(keyAt(i, j))?.some(p => Math.hypot(x - p.x, z - p.z) < (radius + p.radius) * .64))
-          return false;
+      const costs = model.variants.map(() => 0);
+      for (let i = cx - 1; i <= cx + 1; i++) for (let j = cz - 1; j <= cz + 1; j++) {
+        for (const tree of trunks.get(keyAt(i, j)) ?? []) {
+          const distance = Math.hypot(x - tree.x, z - tree.z);
+          if (distance < (radius + tree.radius) * .64) return false;
+          if (tree.species === species && distance < 9) costs[tree.variant] += 1 / (1 + distance * distance);
+        }
+      }
       const elevation = plantingSurface(x, z);
       if (elevation === null || !Number.isFinite(elevation)) return false;
       // Check the root-bearing patch as well as its center near channels and retaining edges.
@@ -117,11 +124,14 @@
       transform.rotation.set(0, rng() * Math.PI * 2, 0);
       transform.scale.set(spread, height, spread * (.90 + rng() * .19));
       transform.updateMatrix();
-      model.instances.push(transform.matrix.clone());
+      const matrix = transform.matrix.clone();
+      const variant = chooseVariant(costs, x, z);
+      model.instances.push(matrix);
+      plantedVariants.set(matrix, variant);
       groundContacts.push({x,z, rx:.55+radius*.44, rz:.45+radius*.25,c:.78,s:.626,tree:true});
       const key = keyAt(cx, cz);
       if (!trunks.has(key)) trunks.set(key, []);
-      trunks.get(key).push({ x, z, radius });
+      trunks.get(key).push({ x, z, radius, species, variant });
       return true;
     }
 
@@ -604,10 +614,11 @@
       for (const [tree,[x,z]] of paperTargets.entries()) {
         const matrix=model.instances.find(({elements:e})=>Math.hypot(x-e[12],z-e[14])<.12);
         if (!matrix) continue;
+        const { paperSprigs } = model.variants[plantedVariants.get(matrix)];
         const base=V().setFromMatrixPosition(matrix), positions=[],uv=[],veil=[],pigments=[],wind=[],indices=[];
         const scale=V().setFromMatrixScale(matrix);
         for (let i=0;i<10;i++) {
-          const {root,direction,tint}=model.paperSprigs[(i*5+tree)%model.paperSprigs.length];
+          const {root,direction,tint}=paperSprigs[(i*5+tree)%paperSprigs.length];
           const theta=Math.atan2(direction.z,direction.x)+Math.sin(i*2.17+tree*.91)*1.14;
           const cut=i%3===2;
           const span=(cut?.72:1.21)+.21*Math.sin(i*2.41+tree);
@@ -749,17 +760,23 @@
     barkMaterial.side = THREE.FrontSide;
     barkMaterial.uniforms = { ...plantMaterial.uniforms, uCanopy: { value: 0 } };
     for (const [species, model] of Object.entries(treeTypes)) {
-      for (const [part, geometry] of Object.entries(model.assets)) {
-        if (!model.instances.length) continue;
-        const mesh = new THREE.InstancedMesh(geometry, part === 'wood' ? barkMaterial : plantMaterial, model.instances.length);
-        mesh.name = `Vegetation / ${species} / ${part}`;
-        mesh.userData.vegetation = { species, variant: species, part, material: part === 'wood' ? 'plantBark' : model.material };
-        mesh.userData.farGeometry = model.farAssets[part];
-        mesh.userData.midGeometry = model.midAssets[part];
-        model.instances.forEach((matrix, i) => mesh.setMatrixAt(i, matrix));
-        mesh.instanceMatrix.needsUpdate = true;
-        scene.add(mesh);
-      }
+      const batches = model.variants.map(() => []);
+      for (const matrix of model.instances) batches[plantedVariants.get(matrix)].push(matrix);
+      model.variants.forEach(({ assets, midAssets, farAssets }, i) => {
+        const matrices = batches[i];
+        if (!matrices.length) return;
+        const variant = i ? species + '_' + (i + 1) : species;
+        for (const [part, geometry] of Object.entries(assets)) {
+          const mesh = new THREE.InstancedMesh(geometry, part === 'wood' ? barkMaterial : plantMaterial, matrices.length);
+          mesh.name = `Vegetation / ${species} / ${part}` + (i ? ' / ' + (i + 1) : '');
+          mesh.userData.vegetation = { species, variant, part, material: part === 'wood' ? 'plantBark' : model.material };
+          mesh.userData.farGeometry = farAssets[part];
+          mesh.userData.midGeometry = midAssets[part];
+          matrices.forEach((matrix, j) => mesh.setMatrixAt(j, matrix));
+          mesh.instanceMatrix.needsUpdate = true;
+          scene.add(mesh);
+        }
+      });
     }
   }
   await buildVegetation();
