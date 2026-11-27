@@ -398,7 +398,7 @@ test('street trees and tower groups follow the same ground and corridors as the 
   await page.waitForFunction(() => window.__ready && window.__dbg);
   const result = await page.evaluate(() => {
     const { scene, BRIDGES, roadAt, approachHalfWidth, plantingSurface } = window.__dbg;
-    const trees = {}, tall = {}, banks = new Set();
+    const trees = {}, tall = {}, banks = new Set(), tallBatches = new Set();
     let maxRootGap = 0, minBridgeClearance = Infinity, minRoadEdge = Infinity;
     const m = new THREE.Matrix4(), box = new THREE.Box3();
     for (const node of scene.children) {
@@ -423,7 +423,11 @@ test('street trees and tower groups follow the same ground and corridors as the 
       if (!node.name.startsWith('City / ')) continue;
       const kind = node.name.slice(7);
       if (!['highrise','slab_tower','terrace_tower'].includes(kind)) continue;
-      const group = tall[kind] ||= { count: placements.length/16, peak: 0 };
+      const group = tall[kind] ||= { count: 0, peak: 0 };
+      if (!tallBatches.has(placements)) {
+        tallBatches.add(placements);
+        group.count += placements.length / 16;
+      }
       for (let i = 0; i < placements.length; i += 16) {
         m.fromArray(placements,i);
         box.copy(node.geometry.boundingBox).applyMatrix4(m);

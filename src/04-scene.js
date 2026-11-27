@@ -3063,8 +3063,32 @@
     const t = THREE.MathUtils.clamp(((x-a.x)*dx+(z-a.z)*dz)/(dx*dx+dz*dz || 1), 0, 1);
     return Math.hypot(x-a.x-dx*t, z-a.z-dz*t);
   }
+  function chooseVariant(costs, x, z) {
+    let hash = Math.imul(Math.round(x * 128), 0x9e3779b1) ^ Math.imul(Math.round(z * 128), 0x85ebca77);
+    hash = Math.imul(hash ^ (hash >>> 16), 0xc2b2ae3d);
+    const first = ((hash ^ (hash >>> 16)) >>> 0) % costs.length;
+    let choice = first;
+    for (let i = 1; i < costs.length; i++) {
+      const candidate = (first + i) % costs.length;
+      if (costs[candidate] < costs[choice]) choice = candidate;
+    }
+    return choice;
+  }
+
   function buildCityBlocks() {
     const lots = { lane: [], arcade: [], wharf: [], apartment: [], highrise: [], terrace_tower: [], slab_tower: [] };
+    const variants = {};
+    for (const kind of Object.keys(lots)) {
+      const keys = variants[kind] = [kind];
+      while (ARCHITECTURE[kind + '_' + (keys.length + 1)]) keys.push(kind + '_' + (keys.length + 1));
+    }
+    const lotVariants = new Map();
+    // The street walk's hand-laid tiles and trim were fitted to these roof profiles.
+    const fittedRoofs = {
+      lane: [[-218,29], [-222.30,20.50], [-234.64,48.70], [-224.11,9.04],
+             [-59.58,75.26], [-37.73,58.08], [-72.17,112.68], [-76.14,123.58]],
+      apartment: [[-240.52,24.59], [-242.97,11.21], [-40.09,71.99], [-228.64,-3.27]]
+    };
     const landmarks = pickables.filter(g => !['bridge', 'yingwuzhou', 'lake'].includes(g.userData.focus))
       .map(g => { g.updateMatrixWorld(true); return new THREE.Box3().setFromObject(g).expandByScalar(2.2); });
     const cells = new Map(), cellSize = 14;
@@ -3177,9 +3201,22 @@
       dummy.updateMatrix();
       const matrix = dummy.matrix.clone();
       lots[kind].push(matrix);
-      const key = Math.floor(x / cellSize) + ',' + Math.floor(z / cellSize);
+      const cx = Math.floor(x / cellSize), cz = Math.floor(z / cellSize);
+      const keys = variants[kind];
+      let variant = 0;
+      if (keys.length > 1 && !fittedRoofs[kind]?.some(([a, b]) => Math.hypot(x - a, z - b) < .28)) {
+        const costs = keys.map(() => 0);
+        for (let i = cx - 1; i <= cx + 1; i++) for (let j = cz - 1; j <= cz + 1; j++) {
+          for (const p of cells.get(i + ',' + j) ?? []) {
+            if (p.kind === kind) costs[p.variant] += 1 / (1 + (x - p.x) ** 2 + (z - p.z) ** 2);
+          }
+        }
+        variant = chooseVariant(costs, x, z);
+      }
+      lotVariants.set(matrix, keys[variant]);
+      const key = cx + ',' + cz;
       if (!cells.has(key)) cells.set(key, []);
-      cells.get(key).push({ x, z, c: Math.cos(yaw), s: Math.sin(yaw), scale, matrix });
+      cells.get(key).push({ x, z, c: Math.cos(yaw), s: Math.sin(yaw), scale, matrix, kind, variant });
       return true;
     }
     const skylineClearance = [[AT.tower, 51], [AT.tv, 57], [AT.qc, 46], [AT.customs, 47], [AT.watertower, 29],
@@ -3488,16 +3525,25 @@
       scene.add(mesh);
     }
     for (const [kind, matrices] of Object.entries(lots)) {
-      if (!matrices.length) continue;
+      const batches = new Map();
+      for (const matrix of matrices) {
+        const variant = lotVariants.get(matrix);
+        if (!batches.has(variant)) batches.set(variant, []);
+        batches.get(variant).push(matrix);
+      }
+      for (const [variant, batch] of batches) addHouseBatch(kind, variant, batch);
+    }
+    function addHouseBatch(kind, variant, matrices) {
       const footprint = new THREE.Box2();
       const corner = new THREE.Vector2();
-      for (const { geometry, material } of architectureParts(kind)) {
+      for (const { geometry, material } of architectureParts(variant)) {
         const positions = geometry.attributes.position;
         for (let i = 0; i < positions.count; i++) {
           if (positions.getY(i) < .43) footprint.expandByPoint(corner.set(positions.getX(i), positions.getZ(i)));
         }
         const block = new THREE.InstancedMesh(geometry, material, matrices.length);
         block.name = 'City / ' + kind;
+        block.userData.cityVariant = variant;
         matrices.forEach((matrix, i) => block.setMatrixAt(i, matrix));
         block.instanceMatrix.needsUpdate = true;
         scene.add(block);

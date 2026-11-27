@@ -98,11 +98,12 @@
   const portraitBack = portraitEye.clone().sub(portraitTarget).normalize();
   const mapToView = new THREE.Matrix4().lookAt(portraitEye, portraitTarget, camera.up).setPosition(portraitTarget).invert();
   const portraitSites = LAKE.map(([x, z]) => V(x, LAND_Y, z).applyMatrix4(mapToView));
-  const houseKinds = new Set();
+  const houseVariants = new Set();
   for (const mesh of scene.children) {
     // 同款建筑的各材质批次共用落点。启动时读取完整分布，之后的视锥裁剪不会改变取景。
-    if (!mesh.isInstancedMesh || !mesh.name.startsWith('City / ') || houseKinds.has(mesh.name)) continue;
-    houseKinds.add(mesh.name);
+    const variant = mesh.userData.cityVariant;
+    if (!variant || houseVariants.has(variant)) continue;
+    houseVariants.add(variant);
     for (let i = 0; i < mesh.count; i++) {
       portraitSites.push(V().fromArray(mesh.instanceMatrix.array, i * 16 + 12).applyMatrix4(mesh.matrixWorld).applyMatrix4(mapToView));
     }
@@ -697,7 +698,7 @@
     const { detailSize, detailDepth } = node.userData;
     if (detailSize || detailDepth) registerProjectedDetail(node);
     if (!node.isInstancedMesh) continue;
-    const key = node.userData.vegetation?.species || (node.name.startsWith('City / ') && node.name);
+    const key = node.userData.vegetation?.species || node.userData.cityVariant;
     if (!key) continue;
     if (!instanceGroups.has(key)) instanceGroups.set(key, { meshes: [], bounds: new THREE.Box3() });
     const group = instanceGroups.get(key);
