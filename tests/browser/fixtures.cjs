@@ -24,6 +24,9 @@ const test = base.extend({
           renderer.render = function (scene, camera) {
             if (camera.isPerspectiveCamera) {
               window.__testScene = scene; window.__testCamera = camera; window.__testRenderer = renderer;
+            } else {
+              const material = scene.children[0]?.material;
+              if (material?.uniforms?.drawing && material.uniforms.depthMap) window.__testInkPrint = material;
             }
             return render.call(this, scene, camera);
           };

@@ -794,8 +794,23 @@
       defines:depthReady ? {CONTOUR:1} : {},
       uniforms:{drawing:{value:target.texture},depthMap:{value:target.depthTexture},pixel:{value:new THREE.Vector2()},
         strength:{value:1},aerial:{value:1},lineWidth:{value:1},clip:{value:new THREE.Vector2(1,9000)},
-        mist:{value:new THREE.Vector2(300,1800)},paper:sharedInk.uPaper,ink:sharedInk.uInk},
-      vertexShader:`varying vec2 where;void main(){where=uv;gl_Position=vec4(position.xy,0.,1.);}`,
+        mist:{value:new THREE.Vector2(300,1800)},paper:sharedInk.uPaper,ink:sharedInk.uInk,
+        uProjectionInverse:{value:camera.projectionMatrixInverse},uCameraWorld:{value:camera.matrixWorld},
+        ...cityFocus},
+      vertexShader:`varying vec2 where;
+        #ifdef CONTOUR
+          uniform mat4 uProjectionInverse,uCameraWorld;
+          varying vec2 worldRayXZ;
+        #endif
+        void main(){
+          where=uv;
+          gl_Position=vec4(position.xy,0.,1.);
+          #ifdef CONTOUR
+            // A perspective ray at unit view depth interpolates linearly across the sheet.
+            vec3 ray=(uProjectionInverse*gl_Position).xyz;
+            worldRayXZ=(uCameraWorld*vec4(ray/-ray.z,0.)).xz;
+          #endif
+        }`,
       fragmentShader:`uniform sampler2D drawing,depthMap;uniform vec2 pixel,clip,mist;uniform float strength,aerial,lineWidth;
         uniform vec3 paper,ink;varying vec2 where;
         float lightness(vec3 color){return dot(color,vec3(.26,.59,.15));}
@@ -808,13 +823,28 @@
           vec4 v=fract(sin(dot(cell,vec2(127.1,311.7))+vec4(0.,127.1,311.7,438.8))*43758.5453);
           return mix(mix(v.x,v.y,f.x),mix(v.z,v.w,f.x),f.y);
         }
-        // Reciprocal depth is linear across any flat face, so its second difference only
-        // answers at silhouettes and folds, never along a long receding street or river.
-        float nearness(vec2 uv){
-          float z=texture2D(depthMap,uv).r;
-          if(z>=.99999) return 0.;
-          return (clip.y-z*(clip.y-clip.x))/(clip.x*clip.y);
-        }
+        #ifdef CONTOUR
+          uniform mat4 uCameraWorld;
+          uniform vec3 uFocus;
+          uniform vec2 uFocusRange;
+          uniform float uFocusStrength;
+          varying vec2 worldRayXZ;
+          ${NOISE}
+          // Reciprocal depth is linear across any flat face, so its second difference only
+          // answers at silhouettes and folds, never along a long receding street or river.
+          float nearness(vec2 uv){
+            float z=texture2D(depthMap,uv).r;
+            if(z>=.99999) return 0.;
+            return (clip.y-z*(clip.y-clip.x))/(clip.x*clip.y);
+          }
+          float focusWashAt(vec2 worldXZ){
+            // Match ARCHITECTURE_WASH, including the world-space breakup of its transition.
+            float radius=length(worldXZ-uFocus.xz);
+            float t=clamp((radius-uFocusRange.x)/(uFocusRange.y-uFocusRange.x),0.,1.);
+            if(t>0. && t<1.) t+=(vnoise(worldXZ*.047)-.5)*.88*t*(1.-t);
+            return smoothstep(0.,1.,t)*uFocusStrength;
+          }
+        #endif
         void main(){
           vec4 original=texture2D(drawing,where);
           if(original.a<.012){gl_FragColor=vec4(0.);return;}
@@ -861,10 +891,12 @@
             float here=nearness(where);
             if(here>1./min(mist.y*.86,720.)){
               float depth=1./here;
+              float focusWash=0.;
+              if(uFocusStrength>0.) focusWash=focusWashAt(uCameraWorld[3].xz+worldRayXZ*depth);
               // Past a few hundred units a house is only a few pixels wide; outlining it there
               // turns the far shore to grit, so the contour gives way to the wash.
               float fade=(1.-smoothstep(mist.x,mist.y*.86,depth))*(1.-smoothstep(300.,720.,depth));
-              float w=lineWidth*(.85+.85*grain(gl_FragCoord.xy*.035+7.));
+              float w=lineWidth*(.85+.85*grain(gl_FragCoord.xy*.035+7.))*mix(1.,.78,focusWash);
               vec2 dx=x*w, dy=y*w;
               float bendX=here*2.-nearness(where+dx)-nearness(where-dx);
               float bendY=here*2.-nearness(where+dy)-nearness(where-dy);
@@ -872,7 +904,7 @@
               float contour=smoothstep(.004,.024,jump);
               // A dry brush lifts off the paper now and then; the stroke breaks rather than fades.
               float dry=smoothstep(.18,.52,grain(gl_FragCoord.xy*vec2(.045,.06)+vec2(depth*.01)));
-              contour*=fade*(.55+.45*dry);
+              contour*=fade*(.55+.45*dry)*mix(1.,.24,focusWash);
               float load=mix(.80,.94,1.-smoothstep(.35,.85,l));
               color=mix(color,ink*.82,contour*load);
             }
@@ -913,6 +945,8 @@
       u.clip.value.set(camera.near,camera.far);
       u.mist.value.set(fogU.uNear.value,fogU.uFar.value);
       renderer.setRenderTarget(target);
+      // The print uniforms reference the live camera matrices. Rendering the depth pass
+      // updates matrixWorld before the print uses it to reconstruct the same view.
       try { renderer.render(scene,camera); }
       finally { renderer.setRenderTarget(null); }
       renderer.render(page,lens);
