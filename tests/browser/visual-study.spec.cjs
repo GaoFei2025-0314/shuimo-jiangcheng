@@ -49,6 +49,31 @@ test('city wash centres on the active landmark', async ({ page }) => {
   }
 });
 
+test('ink contours fade with the city focus', async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await ready(page);
+  const readFocus = () => page.evaluate(async () => {
+    await new Promise(done => requestAnimationFrame(() => requestAnimationFrame(done)));
+    const city = window.__testScene.children.find(mesh =>
+      mesh.name.startsWith('City / ') && mesh.material.uniforms.uFocus).material.uniforms;
+    const print = window.__testInkPrint?.uniforms;
+    return {
+      shared: ['uFocus', 'uFocusRange', 'uFocusStrength'].every(name => print?.[name] === city[name]),
+      strength: print?.uFocusStrength?.value
+    };
+  });
+
+  await page.locator('#b-hongshan').click();
+  const landmark = await readFocus();
+  expect(landmark.shared).toBe(true);
+  expect(landmark.strength).toBeGreaterThan(0);
+
+  await page.locator('#atlas-open').click();
+  await page.locator('#atlas-walk').click();
+  await page.locator('#walk-view').selectOption('hy-in');
+  expect(await readFocus()).toEqual({ shared: true, strength: 0 });
+});
+
 for (const viewport of [{ width: 1440, height: 900 }, { width: 390, height: 844 }]) {
   test(`opens on the core city while keeping the full overview reachable at ${viewport.width}`, async ({ page }) => {
     await page.setViewportSize(viewport);
